@@ -1,0 +1,23 @@
+FROM wanglabneuro/mesmerize-base:latest
+
+LABEL maintainer="Vincent Prevosto <prevosto@mit.edu>"
+
+USER root
+
+# Switch to default bash shell
+SHELL ["/bin/bash", "--login", "-c"]
+
+# Switch to CaImAn directory and update code
+WORKDIR /home/$NB_USER/code/CaImAn
+RUN git stash && \
+    git checkout main && \
+    git pull origin main
+
+# Update CaImAn in mescore environment
+RUN mamba update -y -n mescore -c conda-forge caiman
+
+# Switch to mescore environment
+SHELL ["conda","run","-n","mescore","/bin/bash","-c"]
+
+#Switch to user
+USER $NB_UID

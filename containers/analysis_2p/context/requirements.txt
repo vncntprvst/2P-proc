@@ -1,0 +1,8 @@
+# Additional dependencies for Analysis 2P 
+# suite2p
+pyarrow
+# plotly
+
+
+
+
