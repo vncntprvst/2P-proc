@@ -11,16 +11,7 @@ RUN GID=$(getent group users | cut -d: -f3) && \
 
 RUN fix-permissions /home/$IM_USER
 
-# USER $IM_USER
-
-# Initialize conda for IM_USER
-RUN echo ". $CONDA_DIR/etc/profile.d/conda.sh" >> /home/$IM_USER/.profile
-
-# RUN conda init bash # already done as root in Mesmerize base image 
-
 # RUN fix-permissions /etc/ld.so.cache
-
-# USER root
 
 # Create code directory in user home
 RUN mkdir -p /code && \
@@ -50,6 +41,9 @@ RUN pip install -r requirements.txt
 USER $IM_USER
 # RUN conda update caiman -c conda-forge
 # RUN caimanmanager install
+
+# Initialize conda for IM_USER
+RUN echo ". $CONDA_DIR/etc/profile.d/conda.sh" >> /home/$IM_USER/.profile
 
 # start batch script to run Mesmerize analysis pipeline on batch of files when container is run
 # ENTRYPOINT ["conda", "run", "-n", "mescore", "python", "-u", "batch_mcorr_cnmf.py"]

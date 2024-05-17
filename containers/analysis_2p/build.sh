@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Copy the Mesmerize folder one level above, to the context folder
-rsync -avzP ../Mesmerize context/
+rsync -avzP ../../Mesmerize context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.2 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.3 -f Dockerfile context
+#  --no-cache
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
