@@ -4,8 +4,7 @@
 rsync -avzP ../../Mesmerize context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.3 -f Dockerfile context
-#  --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.3 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
@@ -19,5 +18,6 @@ rm -rf context/Mesmerize
 # v0.2.0: Adds z-motion correction on patches
 # v0.2.1: z-motion correction on patches with subtraction on pixels 
 # v0.2.2: removed Suite2p package and tested on remote server 
-
+# v0.2.3: finalizing z-motion correction options
+ 
 # Test with docker run --rm -it wanglabneuro/analysis-2p /bin/bash, or singularity run docker://wanglabneuro/analysis-2p:latest /bin/bash
