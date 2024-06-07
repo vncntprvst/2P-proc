@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.1.0 -f Dockerfile_update .
+docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.1.2 -f Dockerfile_update .
 
 # Push to Docker registry
 docker push --all-tags wanglabneuro/mesmerize-base
