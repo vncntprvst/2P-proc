@@ -4,12 +4,15 @@
 rsync -avzP ../../Mesmerize context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.4 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.5 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
 
 # Versions:
+# v0.2.5: Adds caiman_data directory to IM_USER home and set default environment variables for caiman_data and caiman_temp 
+        # CAIMAN_DATA=/home/$IM_USER/caiman_data
+        # CAIMAN_TEMP=/home/$IM_USER/caiman_data/temp
 # v0.2.4: Matlab analysis scripts updates
 # v0.2.3: finalizing z-motion correction options
 # v0.2.2: removed Suite2p package and tested on remote server 

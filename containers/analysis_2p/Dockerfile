@@ -21,6 +21,10 @@ RUN mkdir -p /code && \
 RUN chown -R $IM_USER:users /code && \
     chown -R $IM_USER:users /data
 
+# Give IM_USER read and write permissions to all files in /home/$NB_USER
+RUN chown -R $IM_USER:users /home/$NB_USER && \
+    chmod -R u+rw /home/$NB_USER
+
 # Set working directory to Mesmerize code directory
 COPY Mesmerize /code/Mesmerize
 COPY requirements.txt /code/Mesmerize/requirements.txt
@@ -41,6 +45,18 @@ RUN pip install -r requirements.txt
 USER $IM_USER
 # RUN conda update caiman -c conda-forge
 # RUN caimanmanager install
+# Copy caiman_data to user home, just to keep it separate from jovyan
+RUN cp -r /home/$NB_USER/caiman_data /home/$IM_USER && \
+    chown -R $IM_USER:users /home/$IM_USER/caiman_data && \
+    chmod -R 777 /home/$IM_USER/caiman_data/temp
+
+# Set CAIMAN_DATA environment variable
+ENV CAIMAN_DATA=/home/$IM_USER/caiman_data
+# Set $CAIMAN_TEMP
+ENV CAIMAN_TEMP=/home/$IM_USER/caiman_data/temp
+# These environment variables can be overridden by the user when running the container: 
+# docker run -e CAIMAN_DATA=/path/to/caiman_data -e CAIMAN_TEMP=/path/to/caiman_temp ...
+# apptainer run -e CAIMAN_DATA=/path/to/caiman_data -e CAIMAN_TEMP=/path/to/caiman_temp ...
 
 # Initialize conda for IM_USER
 RUN echo ". $CONDA_DIR/etc/profile.d/conda.sh" >> /home/$IM_USER/.profile
