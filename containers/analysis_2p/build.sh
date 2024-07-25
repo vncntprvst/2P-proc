@@ -4,12 +4,15 @@
 rsync -avzP ../../Mesmerize context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.5 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.6 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
 
 # Versions:
+# v0.2.6: Solving out-of-memory errors. 
+        # Adds Context manager to close files and free memory in pipeline, for mcorr and cnmf steps.
+        # Also updates batch scrip, adding --env MESMERIZE_N_PROCESSES=$SLURM_CPUS_ON_NODE to singularity call
 # v0.2.5: Adds caiman_data directory to IM_USER home and set default environment variables for caiman_data and caiman_temp 
         # CAIMAN_DATA=/home/$IM_USER/caiman_data
         # CAIMAN_TEMP=/home/$IM_USER/caiman_data/temp

@@ -4,7 +4,7 @@
 rsync -avzP ../../Mesmerize context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.5 -f Dockerfile context
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.6 -f Dockerfile context
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
