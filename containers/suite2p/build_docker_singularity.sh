@@ -1,16 +1,10 @@
 #!/bin/bash
 
-# Copy the Mesmerize folder one level above, to the context folder
-rsync -avzP ../../Mesmerize context/
-
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.6 -f Dockerfile context
-
-# Delete the Mesmerize folder from the context folder
-rm -rf context/Mesmerize
+docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.3 -f Dockerfile context
 
 # Push to Docker registry
-docker push --all-tags wanglabneuro/analysis-2p
+docker push --all-tags wanglabneuro/suite2p_rastermap
 
 # Convert Docker image to Singularity image
 # Requires Singularity installed on your system.
@@ -21,8 +15,8 @@ then
     exit
 else
     # If a hash file exists, check the hash matches the current Docker image. If not, build a new Singularity image.
-    if [ -f "analysis-2p_latest.sif.hash" ]; then
-        if [ "$(docker inspect wanglabneuro/analysis-2p:latest --format='{{.Id}}')" == "$(cat analysis-2p_latest.sif.hash)" ]; then
+    if [ -f "suite2p_rastermap_latest.sif.hash" ]; then
+        if [ "$(docker inspect wanglabneuro/suite2p_rastermap:latest --format='{{.Id}}')" == "$(cat suite2p_rastermap_latest.sif.hash)" ]; then
             echo "Docker image has not changed. Not building Singularity image."
             build_singularity=0
         else
@@ -37,10 +31,10 @@ else
     if [ $build_singularity -eq 1 ]; then
         echo "Building Singularity image."
         # docker login
-        apptainer build -F analysis-2p_latest.sif docker://wanglabneuro/analysis-2p:latest 
+        apptainer build -F suite2p_rastermap_latest.sif docker://wanglabneuro/suite2p_rastermap:latest 
         # docker logout
         # store a hash of the Docker image in a file
-        docker inspect wanglabneuro/analysis-2p:latest --format='{{.Id}}' > analysis-2p_latest.sif.hash
+        docker inspect wanglabneuro/suite2p_rastermap:latest --format='{{.Id}}' > suite2p_rastermap_latest.sif.hash
     fi    
             
 fi
@@ -59,7 +53,7 @@ fi
 # check if hppc_image_repo variable exists
 if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
     echo "Copying Singularity image to HPCC."
-    rsync -aP analysis-2p_latest.sif "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
+    rsync -aP suite2p_rastermap_latest.sif "$SSH_HPCC_IMAGE_REPO/"
 else
     echo "HPPC_IMAGE_REPO variable not set. Not copying to HPPC."
 fi
