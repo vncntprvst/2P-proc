@@ -4,12 +4,13 @@
 rsync -avzP ../../Mesmerize context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.2.6 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.3.0 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
 
 # Versions:
+# v0.3.0: Getting close to v1.0. Matlab pipeline (with intregated DLC and rastermap calls) working locally and on remote server.    
 # v0.2.6: Solving out-of-memory errors. 
         # Adds Context manager to close files and free memory in pipeline, for mcorr and cnmf steps.
         # Also updates batch scrip, adding --env MESMERIZE_N_PROCESSES=$SLURM_CPUS_ON_NODE to singularity call
