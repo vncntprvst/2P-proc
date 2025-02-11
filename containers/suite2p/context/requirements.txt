@@ -1,0 +1,37 @@
+# Core dependencies
+importlib-metadata
+natsort
+rastermap>=0.9.0
+tifffile
+torch>=1.13.1
+numpy>=1.24.3
+numba>=0.57.0
+matplotlib
+scipy>=1.9.0
+scikit-learn
+cellpose
+scanimage-tiff-reader>=1.4.1
+
+# GUI dependencies
+qtpy
+pyqt6
+pyqt6.sip
+pyqtgraph
+
+# IO dependencies
+paramiko
+nd2
+sbxreader
+h5py
+opencv-python-headless
+xmltodict
+dcimg
+
+# NWB dependencies
+pynwb>=2.3.2
+
+# Test dependencies
+pytest
+tenacity
+tqdm
+pytest-qt>3.3.0
