@@ -14,7 +14,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-
+        
+      - name: Clear Docker cache
+        run: |
+          docker system prune -af
+          docker builder prune -af
+          
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
