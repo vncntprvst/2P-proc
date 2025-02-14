@@ -1,0 +1,81 @@
+name: Build and Push Docker and Singularity
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Set up Docker
+        run: |
+          docker --version
+          docker buildx version
+
+      - name: Build Docker image
+        run: |
+          export TAG=${GITHUB_REF#refs/tags/}
+          rsync -avzP ../../Mesmerize context/
+          docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:$TAG -f Dockerfile context --no-cache
+          rm -rf context/Mesmerize
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push Docker image
+        run: |
+          docker push --all-tags wanglabneuro/analysis-2p
+
+      - name: Install Singularity
+        run: |
+          sudo apt-get update && sudo apt-get install -y singularity-container
+
+      - name: Build Singularity image
+        run: |
+          if ! command -v apptainer &> /dev/null; then
+            echo "apptainer could not be found"
+            echo "Please install apptainer from https://apptainer.org/docs/admin/main/installation.html#install-ubuntu-packages"
+            exit 1
+          fi
+          apptainer build -F analysis-2p_latest.sif docker://wanglabneuro/analysis-2p:latest 
+          docker inspect wanglabneuro/analysis-2p:latest --format='{{.Id}}' > analysis-2p_latest.sif.hash
+
+      - name: Copy Singularity image to HPCC
+        run: |
+          if [ -f "../../scripts/utils/.env" ]; then
+            echo "Get server information from .env file."
+            while IFS='=' read -r key value; do
+              if [[ $key != \#* ]]; then
+                export "$key=$value"
+              fi
+            done < "../../scripts/utils/.env"
+            export SSH_HPCC_IMAGE_REPO="${SSH_NODE}:${HPCC_IMAGE_REPO}"
+          fi
+          if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
+            echo "Copying Singularity image to HPCC."
+            rsync -aP analysis-2p_latest.sif "$SSH_HPCC_IMAGE_REPO/"
+          else
+            echo "HPPC_IMAGE_REPO variable not set. Not copying to HPPC."
+          fi
