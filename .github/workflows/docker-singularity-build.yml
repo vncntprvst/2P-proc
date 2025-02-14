@@ -40,7 +40,8 @@ jobs:
           else
             TAG=latest
           fi
-          rsync -avzP Mesmerize containers/analysis_2p/context/
+          mkdir -p containers/analysis_2p/context/Mesmerize
+          rsync -avzP Mesmerize/ containers/analysis_2p/context/Mesmerize/
           docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:$TAG -f containers/analysis_2p/Dockerfile containers/analysis_2p/context --no-cache
           rm -rf containers/analysis_2p/context/Mesmerize
 
