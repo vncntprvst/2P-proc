@@ -40,9 +40,9 @@ jobs:
           else
             TAG=latest
           fi
-          rsync -avzP Mesmerize context/
+          rsync -avzP Mesmerize containers/analysis_2p/context/
           docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:$TAG -f containers/analysis_2p/Dockerfile containers/analysis_2p/context --no-cache
-          rm -rf context/Mesmerize
+          rm -rf containers/analysis_2p/context/Mesmerize
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
