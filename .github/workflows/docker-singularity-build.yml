@@ -34,7 +34,7 @@ jobs:
       - name: Build Docker image
         run: |
           export TAG=${GITHUB_REF#refs/tags/}
-          rsync -avzP ../../Mesmerize context/
+          rsync -avzP Mesmerize context/
           docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:$TAG -f Dockerfile context --no-cache
           rm -rf context/Mesmerize
 
@@ -64,18 +64,10 @@ jobs:
 
       - name: Copy Singularity image to HPCC
         run: |
-          if [ -f "../../scripts/utils/.env" ]; then
-            echo "Get server information from .env file."
-            while IFS='=' read -r key value; do
-              if [[ $key != \#* ]]; then
-                export "$key=$value"
-              fi
-            done < "../../scripts/utils/.env"
-            export SSH_HPCC_IMAGE_REPO="${SSH_NODE}:${HPCC_IMAGE_REPO}"
-          fi
+          export SSH_HPCC_IMAGE_REPO="${{ secrets.HPCC_SERVER }}:${{ secrets.HPCC_IMAGE_REPO }}"
           if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
             echo "Copying Singularity image to HPCC."
-            rsync -aP analysis-2p_latest.sif "$SSH_HPCC_IMAGE_REPO/"
+            rsync -aP --rsh="sshpass -p '${{ secrets.HPCC_PWD }}' ssh -o StrictHostKeyChecking=no" analysis-2p_latest.sif "${{ secrets.HPCC_LOGIN }}@$SSH_HPCC_IMAGE_REPO/"
           else
             echo "HPPC_IMAGE_REPO variable not set. Not copying to HPPC."
           fi
