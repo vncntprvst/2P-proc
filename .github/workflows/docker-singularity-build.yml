@@ -1,3 +1,9 @@
+# To update the `yml` file without triggering the job, use the `[skip ci]` or `[ci skip]` keyword in your commit message. 
+# e.g.:
+# ```
+# Update docker-singularity-build.yml [skip ci]
+# ```
+
 name: Build and Push Docker and Singularity
 
 on:
@@ -9,16 +15,17 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
         
-      - name: Clear Docker cache
-        run: |
-          docker system prune -af
-          docker builder prune -af
+      # - name: Clear Docker cache
+      #   run: |
+      #     docker system prune -af
+      #     docker builder prune -af
           
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
@@ -40,8 +47,8 @@ jobs:
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             TAG=${GITHUB_REF#refs/tags/}
-          elif [[ $GITHUB_REF == refs/heads/* ]]; then
-            TAG=${GITHUB_REF#refs/heads/}
+          # elif [[ $GITHUB_REF == refs/heads/* ]]; then
+          #   TAG=${GITHUB_REF#refs/heads/}
           else
             TAG=latest
           fi
@@ -60,9 +67,10 @@ jobs:
         run: |
           docker push --all-tags wanglabneuro/analysis-2p
 
-      - name: Install Singularity
-        run: |
-          sudo apt-get update && sudo apt-get install -y singularity-container
+      # - name: Install Apptainer
+      # # Note that that doesn't work on a local runner 
+      #   run: |
+      #     sudo apt-get update && sudo apt-get install -y apptainer
 
       - name: Build Singularity image
         run: |
@@ -72,7 +80,11 @@ jobs:
             exit 1
           fi
           apptainer build -F analysis-2p_latest.sif docker://wanglabneuro/analysis-2p:latest 
-          docker inspect wanglabneuro/analysis-2p:latest --format='{{.Id}}' > analysis-2p_latest.sif.hash
+
+      # - name: Install sshpass
+      # # Same note as above
+      #   run: |
+      #     sudo apt-get update && sudo apt-get install -y sshpass
 
       - name: Copy Singularity image to HPCC
         run: |
