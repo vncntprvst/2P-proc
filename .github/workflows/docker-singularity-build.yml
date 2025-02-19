@@ -9,11 +9,10 @@
 name: Build and Push Docker and Singularity
 
 on:
-  push:
+  release:
+    types: [published]
     branches:
       - main
-  release:
-    types: [created]
 
 jobs:
   build:
