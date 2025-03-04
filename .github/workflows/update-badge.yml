@@ -4,6 +4,7 @@ on:
   release:
     types: [published]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   update-badge:
@@ -18,23 +19,23 @@ jobs:
       with:
         python-version: '3.x'
 
-    # - name: Install jq
-    #   run: sudo apt-get install -y jq
+    - name: Install jq
+      run: sudo apt-get install -y jq
 
     - name: Get latest release version
       id: get_release
       run: |
-        latest_release=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r .tag_name)
+        latest_release=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r .tag_name)
         echo "::set-output name=version::$latest_release"
 
     - name: Update README.md with new badge
       run: |
         badge_url="https://badgen.net/badge/release/${{ steps.get_release.outputs.version }}/blue"
-        readme_file="README.md"
+        readme_file="readme.md"
         if grep -q "!\[Latest Release\]" $readme_file; then
           sed -i -E "s|!\[Latest Release\]\(.*\)|![Latest Release]($badge_url)|" $readme_file
         else
-          echo -e "\n![Latest Release]($badge_url)" >> $readme_file
+          sed -i "1s|^|![Latest Release]($badge_url)\n\n|" $readme_file
         fi
 
     - name: Commit and push changes
@@ -43,6 +44,6 @@ jobs:
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git add README.md
+        git add readme.md
         git commit -m "Update release badge to version ${{ steps.get_release.outputs.version }}"
         git push
