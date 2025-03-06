@@ -196,7 +196,7 @@ def main():
     # STEP 2: Create or reuse the Z-shift param file (optional)
     # ---------------------------------------------------------------------
     st.sidebar.header("(Optional) Z-motion Param File")
-    use_zshift = st.sidebar.checkbox("Use Z-motion correction?", value=False)
+    use_zshift = st.sidebar.checkbox("Use Z-motion correction?", value=False, key="zshift_checkbox")
 
     if use_zshift:
         # Let user choose among 3 modes: Reuse, Create from Template, Create from Existing
@@ -300,54 +300,101 @@ def main():
         # clear any previously selected zshift path
         st.session_state["zshift_file_path"] = None
 
-    
+        
     # ---------------------------------------------------------------------
-    # STEP 3: Create the path JSON, referencing the selected files
+    # STEP 3: Create or load the path JSON, referencing the selected files
     # ---------------------------------------------------------------------
+    def list_existing_path_files(paths_dir: Path):
+        """Return all .json files in the paths_dir directory."""
+        if not paths_dir.exists():
+            return []
+        return list(paths_dir.glob("*.json"))
+
+    # Radio to pick path file mode
+    path_file_mode = st.radio(
+        "Path file mode:",
+        ("Load Existing", "Create from Template"),
+        index=1  # default to "Create from Template"
+    )
+
+    # We'll store the loaded or template dictionary here
+    if path_file_mode == "Load Existing":
+        existing_paths_files = list_existing_path_files(paths_dir)
+        if not existing_paths_files:
+            st.warning("No existing path files found. Please create one first.")
+            path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+        else:
+            path_fnames = [p.name for p in existing_paths_files]
+            chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames)
+            
+            chosen_idx = path_fnames.index(chosen_path_fname)
+            chosen_fullpath = existing_paths_files[chosen_idx]
+            
+            # Load the chosen path file into a dict
+            try:
+                with open(chosen_fullpath, "r") as f:
+                    loaded_paths = json.load(f)
+                st.info(f"Loaded existing path file: {chosen_fullpath}")
+                path_data = loaded_paths
+            except Exception as e:
+                st.error(f"Error loading {chosen_fullpath}: {e}")
+                path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+    else:
+        # Use the default path template
+        path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+
+    # --- Now let the user edit each field in the usual text inputs:
     st.subheader("Path File Setup")
-    
-    subject = st.text_input("Subject", value=DEFAULT_PATH_FILE_TEMPLATE.get("subject", ""))
-    date_ = st.text_input("Date", value=datetime.now().strftime("%Y-%m-%d"))
-    exp_type = st.text_input("Experiment type", value=DEFAULT_PATH_FILE_TEMPLATE.get("experiment_type", ""))
-    
-    concat_groups_str = st.text_input("Concatenation groups (comma-separated)", "1,2,3")
-    concat_groups = []
-    if concat_groups_str.strip():
-        try:
-            concat_groups = [int(x.strip()) for x in concat_groups_str.split(",")]
-        except:
-            concat_groups = DEFAULT_PATH_FILE_TEMPLATE.get("concatenation_groups", [])
-    
+
+    subject = st.text_input("Subject", value=path_data.get("subject", ""))
+    date_ = st.text_input("Date", value=path_data.get("date", datetime.now().strftime("%Y%m%d")))
+    exp_type = st.text_input("Experiment type", value=path_data.get("experiment_type", ""))
+
+    # Concatenation groups
+    concat_groups_str = st.text_input(
+        "Concatenation groups (comma-separated)",
+        ",".join(str(x) for x in path_data.get("concatenation_groups", []))
+    )
+    try:
+        concat_groups = [int(x.strip()) for x in concat_groups_str.split(",") if x.strip()]
+    except:
+        concat_groups = path_data.get("concatenation_groups", [])
+
     # Data paths
     data_paths_input = st.text_area(
         "Data paths (one per line)",
-        value="\n".join(DEFAULT_PATH_FILE_TEMPLATE.get("data_paths", []))
+        value="\n".join(path_data.get("data_paths", []))
     )
     data_paths = [line.strip() for line in data_paths_input.split("\n") if line.strip()]
-    
+
     # Export paths
     export_paths_input = st.text_area(
         "Export paths (one per line)",
-        value="\n".join(DEFAULT_PATH_FILE_TEMPLATE.get("export_paths", []))
+        value="\n".join(path_data.get("export_paths", []))
     )
     export_paths = [line.strip() for line in export_paths_input.split("\n") if line.strip()]
-    
-    # Z-stack paths
+
+    # If user wants z-stack
+    # use_zshift_for_paths = st.sidebar.checkbox("Use Z-motion correction?", value=False, key="zshift_paths_checkbox")
     zstack_paths_input = st.text_area(
         "Z-stack paths (one per line)",
-        value="\n".join(DEFAULT_PATH_FILE_TEMPLATE.get("zstack_paths", [])) if use_zshift else ""
+        value="\n".join(path_data.get("zstack_paths", [])) if use_zshift else ""
     )
     zstack_paths = [line.strip() for line in zstack_paths_input.split("\n") if line.strip()]
-    
+
     # Logging
-    default_log_dict = DEFAULT_PATH_FILE_TEMPLATE.get("logging", {"log_path": "", "log_level": "INFO"})
-    log_path = st.text_input("Log path", value=default_log_dict.get("log_path", ""))
+    log_dict = path_data.get("logging", {})
+    log_path = st.text_input("Log path", value=log_dict.get("log_path", ""))
+    possible_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    default_level = log_dict.get("log_level", "INFO")
+    if default_level not in possible_log_levels:
+        default_level = "INFO"
     log_level = st.selectbox(
         "Log level",
-        ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        index=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"].index(default_log_dict.get("log_level", "INFO"))
+        possible_log_levels,
+        index=possible_log_levels.index(default_level)
     )
-    
+
     # Build final path file dictionary
     path_file_dict = {
         "subject": subject,
@@ -364,27 +411,32 @@ def main():
             "log_level": log_level
         }
     }
-    
-    # Insert the selected param file (if any)
+
+    # Fill references to param files from session_state if available
     if st.session_state["main_param_file_path"]:
         path_file_dict["params_files"] = [str(st.session_state["main_param_file_path"])]
-    
-    # Insert the selected zshift file (if any)
     if use_zshift and st.session_state["zshift_file_path"]:
         path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
-    
+
+    # Preview JSON
     st.subheader("Path JSON Preview")
     st.json(path_file_dict)
-    
-    # ---------------------------------------------------------------------
-    # Save or download the path file
-    # ---------------------------------------------------------------------
-    path_json_name = st.text_input("Path JSON filename:", "my_paths.json")
-    
+
+    # --- Suggest a default filename based on subject & date
+    default_filename = f"paths_{subject}_{date_}_run.json" if (subject and date_) else "my_paths.json"
+
+    path_json_name = st.text_input("Path JSON filename:", default_filename)
+
+    # Buttons to download or save
     if st.button("Download Path JSON"):
         data_to_download = json.dumps(path_file_dict, indent=4)
-        st.download_button("Download File", data_to_download, file_name=path_json_name, mime="application/json")
-    
+        st.download_button(
+            "Download File",
+            data_to_download,
+            file_name=path_json_name,
+            mime="application/json"
+        )
+
     if st.button("Save Path JSON Locally"):
         try:
             path_file_path = paths_dir / path_json_name
@@ -394,7 +446,7 @@ def main():
             st.success(f"Saved {path_json_name} locally to {path_file_path}")
         except Exception as e:
             st.error(f"Error saving path JSON: {e}")
-    
+
     # ---------------------------------------------------------------------
     # STEP 4: Run the pipeline
     # ---------------------------------------------------------------------
