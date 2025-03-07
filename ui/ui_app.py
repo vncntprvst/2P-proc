@@ -537,8 +537,8 @@ def main():
         else:
             # Load environment variables from .env file
             load_dotenv(dotenv_path=root_dir / "scripts/utils/.env")
-            # Get the SSH_NODE value
-            remote_host = os.getenv("SSH_NODE")
+            # Get the SSH_LOGIN_NODE value
+            remote_host = os.getenv("SSH_LOGIN_NODE")
             remote_user = get_remote_user(remote_host) 
             remote_pipeline_dir = f"{os.getenv('OM_USER_DIR_ALIAS')}/{remote_user}/code/Analysis_2P"
             remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths"
