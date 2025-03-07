@@ -1,6 +1,8 @@
 import streamlit as st
 import json
 import os
+import sys
+import signal
 import platform
 from pathlib import Path
 import subprocess
@@ -650,9 +652,12 @@ def main():
                     st.error(f"Error running sbatch on cluster: {e}")
 
     # ---------------------------------------------------------------------
-    if st.button("Stop"):
-        Server.get_current().stop()
-        sys.exit(0)
+    if st.button("Stop and Exit"):
+        st.write("Shutting down the app...")
+
+        # Immediately kill our own process
+        os.kill(os.getpid(), signal.SIGTERM)
+        
     
 if __name__ == "__main__":
     main()
