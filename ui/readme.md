@@ -3,7 +3,7 @@ User Interface
 
 ### Installation
 ```bash
-pip install streamlit
+pip install streamlit python-dotenv
 ```
 ### Run the UI
 ```bash
