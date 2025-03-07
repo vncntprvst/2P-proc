@@ -28,8 +28,10 @@ st.markdown("""
 # Setup: directories
 # -------------------------------------------------------------------------
 root_dir = Path(__file__).resolve().parents[1]
-params_dir = root_dir / "Mesmerize" / "parameters"
-paths_dir = root_dir / "Mesmerize" / "paths"
+caiman_pipeline_dir = root_dir / "Mesmerize"
+params_dir = caiman_pipeline_dir / "parameters"
+paths_dir = caiman_pipeline_dir / "paths"
+scripts_dir = root_dir / "scripts"
 
 # -------------------------------------------------------------------------
 # Load default templates
@@ -61,6 +63,36 @@ def list_existing_param_files(param_dir: Path):
             result["zshift"].append(p)
     
     return result
+
+# -------------------------------------------------------------------------
+# Parse run numbers from data paths
+# -------------------------------------------------------------------------
+def parse_run_numbers(data_paths):
+    """
+    Given a list of paths like:
+      "F:/Data2/2P/C57_N1M2/06012023/TSeries-06012023-1002-001"
+    we extract the final dash-separated chunk (e.g. "001"),
+    convert it to an int (1), and return a list like ["run1"].
+
+    e.g. ["run1", "run2", "run3"]
+    """
+    runs = []
+    for dp in data_paths:
+        parts = dp.split("-")
+        if not parts:
+            continue
+
+        last_part = parts[-1]  # e.g. "001"
+        # If there's a trailing slash or extension, you might strip it:
+        # last_part = last_part.rstrip("/").replace(".tif","")
+
+        try:
+            run_num = int(last_part)  # convert "001" -> 1
+            runs.append(f"run{run_num}")
+        except ValueError:
+            # If it's not purely digits, skip or handle differently
+            pass
+    return runs
 
 # -------------------------------------------------------------------------
 # Initialize session state to store selected file paths
@@ -422,39 +454,46 @@ def main():
     st.subheader("Path JSON Preview")
     st.json(path_file_dict)
 
-    # --- Suggest a default filename based on subject & date
-    default_filename = f"paths_{subject}_{date_}_run.json" if (subject and date_) else "my_paths.json"
+    # --- Suggest a default filename based on subject, date and run numbers
+    runs = parse_run_numbers(path_file_dict["data_paths"])
+    if runs:
+        # e.g. 'run1_run2_run3'
+        runs_str = "_".join(runs)
+        default_filename = f"paths_{subject}_{date_}_{runs_str}.json" if (subject and date_) else "my_paths.json"
+    else:
+        # fallback if no runs found
+        default_filename = f"paths_{subject}_{date_}_run.json" if (subject and date_) else "my_paths.json"
 
     path_json_name = st.text_input("Path JSON filename:", default_filename)
 
-    # Buttons to download or save
-    if st.button("Download Path JSON"):
-        data_to_download = json.dumps(path_file_dict, indent=4)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Save Path JSON"):
+            try:
+                path_file_path = paths_dir / path_json_name
+                paths_dir.mkdir(parents=True, exist_ok=True)
+                with open(path_file_path, "w") as f:
+                    json.dump(path_file_dict, f, indent=4)
+                st.success(f"Saved {path_json_name} locally to {path_file_path}")
+            except Exception as e:
+                st.error(f"Error saving path JSON: {e}")
+    with col2:
         st.download_button(
-            "Download File",
-            data_to_download,
+            label="Download Path JSON",
+            data=json.dumps(path_file_dict, indent=4),
             file_name=path_json_name,
             mime="application/json"
         )
-
-    if st.button("Save Path JSON Locally"):
-        try:
-            path_file_path = paths_dir / path_json_name
-            paths_dir.mkdir(parents=True, exist_ok=True)
-            with open(path_file_path, "w") as f:
-                json.dump(path_file_dict, f, indent=4)
-            st.success(f"Saved {path_json_name} locally to {path_file_path}")
-        except Exception as e:
-            st.error(f"Error saving path JSON: {e}")
-
+        
     # ---------------------------------------------------------------------
     # STEP 4: Run the pipeline
     # ---------------------------------------------------------------------
-    st.subheader("Run the Pipeline (Optional)")
+    st.subheader("Run the Pipeline")
     st.write("This will call `batch_mcorr_cnmf.py <path_file>` in your current environment.")
     
     if st.button("Run Pipeline Now"):
-        cmd = ["python", "batch_mcorr_cnmf.py", path_json_name]
+        cmd = ["python", f"{caiman_pipeline_dir}/batch_mcorr_cnmf.py", path_json_name]
         st.write(f"Running command: {' '.join(cmd)}")
         try:
             completed_proc = subprocess.run(cmd, capture_output=True, text=True)
