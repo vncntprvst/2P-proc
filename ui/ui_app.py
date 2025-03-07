@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 from dotenv import load_dotenv
 from datetime import datetime 
+from streamlit.web.server.server import Server
 
 st.set_page_config(layout="wide")
 
@@ -648,5 +649,10 @@ def main():
                 except Exception as e:
                     st.error(f"Error running sbatch on cluster: {e}")
 
+    # ---------------------------------------------------------------------
+    if st.button("Stop"):
+        Server.get_current().stop()
+        sys.exit(0)
+    
 if __name__ == "__main__":
     main()
