@@ -17,3 +17,11 @@ The `SSH_TRANSFER_NODE` and `SSH_LOGIN_NODE` are the `.ssh/config` aliases for t
 cd ui
 streamlit run ui_app.py
 ```
+Or use the executable script. 
+
+To build the executable script, run:
+```bash
+pip install pyinstaller
+cd ui
+pyinstaller --onefile run_ui.py
+```
