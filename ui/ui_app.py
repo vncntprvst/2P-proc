@@ -22,7 +22,7 @@ st.markdown("""
     }
     /* Make text bigger on tab labels */
     [data-testid="stTab"] div[data-testid="stMarkdownContainer"] p {
-        font-size: 24px !important;
+        font-size: 20px !important;
     }
     .block-container {
         padding-top: 1rem !important;
@@ -143,9 +143,9 @@ def main():
     init_session_state()
     
     st.title("Analysis 2P: motion correction and CNMF")
-    st.write("1. Create or re-use the parameter file(s) on the left sidebar.")
-    st.write("2. Fill in the fields below to create a paths JSON file.")
-    st.write("3. Run the pipeline.")
+    st.write("1. and 2. Create or re-use the parameter file(s).")
+    st.write("3. Create a paths JSON file.")
+    st.write("4. Run the pipeline.")
 
     # Gather existing param files from the folder
     existing_params = list_existing_param_files(params_dir)
@@ -153,73 +153,27 @@ def main():
     existing_zshift = existing_params["zshift"]
     
     # ---------------------------------------------------------------------
-    # STEP 1: Create or reuse the MAIN param file
-    # ---------------------------------------------------------------------
-    st.sidebar.header("CaImAn Parameter File", help="[CaImAn Parameters](https://caiman.readthedocs.io/en/latest/Getting_Started.html#parameters)")
-    param_mode = st.sidebar.radio(
-        "CaImAn param file mode:",
-        ("Reuse Existing", "Create from Existing")
-    )
 
-    if param_mode == "Reuse Existing":
-        # User simply picks one of the existing param files (no editing)
-        if not existing_main:
-            st.sidebar.warning("No existing main param files found. Please create one first.")
-        else:
-            main_fnames = [p.name for p in existing_main]
-            chosen_main_fname = st.sidebar.selectbox(
-                "Select an existing main param file:",
-                main_fnames
-            )
-            st.sidebar.write(f"Chosen file: {chosen_main_fname}")
-            
-            chosen_idx = main_fnames.index(chosen_main_fname)
-            chosen_fullpath = existing_main[chosen_idx]
-            
-            # Store selection in session state for use in the path preview
-            st.session_state["main_param_file_path"] = chosen_fullpath
-
-    # elif param_mode == "Create from Template":
-    #     # User starts with a default template (DEFAULT_MAIN_PARAM_TEMPLATE), can edit text
-    #     main_param_text = st.sidebar.text_area(
-    #         "Edit main param JSON if you wish:",
-    #         value=json.dumps(DEFAULT_MAIN_PARAM_TEMPLATE, indent=4),
-    #         height=300
-    #     )
-    #     main_param_filename = st.sidebar.text_input(
-    #         "Filename (e.g. 'params_GC8m_25x_zoom1_610pi.json'):",
-    #         "params_GC8m_25x_zoom1_610pi.json"
-    #     )
+    tab1, tab2, tab3, tab4 = st.tabs(["Caiman parameters file", "Z-motion parameter file", "Path File", "Run the pipeline"])
+    
+    with tab1:
+        # ---------------------------------------------------------------------
+        # STEP 1: Create or reuse the MAIN param file
+        # ---------------------------------------------------------------------
+        st.write("The corresponding field in the Path file will be auto-filled with the selected (or created) caiman parameter file.")
         
-    #     if st.sidebar.button("Save Main Param File"):
-    #         try:
-    #             main_param_content = json.loads(main_param_text)
-    #             fullpath = params_dir / main_param_filename
-    #             params_dir.mkdir(parents=True, exist_ok=True)
-                
-    #             # Write the new file
-    #             with open(fullpath, "w") as f:
-    #                 json.dump(main_param_content, f, indent=4)
-                
-    #             # Store path in session state
-    #             st.session_state["main_param_file_path"] = fullpath
-    #             st.sidebar.success(f"Saved main param file to {fullpath}")
-    #         except Exception as e:
-    #             st.sidebar.error(f"Error saving param file: {e}")
-
-    else:  # param_mode == "Create from Existing"
-        # User picks an existing file, can then edit it, and save as a new file
         if not existing_main:
-            st.sidebar.warning("No existing parameter files found. Please create one first.")
+            st.warning("No existing parameter files found. Please create one first.")
         else:
             main_fnames = [p.name for p in existing_main]
-            chosen_main_fname = st.sidebar.selectbox(
-                "Select an existing main param file to copy/edit:",
+            chosen_main_fname = st.selectbox(
+                "Select an existing caiman parameter file:",
                 main_fnames
             )
             
             chosen_idx = main_fnames.index(chosen_main_fname)
             chosen_fullpath = existing_main[chosen_idx]
+            st.session_state["main_param_file_path"] = chosen_fullpath
             
             # Load the chosen file’s contents for editing
             try:
@@ -229,19 +183,23 @@ def main():
             except Exception as e:
                 default_text = f"Error reading file: {e}"
             
-            main_param_text = st.sidebar.text_area(
-                "Edit the JSON below as needed:",
+            main_param_text = st.text_area(
+                "Edit the parameters as needed. A new file can be saved below.",
                 value=default_text,
                 height=300
             )
             
             # Let the user specify a new filename
-            main_param_filename = st.sidebar.text_input(
-                "Save as new filename:",
-                f"copy_of_{chosen_fullpath.name}"
+            main_param_filename = st.text_input(
+                "Save as new file parameter file (name must start with params_):",
+                f"{chosen_fullpath.name}"
             )
             
-            if st.sidebar.button("Save Copy of Main Param File"):
+            # Validate the filename
+            if not main_param_filename.startswith("params_"):
+                st.error("Filename must start with 'params_'")
+            
+            if st.button("Save New Caiman Parameter File"):
                 try:
                     new_content = json.loads(main_param_text)
                     new_path = params_dir / main_param_filename
@@ -251,79 +209,32 @@ def main():
                         json.dump(new_content, f, indent=4)
                     
                     st.session_state["main_param_file_path"] = new_path
-                    st.sidebar.success(f"Saved new main param file to {new_path}")
+                    st.success(f"Saved new main param file to {new_path}")
                 except Exception as e:
-                    st.sidebar.error(f"Error saving param file: {e}")
+                    st.error(f"Error saving param file: {e}")
 
-    
-    # ---------------------------------------------------------------------
-    # STEP 2: Create or reuse the Z-shift param file (optional)
-    # ---------------------------------------------------------------------
-    st.sidebar.header("(Optional) Z-motion Parameter File")
-    use_zshift = st.sidebar.checkbox("Use Z-motion correction?", value=False, key="zshift_checkbox")
+    with tab2:
+        # ---------------------------------------------------------------------
+        # STEP 2: Create or reuse the Z-shift param file (optional)
+        # ---------------------------------------------------------------------
+        # st.sidebar.header("(Optional) Z-motion Parameter File")
+        use_zshift = st.checkbox("Use Z-motion correction?", value=False, key="zshift_checkbox")
 
-    if use_zshift:
-        # Let user choose among 3 modes: Reuse, Create from Template, Create from Existing
-        zshift_mode = st.sidebar.radio(
-            "Z-shift parameter file mode:",
-            ("Reuse Existing", "Create from Existing")
-        )
-        
-        if zshift_mode == "Reuse Existing":
-            # User picks a file from existing_zshift (no editing).
-            if not existing_zshift:
-                st.sidebar.warning("No existing z-shift param files found. Please create one first.")
-            else:
-                zshift_fnames = [p.name for p in existing_zshift]
-                chosen_zshift_fname = st.sidebar.selectbox(
-                    "Select an existing Z-shift param file:",
-                    zshift_fnames
-                )
-                st.sidebar.write(f"Chosen file: {chosen_zshift_fname}")
-                
-                chosen_idx = zshift_fnames.index(chosen_zshift_fname)
-                chosen_fullpath = existing_zshift[chosen_idx]
-                st.session_state["zshift_file_path"] = chosen_fullpath
-        
-        # elif zshift_mode == "Create from Template":
-        #     # Start from DEFAULT_ZSHIFT_PARAM_TEMPLATE
-        #     zshift_text = st.sidebar.text_area(
-        #         "Edit Z-shift param JSON if desired:",
-        #         value=json.dumps(DEFAULT_ZSHIFT_PARAM_TEMPLATE, indent=4),
-        #         height=300
-        #     )
-        #     zshift_filename = st.sidebar.text_input(
-        #         "Z-shift param filename (e.g. 'params_zshift_C57_N1M2.json'):",
-        #         "params_zshift_C57_N1M2.json"
-        #     )
+        if use_zshift:            
+            st.write("The corresponding field in the Path file will be auto-filled with the selected (or created) Z-shift param file.")
             
-        #     if st.sidebar.button("Save Z-shift Param File"):
-        #         try:
-        #             zshift_content = json.loads(zshift_text)
-        #             fullpath = params_dir / zshift_filename
-        #             params_dir.mkdir(parents=True, exist_ok=True)
-                    
-        #             with open(fullpath, "w") as f:
-        #                 json.dump(zshift_content, f, indent=4)
-                    
-        #             st.session_state["zshift_file_path"] = fullpath
-        #             st.sidebar.success(f"Saved Z-shift param file to {fullpath}")
-        #         except Exception as e:
-        #             st.sidebar.error(f"Error saving z-shift param file: {e}")
-        
-        else:  # zshift_mode == "Create from Existing"
-            # Let the user pick an existing Z-shift file, copy/edit it, then save under a new name
             if not existing_zshift:
-                st.sidebar.warning("No existing z-shift param files found. Please create one first.")
+                st.warning("No existing z-shift param files found. Please create one first.")
             else:
                 zshift_fnames = [p.name for p in existing_zshift]
-                chosen_zshift_fname = st.sidebar.selectbox(
-                    "Select an existing Z-shift param file to copy/edit:",
+                chosen_zshift_fname = st.selectbox(
+                    "Select an existing Z-shift parameter file",
                     zshift_fnames
                 )
                 
                 chosen_idx = zshift_fnames.index(chosen_zshift_fname)
                 chosen_fullpath = existing_zshift[chosen_idx]
+                st.session_state["main_param_file_path"] = chosen_fullpath
                 
                 # Load the chosen file contents
                 try:
@@ -333,19 +244,22 @@ def main():
                 except Exception as e:
                     default_text = f"Error reading file: {e}"
                 
-                zshift_text = st.sidebar.text_area(
-                    "Edit the JSON below as needed:",
+                zshift_text = st.text_area(
+                    "Edit the parameters as needed. A new file can be saved below.",
                     value=default_text,
                     height=300
                 )
                 
                 # Let the user specify a new filename
-                zshift_filename = st.sidebar.text_input(
-                    "Save as new filename:",
+                zshift_filename = st.text_input(
+                    "Save as new file z-shift parameter file (name must start with params_zshift):",
                     f"copy_of_{chosen_fullpath.name}"
                 )
+                # Validate the filename
+                if not main_param_filename.startswith("params_zshift"):
+                    st.error("Filename must start with 'params_zshift'")
                 
-                if st.sidebar.button("Save Copy of Z-shift Param File"):
+                if st.button("Save New Z-shift Parameter File"):
                     try:
                         new_content = json.loads(zshift_text)
                         new_path = params_dir / zshift_filename
@@ -355,23 +269,19 @@ def main():
                             json.dump(new_content, f, indent=4)
                         
                         st.session_state["zshift_file_path"] = new_path
-                        st.sidebar.success(f"Saved new Z-shift param file to {new_path}")
+                        st.success(f"Saved new Z-shift param file to {new_path}")
                     except Exception as e:
-                        st.sidebar.error(f"Error saving param file: {e}")
+                        st.error(f"Error saving param file: {e}")
 
-    else:
-        # If the user unchecks "Use Z-motion correction?" 
-        # clear any previously selected zshift path
-        st.session_state["zshift_file_path"] = None
-
-    # ---------------------------------------------------------------------
-
-    tab1, tab2 = st.tabs(["Paths File", "Run the pipeline"])
+        else:
+            # If the user unchecks "Use Z-motion correction?" 
+            # clear any previously selected zshift path
+            st.session_state["zshift_file_path"] = None
 
     # ---------------------------------------------------------------------
     # STEP 3: Create or load the path JSON, referencing the selected files
     # ---------------------------------------------------------------------
-    with tab1:
+    with tab3:
         # st.header("Path File Setup", divider=True)
         # Radio to pick path file mode
         path_file_mode = st.radio(
@@ -518,7 +428,7 @@ def main():
     # ---------------------------------------------------------------------
     # STEP 4: Run the pipeline
     # ---------------------------------------------------------------------
-    with tab2:
+    with tab4:
         # st.header("Run the Pipeline", divider=True)
 
         # st.write("The pipeline can be run locally or on the Openmind cluster.")
