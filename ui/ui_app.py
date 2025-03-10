@@ -192,6 +192,8 @@ def main():
                 paths_dir = caiman_pipeline_dir / "paths" / "openmind"
             else:
                 paths_dir = caiman_pipeline_dir / "paths" 
+            with open(paths_dir / "paths_template.json", "r") as f:
+                DEFAULT_PATH_FILE_TEMPLATE = json.load(f)
         
         with run_col2:
             if run_method == "Run on Openmind":
@@ -213,6 +215,11 @@ def main():
                         set_key(str(env_path), "OM_CODE_DIR", new_remote_pipeline_dir)
                         set_key(str(env_path), "OM_SCRATCH_DIR", new_remote_scratch)
                         st.success("Settings updated!")
+                        
+                    # Set the environment variables remote_paths_dir and remote_params_dir
+                    remote_params_dir = f"{new_remote_pipeline_dir}/parameters"
+                    remote_paths_dir = f"{new_remote_pipeline_dir}/paths"
+
             else:
                 # When "Run locally" is selected, show a disabled settings button
                 st.button("Edit Openmind Settings", use_container_width=True, disabled=True)
@@ -264,7 +271,7 @@ def main():
                 default_text = f"Error reading file: {e}"
                 
             main_param_text = st.text_area(
-                "Edit the parameters as needed. A new file can be saved below.",
+                "Edit the parameters as needed, then save the file below if you made any change.",
                 value=default_text,
                 height=500
             )
@@ -507,12 +514,23 @@ def main():
             }
         }
 
-        # Fill references to param files from session_state if available
-        if st.session_state["caiman_param_file_path"]:
-            path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
-        if use_zshift and st.session_state["zshift_file_path"]:
-            path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
-     
+        # Fill references to param files from session_state if available     
+        if st.session_state.get("caiman_param_file_path"):
+            if run_method == "Run on Openmind":
+                file_name = Path(st.session_state["caiman_param_file_path"]).name
+                remote_file_path = os.path.join(remote_params_dir, file_name)
+                path_file_dict["params_files"] = [remote_file_path]
+            else:
+                path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
+
+        if use_zshift and st.session_state.get("zshift_file_path"):
+            if run_method == "Run on Openmind":
+                file_name = Path(st.session_state["zshift_file_path"]).name
+                remote_file_path = os.path.join(remote_params_dir, file_name)
+                path_file_dict["z_params_files"] = [remote_file_path]
+            else:
+                path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
+        
     # --- Display the current state of the path file
     # Preview JSON
     st.sidebar.subheader("Path File Preview") #divider=True)
@@ -579,7 +597,16 @@ def main():
             # 2.1 Copy the path JSON to cluster
             # 2.2 Copy param files if needed
             # 2.3 SSH and run sbatch
-
+            
+            # Load environment variables from .env file
+            load_dotenv(dotenv_path=root_dir / "ui" / ".env")
+            # Get the SSH_LOGIN_NODE value
+            remote_host = os.getenv("SSH_LOGIN_NODE")
+            # remote_user = get_remote_user(remote_host) 
+            remote_pipeline_dir = os.getenv("OM_CODE_DIR")
+            remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths"
+            remote_params_dir = f"{remote_pipeline_dir}/Mesmerize/parameters"
+            
             # We should have a local path to the paths JSON at this point, but check anyway:
             local_path_json = paths_dir / path_json_name
             if not local_path_json.exists():
