@@ -6,27 +6,36 @@ import signal
 import platform
 from pathlib import Path
 import subprocess
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values, set_key
 from datetime import datetime 
 from streamlit.web.server.server import Server
 
 st.set_page_config(layout="wide")
 
-st.markdown("""
+st.markdown(
+    """
     <style>
+    /* Set the main container margins */
+    .block-container {
+        padding-top: 1rem !important;
+        margin-top: 1rem !important;
+    }
     [data-testid="stSidebar"] {
-        resize: horizontal;        /* Make it resizable */
-        overflow: auto;           /* Needed for the resize handle to show */
+        resize: horizontal;
+        overflow: auto;
         min-width: 30% !important;
         max-width: 50% !important;
     }
     /* Make text bigger on tab labels */
     [data-testid="stTab"] div[data-testid="stMarkdownContainer"] p {
-        font-size: 20px !important;
+        font-size: 18px !important;
     }
-    .block-container {
-        padding-top: 1rem !important;
-        margin-top: 1rem !important;
+    .st-key-intro {
+        background-color: #3ab7824c !important;
+        padding: 1rem !important;
+        border-radius: 15px !important;
+        border: 2px solid #ccc !important;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.3) !important;
     }
     </style>
     """,
@@ -107,11 +116,28 @@ def parse_run_numbers(data_paths):
 # Initialize session state to store selected file paths
 # -------------------------------------------------------------------------
 def init_session_state():
-    if "main_param_file_path" not in st.session_state:
-        st.session_state["main_param_file_path"] = None
+    if "caiman_param_file_path" not in st.session_state:
+        st.session_state["caiman_param_file_path"] = None
     if "zshift_file_path" not in st.session_state:
         st.session_state["zshift_file_path"] = None
-
+    if "show_settings_modal" not in st.session_state:
+        st.session_state["show_settings_modal"] = True
+    # Load the .env file from ui/.env
+    env_path = root_dir / "ui" / ".env"
+    # If it doesn't exist, create it base on template.env
+    if not env_path.exists():
+        template_path = root_dir / "ui" / "template.env"
+        with open(template_path, "r") as template_file:
+            template_content = template_file.read()
+        with open(env_path, "w") as env_file:
+            env_file.write(template_content)
+    load_dotenv(dotenv_path=env_path)
+    # Save individual environment variables in session state so they can be updated
+    st.session_state["remote_host"] = os.getenv("SSH_LOGIN_NODE")
+    st.session_state["nese_user_dir"] = os.getenv("NESE_USER_DIR")
+    st.session_state["remote_pipeline_dir"] = os.getenv("OM_CODE_DIR")
+    st.session_state["remote_scratch"] = os.getenv("OM_SCRATCH_DIR")
+    
 # -------------------------------------------------------------------------
 # List existing path files
 # -------------------------------------------------------------------------
@@ -142,23 +168,61 @@ def main():
 
     init_session_state()
     
-    st.title("Analysis 2P: motion correction and CNMF")
-    st.write("1. and 2. Create or re-use the parameter file(s).")
-    st.write("3. Create a paths JSON file.")
-    st.write("4. Run the pipeline.")
-
+    # st.title("Analysis 2P: motion correction and CNMF")
+    st.header("Analysis 2P: motion correction and CNMF", divider="green")
+    # st.write("1. and 2. Create or re-use the parameter file(s).")
+    # st.write("3. Create a paths JSON file.")
+    # st.write("4. Run the pipeline.")
+    with st.container(key="intro"):
+        run_col1, run_col2 = st.columns(2, vertical_alignment="bottom")
+        
+        with run_col1:
+            run_method = st.radio(
+                "Select run method:",
+                options=["Run on Openmind", "Run locally"],
+                index=0  # default is "Run on Openmind"
+            )
+            if run_method == "Run on Openmind":
+                paths_dir = caiman_pipeline_dir / "paths" / "openmind"
+            else:
+                paths_dir = caiman_pipeline_dir / "paths" 
+        
+        with run_col2:
+            if run_method == "Run on Openmind":
+                with st.popover("Edit Openmind Settings", use_container_width=True):
+                    # Read the current .env values (from ui/.env)
+                    env_path = root_dir / "ui" / ".env"
+                    env_values = dotenv_values(env_path)
+                    
+                    # Create input fields for each variable
+                    new_remote_host = st.text_input("The SSH login alias (e.g., om7)", value=env_values.get("SSH_LOGIN_NODE", ""))
+                    new_remote_pipeline_dir = st.text_input("The remote code directory (e.g., <om_user_dir>/code/Analysis_2P)  ", value=env_values.get("OM_CODE_DIR", ""))
+                    new_remote_scratch = st.text_input("The root data processing directory (e.g., <scratch space>/MyName) ", value=env_values.get("OM_SCRATCH_DIR", ""))
+                    new_nese_user_dir = st.text_input("[optional] Your data directory on NESE (e.g., <nese_lab_dir>/MyName)", value=env_values.get("NESE_USER_DIR", ""))
+                    
+                    # A button to save the updates
+                    if st.button("Save Settings"):
+                        set_key(str(env_path), "SSH_LOGIN_NODE", new_remote_host)
+                        set_key(str(env_path), "NESE_USER_DIR", new_nese_user_dir)
+                        set_key(str(env_path), "OM_CODE_DIR", new_remote_pipeline_dir)
+                        set_key(str(env_path), "OM_SCRATCH_DIR", new_remote_scratch)
+                        st.success("Settings updated!")
+            else:
+                # When "Run locally" is selected, show a disabled settings button
+                st.button("Edit Openmind Settings", use_container_width=True, disabled=True)
+        
     # Gather existing param files from the folder
     existing_params = list_existing_param_files(params_dir)
     existing_main = existing_params["main"]   # list[Path]
     existing_zshift = existing_params["zshift"]
-    
+        
     # ---------------------------------------------------------------------
 
     tab1, tab2, tab3, tab4 = st.tabs(["Caiman parameters file", "Z-motion parameter file", "Path File", "Run the pipeline"])
     
     with tab1:
         # ---------------------------------------------------------------------
-        # STEP 1: Create or reuse the MAIN param file
+        # STEP 1: Create or reuse the CaImAn param file
         # ---------------------------------------------------------------------
         st.write("The corresponding field in the Path file will be auto-filled with the selected (or created) caiman parameter file.")
         
@@ -167,13 +231,14 @@ def main():
         else:
             main_fnames = [p.name for p in existing_main]
             chosen_main_fname = st.selectbox(
-                "Select an existing caiman parameter file:",
-                main_fnames
+                "Select an existing CaImAn parameter file:",
+                main_fnames,
+                index=main_fnames.index("params_mcorr_cnmf_template.json") if "params_mcorr_cnmf_template.json" in main_fnames else 0
             )
             
             chosen_idx = main_fnames.index(chosen_main_fname)
             chosen_fullpath = existing_main[chosen_idx]
-            st.session_state["main_param_file_path"] = chosen_fullpath
+            st.session_state["caiman_param_file_path"] = chosen_fullpath
             
             # Load the chosen file’s contents for editing
             try:
@@ -199,7 +264,7 @@ def main():
             if not main_param_filename.startswith("params_"):
                 st.error("Filename must start with 'params_'")
             
-            if st.button("Save New Caiman Parameter File"):
+            if st.button("Save New CaImAn Parameter File"):
                 try:
                     new_content = json.loads(main_param_text)
                     new_path = params_dir / main_param_filename
@@ -208,8 +273,8 @@ def main():
                     with open(new_path, "w") as f:
                         json.dump(new_content, f, indent=4)
                     
-                    st.session_state["main_param_file_path"] = new_path
-                    st.success(f"Saved new main param file to {new_path}")
+                    st.session_state["caiman_param_file_path"] = new_path
+                    st.success(f"Saved new CaImAn param file to {new_path}")
                 except Exception as e:
                     st.error(f"Error saving param file: {e}")
 
@@ -217,7 +282,6 @@ def main():
         # ---------------------------------------------------------------------
         # STEP 2: Create or reuse the Z-shift param file (optional)
         # ---------------------------------------------------------------------
-        # st.sidebar.header("(Optional) Z-motion Parameter File")
         use_zshift = st.checkbox("Use Z-motion correction?", value=False, key="zshift_checkbox")
 
         if use_zshift:            
@@ -229,12 +293,13 @@ def main():
                 zshift_fnames = [p.name for p in existing_zshift]
                 chosen_zshift_fname = st.selectbox(
                     "Select an existing Z-shift parameter file",
-                    zshift_fnames
+                    zshift_fnames,
+                    index=zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
                 )
                 
                 chosen_idx = zshift_fnames.index(chosen_zshift_fname)
                 chosen_fullpath = existing_zshift[chosen_idx]
-                st.session_state["main_param_file_path"] = chosen_fullpath
+                st.session_state["zshift_file_path"] = chosen_fullpath
                 
                 # Load the chosen file contents
                 try:
@@ -253,10 +318,10 @@ def main():
                 # Let the user specify a new filename
                 zshift_filename = st.text_input(
                     "Save as new file z-shift parameter file (name must start with params_zshift):",
-                    f"copy_of_{chosen_fullpath.name}"
+                    f"{chosen_fullpath.name}"
                 )
                 # Validate the filename
-                if not main_param_filename.startswith("params_zshift"):
+                if not zshift_filename.startswith("params_zshift"):
                     st.error("Filename must start with 'params_zshift'")
                 
                 if st.button("Save New Z-shift Parameter File"):
@@ -298,7 +363,7 @@ def main():
                 path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
             else:
                 path_fnames = [p.name for p in existing_paths_files]
-                chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames)
+                chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames, index=path_fnames.index("paths_template.json") if "paths_template.json" in path_fnames else 0)
                 
                 chosen_idx = path_fnames.index(chosen_path_fname)
                 chosen_fullpath = existing_paths_files[chosen_idx]
@@ -384,47 +449,48 @@ def main():
         }
 
         # Fill references to param files from session_state if available
-        if st.session_state["main_param_file_path"]:
-            path_file_dict["params_files"] = [str(st.session_state["main_param_file_path"])]
+        if st.session_state["caiman_param_file_path"]:
+            path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
         if use_zshift and st.session_state["zshift_file_path"]:
             path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
+     
+    # --- Display the current state of the path file
+    # Preview JSON
+    st.sidebar.subheader("Path JSON Preview") #divider=True)
+    st.sidebar.json(path_file_dict)
 
-        # Preview JSON
-        st.subheader("Path JSON Preview", divider=True)
-        st.json(path_file_dict)
+    # --- Suggest a default filename based on subject, date and run numbers
+    runs = parse_run_numbers(path_file_dict["data_paths"])
+    if runs:
+        # e.g. 'run1_run2_run3'
+        runs_str = "_".join(runs)
+        default_filename = f"paths_{subject}_{date_}_{runs_str}.json" if (subject and date_) else "my_paths.json"
+    else:
+        # fallback if no runs found
+        default_filename = f"paths_{subject}_{date_}_run.json" if (subject and date_) else "my_paths.json"
 
-        # --- Suggest a default filename based on subject, date and run numbers
-        runs = parse_run_numbers(path_file_dict["data_paths"])
-        if runs:
-            # e.g. 'run1_run2_run3'
-            runs_str = "_".join(runs)
-            default_filename = f"paths_{subject}_{date_}_{runs_str}.json" if (subject and date_) else "my_paths.json"
-        else:
-            # fallback if no runs found
-            default_filename = f"paths_{subject}_{date_}_run.json" if (subject and date_) else "my_paths.json"
+    path_json_name = st.sidebar.text_input("Path JSON filename:", default_filename)
 
-        path_json_name = st.text_input("Path JSON filename:", default_filename)
+    col1, col2 = st.sidebar.columns(2)
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("Save Path JSON"):
-                try:
-                    path_file_path = paths_dir / path_json_name
-                    paths_dir.mkdir(parents=True, exist_ok=True)
-                    with open(path_file_path, "w") as f:
-                        json.dump(path_file_dict, f, indent=4)
-                    st.success(f"Saved {path_json_name} locally to {path_file_path}")
-                except Exception as e:
-                    st.error(f"Error saving path JSON: {e}")
-        with col2:
-            st.download_button(
-                label="Download Path JSON",
-                data=json.dumps(path_file_dict, indent=4),
-                file_name=path_json_name,
-                mime="application/json"
-            )
-            
+    with col1:
+        if st.sidebar.button("Save Path JSON"):
+            try:
+                path_file_path = paths_dir / path_json_name
+                paths_dir.mkdir(parents=True, exist_ok=True)
+                with open(path_file_path, "w") as f:
+                    json.dump(path_file_dict, f, indent=4)
+                st.sidebar.success(f"Saved {path_json_name} locally to {path_file_path}")
+            except Exception as e:
+                st.sidebar.error(f"Error saving path JSON: {e}")
+    with col2:
+        st.sidebar.download_button(
+            label="Download Path JSON",
+            data=json.dumps(path_file_dict, indent=4),
+            file_name=path_json_name,
+            mime="application/json"
+        )  
+          
     # ---------------------------------------------------------------------
     # STEP 4: Run the pipeline
     # ---------------------------------------------------------------------
@@ -459,14 +525,6 @@ def main():
             if not local_path_json.exists():
                 st.error(f"Path JSON does not exist locally: {local_path_json}")
             else:
-                # Load environment variables from .env file
-                load_dotenv(dotenv_path=root_dir / "scripts/utils/.env")
-                # Get the SSH_LOGIN_NODE value
-                remote_host = os.getenv("SSH_LOGIN_NODE")
-                remote_user = get_remote_user(remote_host) 
-                remote_pipeline_dir = f"{os.getenv('OM_USER_DIR_ALIAS')}/{remote_user}/code/Analysis_2P"
-                remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths"
-                remote_params_dir = f"{remote_pipeline_dir}/Mesmerize/parameters"
                 
                 # Create remote directories if they do not exist
                 ssh_mkdir_cmd = [
@@ -505,8 +563,8 @@ def main():
                     st.stop()
 
                 # 2. scp the param files similarly (only if these exist on the local machine)
-                if st.session_state["main_param_file_path"]:
-                    local_param = Path(st.session_state["main_param_file_path"])
+                if st.session_state["caiman_param_file_path"]:
+                    local_param = Path(st.session_state["caiman_param_file_path"])
                     if local_param.exists():
                         scp_params_cmd = [
                             "scp",
