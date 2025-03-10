@@ -18,7 +18,7 @@ st.markdown(
     /* Set the main container margins */
     .block-container {
         padding-top: 1rem !important;
-        margin-top: 1rem !important;
+        margin-top: 2rem !important;
     }
     [data-testid="stSidebar"] {
         resize: horizontal;
@@ -168,8 +168,14 @@ def main():
 
     init_session_state()
     
-    # st.title("Analysis 2P: motion correction and CNMF")
-    st.header("Analysis 2P: motion correction and CNMF", divider="green")
+    topcol1, topcol2 = st.columns([3, 1])
+    with topcol1:
+        st.header("Analysis 2P: motion correction and CNMF") #, divider="green")
+    with topcol2:        
+        experimenter = st.text_input("Experimenter", os.getenv("EXPERIMENTER"))
+        os.environ["EXPERIMENTER"] = experimenter
+        set_key(str(root_dir / "ui" / ".env"), "EXPERIMENTER", experimenter)
+        
     # st.write("1. and 2. Create or re-use the parameter file(s).")
     # st.write("3. Create a paths JSON file.")
     # st.write("4. Run the pipeline.")
@@ -218,13 +224,13 @@ def main():
         
     # ---------------------------------------------------------------------
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Caiman parameters file", "Z-motion parameter file", "Path File", "Run the pipeline"])
+    tab1, tab2, tab3, tab4 = st.tabs(["1\. Caiman parameter file", "2\. [Optional] z-motion parameter file", "3\. Path File", "4\. Run the pipeline"])
     
     with tab1:
         # ---------------------------------------------------------------------
         # STEP 1: Create or reuse the CaImAn param file
         # ---------------------------------------------------------------------
-        st.write("The corresponding field in the Path file will be auto-filled with the selected (or created) caiman parameter file.")
+        # st.write("The corresponding fields in the Path file will be auto-filled with the selected (or created) caiman parameter file.")
         
         if not existing_main:
             st.warning("No existing parameter files found. Please create one first.")
@@ -244,14 +250,23 @@ def main():
             try:
                 with open(chosen_fullpath, "r") as f:
                     chosen_file_content = json.load(f)
+                    
+                # Ensure there's a "notes" section
+                if "notes" not in chosen_file_content:
+                    chosen_file_content["notes"] = {}
+                
+                # Update the notes section:
+                chosen_file_content["notes"]["author"] = experimenter  # experimenter set at the top of the page
+                chosen_file_content["notes"]["date"] = datetime.now().strftime("%Y-%m-%d")
+                
                 default_text = json.dumps(chosen_file_content, indent=4)
             except Exception as e:
                 default_text = f"Error reading file: {e}"
-            
+                
             main_param_text = st.text_area(
                 "Edit the parameters as needed. A new file can be saved below.",
                 value=default_text,
-                height=300
+                height=500
             )
             
             # Let the user specify a new filename
@@ -268,15 +283,37 @@ def main():
                 try:
                     new_content = json.loads(main_param_text)
                     new_path = params_dir / main_param_filename
-                    params_dir.mkdir(parents=True, exist_ok=True)
                     
-                    with open(new_path, "w") as f:
-                        json.dump(new_content, f, indent=4)
+                    # Save content and path in session state so it persists
+                    st.session_state.new_content = new_content
+                    st.session_state.new_path = new_path
                     
-                    st.session_state["caiman_param_file_path"] = new_path
-                    st.success(f"Saved new CaImAn param file to {new_path}")
+                    if new_path.exists():
+                        st.session_state.pending_overwrite = True
+                        st.warning("File already exists. Click 'Confirm Overwrite' to proceed.")
+                    else:
+                        st.session_state.pending_overwrite = False
+                        params_dir.mkdir(parents=True, exist_ok=True)
+                        with open(new_path, "w") as f:
+                            json.dump(new_content, f, indent=4)
+                        st.session_state["caiman_param_file_path"] = new_path
+                        st.success(f"Saved new CaImAn param file to {new_path}")
                 except Exception as e:
                     st.error(f"Error saving param file: {e}")
+
+            if st.session_state.get("pending_overwrite", False):
+                if st.button("Confirm Overwrite"):
+                    try:
+                        new_content = st.session_state.new_content
+                        new_path = st.session_state.new_path
+                        params_dir.mkdir(parents=True, exist_ok=True)
+                        with open(new_path, "w") as f:
+                            json.dump(new_content, f, indent=4)
+                        st.session_state["caiman_param_file_path"] = new_path
+                        st.success(f"Overwritten file at {new_path}")
+                        st.session_state.pending_overwrite = False  # Reset the flag
+                    except Exception as e:
+                        st.error(f"Error overwriting file: {e}")
 
     with tab2:
         # ---------------------------------------------------------------------
@@ -312,7 +349,7 @@ def main():
                 zshift_text = st.text_area(
                     "Edit the parameters as needed. A new file can be saved below.",
                     value=default_text,
-                    height=300
+                    height=350
                 )
                 
                 # Let the user specify a new filename
@@ -328,15 +365,37 @@ def main():
                     try:
                         new_content = json.loads(zshift_text)
                         new_path = params_dir / zshift_filename
-                        params_dir.mkdir(parents=True, exist_ok=True)
+                        # Store the new content and file path in session state so they persist
+                        st.session_state.new_zshift_content = new_content
+                        st.session_state.new_zshift_path = new_path
                         
-                        with open(new_path, "w") as f:
-                            json.dump(new_content, f, indent=4)
-                        
-                        st.session_state["zshift_file_path"] = new_path
-                        st.success(f"Saved new Z-shift param file to {new_path}")
+                        if new_path.exists():
+                            st.session_state.pending_zshift_overwrite = True
+                            st.warning("File already exists. Click 'Confirm Overwrite (Z-shift)' to proceed.")
+                        else:
+                            st.session_state.pending_zshift_overwrite = False
+                            params_dir.mkdir(parents=True, exist_ok=True)
+                            with open(new_path, "w") as f:
+                                json.dump(new_content, f, indent=4)
+                            st.session_state["zshift_file_path"] = new_path
+                            st.success(f"Saved new Z-shift param file to {new_path}")
                     except Exception as e:
                         st.error(f"Error saving param file: {e}")
+
+                if st.session_state.get("pending_zshift_overwrite", False):
+                    if st.button("Confirm Overwrite (Z-shift)"):
+                        try:
+                            new_content = st.session_state.new_zshift_content
+                            new_path = st.session_state.new_zshift_path
+                            params_dir.mkdir(parents=True, exist_ok=True)
+                            with open(new_path, "w") as f:
+                                json.dump(new_content, f, indent=4)
+                            st.session_state["zshift_file_path"] = new_path
+                            st.success(f"Overwritten file at {new_path}")
+                            st.session_state.pending_zshift_overwrite = False  # Reset the flag
+                        except Exception as e:
+                            st.error(f"Error overwriting file: {e}")
+
 
         else:
             # If the user unchecks "Use Z-motion correction?" 
@@ -456,7 +515,8 @@ def main():
      
     # --- Display the current state of the path file
     # Preview JSON
-    st.sidebar.subheader("Path JSON Preview") #divider=True)
+    st.sidebar.subheader("Path File Preview") #divider=True)
+    st.sidebar.write("Auto-filled. Save or download below once ready.")
     st.sidebar.json(path_file_dict)
 
     # --- Suggest a default filename based on subject, date and run numbers
@@ -620,8 +680,10 @@ def main():
                     st.error(f"Error running sbatch on cluster: {e}")
 
     # ---------------------------------------------------------------------
-    if st.button("Stop and Exit"):
-        st.write("Shutting down the app...")
+    "---"
+    endcol1, endcol2 = st.columns([3, 1])
+    if endcol2.button("Stop and Exit", icon=":material/logout:"):
+        endcol2.write("Shutting down the app...")
 
         # Immediately kill our own process
         os.kill(os.getpid(), signal.SIGTERM)
