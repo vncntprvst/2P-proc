@@ -664,7 +664,7 @@ def main():
                             st.error(f"SCP for main param failed: {scp_proc2.stderr}")
                             st.stop()
                         else:
-                            st.info("Main param file copied to cluster.")
+                            st.info("Caiman parameter file copied to cluster.")
                     else:
                         st.warning(f"Local param file does not exist: {local_param}")
 
@@ -682,7 +682,7 @@ def main():
                             st.error(f"SCP for Z-shift param failed: {scp_proc3.stderr}")
                             st.stop()
                         else:
-                            st.info("Z-shift param file copied to cluster.")
+                            st.info("Z-shift parameter file copied to cluster.")
                     else:
                         st.warning(f"Local Z-shift param file does not exist: {local_zparam}")
 
