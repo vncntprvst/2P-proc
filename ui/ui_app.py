@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import os
 import sys
+import re
 import signal
 import platform
 from pathlib import Path
@@ -209,10 +210,10 @@ def main():
                     env_values = dotenv_values(env_path)
                     
                     # Create input fields for each variable
-                    new_remote_host = st.text_input("The SSH login alias (e.g., om7)", value=env_values.get("SSH_LOGIN_NODE", ""))
-                    new_remote_pipeline_dir = st.text_input("The remote code directory (e.g., <om_user_dir>/code/Analysis_2P)  ", value=env_values.get("OM_CODE_DIR", ""))
-                    new_remote_scratch = st.text_input("The root data processing directory (e.g., <scratch space>/MyName) ", value=env_values.get("OM_SCRATCH_DIR", ""))
-                    new_nese_user_dir = st.text_input("[optional] Your data directory on NESE (e.g., <nese_lab_dir>/MyName)", value=env_values.get("NESE_USER_DIR", ""))
+                    new_remote_host = st.text_input("The SSH login alias (e.g., :grey-background[om7])", value=env_values.get("SSH_LOGIN_NODE", ""))
+                    new_remote_pipeline_dir = st.text_input("The remote code directory (e.g., :grey-background[<om_user_dir>/code/Analysis_2P], or :grey-background[/home/$USER/scripts])  ", value=env_values.get("OM_CODE_DIR", ""))
+                    new_remote_scratch = st.text_input("[currently unused] The root data processing directory (e.g., :grey-background[<scratch space>/MyName]) ", value=env_values.get("OM_SCRATCH_DIR", ""))
+                    new_nese_user_dir = st.text_input("[optional] Your data directory on NESE (e.g., :grey-background[<nese_lab_dir>/MyName])", value=env_values.get("NESE_USER_DIR", ""))
                     
                     # A button to save the updates
                     if st.button("Save Settings"):
@@ -243,9 +244,9 @@ def main():
         
     # ---------------------------------------------------------------------
 
-    tab1, tab2, tab3, tab4 = st.tabs([":crocodile: Caiman parameters ", ":elevator: Correct z-motion", ":twisted_rightwards_arrows: Path file ", ":woman-running: Run the pipeline"])
+    tab1, tab2, tab3, tab4 = st.tabs([":twisted_rightwards_arrows: Path file ", ":crocodile: Caiman parameters ", ":elevator: Correct z-motion", ":woman-running: Run the pipeline"])
     
-    with tab1:
+    with tab2:
         # ---------------------------------------------------------------------
         # STEP 1: Create or reuse the CaImAn param file
         # ---------------------------------------------------------------------
@@ -334,7 +335,7 @@ def main():
                     except Exception as e:
                         st.error(f"Error overwriting file: {e}")
 
-    with tab2:
+    with tab3:
         # ---------------------------------------------------------------------
         # STEP 2: Create or reuse the Z-shift param file (optional)
         # ---------------------------------------------------------------------
@@ -438,7 +439,7 @@ def main():
     # ---------------------------------------------------------------------
     # STEP 3: Create or load the path JSON, referencing the selected files
     # ---------------------------------------------------------------------
-    with tab3:
+    with tab1:
         # st.header("Path File Setup", divider=True)
         st.write('''The Path JSON file contains the paths to the data, export directory, and parameter files.  
                  Edit the fields below as needed, check the preview in the left sidebar, and save the JSON file.''')
@@ -560,6 +561,7 @@ def main():
             else:
                 path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
         
+        
     # --- Display the current state of the path file
     # Preview JSON
     st.sidebar.subheader("Path File Preview") #divider=True)
@@ -602,10 +604,76 @@ def main():
     # STEP 4: Run the pipeline
     # ---------------------------------------------------------------------
     with tab4:
-        # st.header("Run the Pipeline", divider=True)
+        if run_method == "Run on Openmind cluster":
+            env_path = root_dir / "ui" / ".env"
+            env_values = dotenv_values(env_path)
+            remote_host = os.getenv("SSH_LOGIN_NODE")
+            remote_pipeline_dir = os.getenv("OM_CODE_DIR", "")
+                    
+            if not remote_pipeline_dir:
+                st.error("Please set the remote pipeline directory in the settings.")
+            else:
+                # Copy or create the batch script file 
+                remote_scripts_dir = f"{remote_pipeline_dir}/scripts"
+                batch_script_filename = "om_batch_mcorr_cnmf.sh"
+                
+                # Check if it exists remotely, and if so download it
+                remote_script_path = f"{remote_scripts_dir}/{batch_script_filename}"
+                ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_script_path}"]
+                try:
+                    ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
+                    if ssh_ls_proc.returncode == 0:
+                        # st.info("Script file already exists on cluster.")
+                        # Download the script file
+                        scp_script_cmd = [
+                            "scp",
+                            f"{remote_host}:{remote_script_path}",
+                            f"{scripts_dir}/{batch_script_filename}"
+                        ]
+                        scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
+                        if scp_script_proc.returncode != 0:
+                            st.error(f"SCP for script file failed: {scp_script_proc.stderr}")
+                        # st.info(f"Script file {batch_script_filename} copied from {Path(remote_script_path).parent} to {scripts_dir}.")
+                        st.info(f":green-background[{batch_script_filename}] retrieved from cluster.")
+                        
+                    else:
+                        # st.warning(f"Script file not found on cluster: {ssh_ls_proc.stderr}")
+                        # Create the script file locally
+                        with open(scripts_dir / "om_batch_mcorr_cnmf_template.sh", "r") as f:
+                                script_template = f.read()
+                        with open(scripts_dir / batch_script_filename, "w") as f:
+                            f.write(script_template)
+                        st.info(f":grey-background[{batch_script_filename}] created from template.")
+                        
+                except Exception as e:
+                    st.error(f"Error checking for script file on cluster: {e}")
+                            
+                # Get the SBATCH directives from om_batch_mcorr_cnmf_template.sh
+                with open(scripts_dir / "om_batch_mcorr_cnmf.sh", "r") as f:
+                    sbatch_lines = [line for line in f if line.startswith("#SBATCH")]
 
-        # st.write("The pipeline can be run locally or on the Openmind cluster.")
-
+            # Parse the SBATCH directives using regular expressions with safety checks
+            if len(sbatch_lines) >= 4:
+                walltime_match = re.search(r"-t\s+(\S+)", sbatch_lines[0])
+                nodes_match    = re.search(r"-N\s+(\S+)", sbatch_lines[1])
+                cores_match    = re.search(r"-n\s+(\S+)", sbatch_lines[2])
+                mem_match      = re.search(r"--mem=(\S+)", sbatch_lines[3])
+                batch_mcorr_cnmf_walltime = walltime_match.group(1) if walltime_match else "00:00:00"
+                batch_mcorr_cnmf_nodes    = nodes_match.group(1)    if nodes_match    else "1"
+                batch_mcorr_cnmf_cores    = cores_match.group(1)    if cores_match    else "5"
+                batch_mcorr_cnmf_mem      = mem_match.group(1)      if mem_match      else "120G"
+            else:
+                st.error("Not enough SBATCH directives found in the template.")
+                
+            # Always create a cluster_processing.sh file if it doesn't exist 
+            if not (scripts_dir / "cluster_processing.sh").exists():
+                # Create the script file locally
+                with open(scripts_dir / "cluster_processing_template.sh", "r") as f:
+                    script_template = f.read()
+                with open(scripts_dir / "cluster_processing.sh", "w") as f:
+                    f.write(script_template)
+                st.info(f":grey-background[cluster_processing.sh] created from template.")
+                                
         # 1) Button to run locally    
         if run_method == "Run locally":
             if st.button(f"Run Pipeline Locally ({platform.node()})"):
@@ -716,53 +784,51 @@ def main():
                         else:
                             st.warning(f"Local Z-shift param file does not exist: {local_zparam}")
 
-                    # 3. SSH to cluster, copy script file, then run sbatch
-                    remote_scripts_dir = f"{remote_pipeline_dir}/scripts"
+                    # 3. SSH to cluster and run sbatch
+                    # Copy SBATCH directives to the script and push to cluster
+                    with open(scripts_dir / batch_script_filename, "r") as f:
+                        script_template = f.read()
+
+                    # Update SBATCH directives with user-provided inputs
+                    script_updated = re.sub(r"(-t\s+)\S+", r"\1" + batch_mcorr_cnmf_walltime, script_template)
+                    script_updated = re.sub(r"(-N\s+)\S+", r"\1" + batch_mcorr_cnmf_nodes,    script_updated)
+                    script_updated = re.sub(r"(-n\s+)\S+", r"\1" + batch_mcorr_cnmf_cores,    script_updated)
+                    script_updated = re.sub(r"(--mem=)\S+", r"\1" + batch_mcorr_cnmf_mem,      script_updated)
+
+                    # Write the updated script to the appropriate file in the scripts directory
+                    with open(scripts_dir / batch_script_filename, "w") as f:
+                        f.write(script_updated)      
+                        
+                    # Copy the updated script to the cluster
+                    if copy_files:
+                        # Copy both the batch script and the cluster_processing.sh
+                        scp_script_cmd = [
+                            "scp",
+                            str(scripts_dir / batch_script_filename),
+                            str(scripts_dir / "cluster_processing.sh"),
+                            f"{remote_host}:{remote_scripts_dir}"
+                        ]
+                    else:
+                        scp_script_cmd = [
+                            "scp",
+                            str(scripts_dir / batch_script_filename),
+                            f"{remote_host}:{remote_scripts_dir}/{batch_script_filename}"
+                        ]
+                    st.write(f"Running: {' '.join(scp_script_cmd)}")
+                    scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
+                        
+                    # Create the sbatch command
                     if copy_files:
                         script_filename = "cluster_processing.sh"
                     else:
                         script_filename = "om_batch_mcorr_cnmf.sh"
-                    
-                    # Check if it exists remotely, and if so download it
-                    remote_script_path = f"{remote_scripts_dir}/{script_filename}"
-                    ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_script_path}"]
-                    try:
-                        ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
-                        if ssh_ls_proc.returncode == 0:
-                            st.info("Script file already exists on cluster.")
-                            # Download the script file
-                            scp_script_cmd = [
-                                "scp",
-                                f"{remote_host}:{remote_script_path}",
-                                f"{scripts_dir}/{script_filename}"
-                            ]
-                            scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
-                            if scp_script_proc.returncode != 0:
-                                st.error(f"SCP for script file failed: {scp_script_proc.stderr}")
-                            
-                        else:
-                            # st.warning(f"Script file not found on cluster: {ssh_ls_proc.stderr}")
-                            # Create the script file locally
-                            if script_filename == "cluster_processing.sh":
-                                with open(scripts_dir / "cluster_processing_template.sh", "r") as f:
-                                    script_template = f.read()
-                            elif script_filename == "om_batch_mcorr_cnmf.sh":
-                                with open(scripts_dir / "om_batch_mcorr_cnmf_template.sh", "r") as f:
-                                    script_template = f.read()
-                            with open(scripts_dir / script_filename, "w") as f:
-                                f.write(script_template)
-                            st.info("Script file created locally.")
-                            
-                    except Exception as e:
-                        st.error(f"Error checking for script file on cluster: {e}")
-                        
                     cluster_cmd = (
                         f"cd {remote_scripts_dir} && sbatch {script_filename} "
                         f"{remote_paths_dir}/{path_json_name}"
                     )
                     ssh_cmd = ["ssh", remote_host, cluster_cmd]
 
-                    # st.write(f"Running: {' '.join(ssh_cmd)}")
+                    st.write(f"Running: {' '.join(ssh_cmd)}")
                     try:
                         ssh_proc = subprocess.run(ssh_cmd, capture_output=True, text=True)
                         if ssh_proc.returncode == 0:
