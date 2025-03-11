@@ -37,6 +37,13 @@ st.markdown(
         border: 2px solid #ccc !important;
         box-shadow: 0 3px 6px rgba(0,0,0,0.3) !important;
     }
+    .st-key-z-mcorr-methods {
+        background-color: #ee82ee33 !important;
+        padding: 1rem !important;
+        border-radius: 15px !important;
+        border: 1px solid #ccc !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -180,23 +187,22 @@ def main():
     # st.write("3. Create a paths JSON file.")
     # st.write("4. Run the pipeline.")
     with st.container(key="intro"):
-        run_col1, run_col2 = st.columns(2, vertical_alignment="bottom")
+        run_col1, run_col2 = st.columns(2, vertical_alignment="top")
         
         with run_col1:
             run_method = st.radio(
                 "Select run method:",
-                options=["Run on Openmind", "Run locally"],
-                index=0  # default is "Run on Openmind"
+                options=["Run on Openmind cluster", "Run on local workstation"],
+                index=0  # default is "Run on Openmind cluster"
             )
-            if run_method == "Run on Openmind":
+            if run_method == "Run on Openmind cluster":
                 paths_dir = caiman_pipeline_dir / "paths" / "openmind"
             else:
                 paths_dir = caiman_pipeline_dir / "paths" 
             with open(paths_dir / "paths_template.json", "r") as f:
                 DEFAULT_PATH_FILE_TEMPLATE = json.load(f)
-        
-        with run_col2:
-            if run_method == "Run on Openmind":
+                
+            if run_method == "Run on Openmind cluster":
                 with st.popover("Edit Openmind Settings", use_container_width=True):
                     # Read the current .env values (from ui/.env)
                     env_path = root_dir / "ui" / ".env"
@@ -220,9 +226,15 @@ def main():
                     remote_params_dir = f"{new_remote_pipeline_dir}/parameters"
                     remote_paths_dir = f"{new_remote_pipeline_dir}/paths"
 
-            else:
+            # else:
                 # When "Run locally" is selected, show a disabled settings button
-                st.button("Edit Openmind Settings", use_container_width=True, disabled=True)
+                # st.button("Edit Openmind Settings", use_container_width=True, disabled=True)
+        
+        with run_col2:
+            if run_method == "Run on Openmind cluster":
+                copy_files = st.checkbox("Do you want the script to transfer the data for you?")
+                st.write('''>If selected, the script will transfer the data to the scratch space.  
+                         Just provide the paths to the data (e.g., on NESE).''') 
         
     # Gather existing param files from the folder
     existing_params = list_existing_param_files(params_dir)
@@ -231,13 +243,13 @@ def main():
         
     # ---------------------------------------------------------------------
 
-    tab1, tab2, tab3, tab4 = st.tabs(["1\. Caiman parameter file", "2\. [Optional] z-motion parameter file", "3\. Path File", "4\. Run the pipeline"])
+    tab1, tab2, tab3, tab4 = st.tabs([":crocodile: Caiman parameters ", ":elevator: Correct z-motion", ":twisted_rightwards_arrows: Path file ", ":woman-running: Run the pipeline"])
     
     with tab1:
         # ---------------------------------------------------------------------
         # STEP 1: Create or reuse the CaImAn param file
         # ---------------------------------------------------------------------
-        # st.write("The corresponding fields in the Path file will be auto-filled with the selected (or created) caiman parameter file.")
+        st.write("Enter the parameters for x/y motion correction (:blue-background[params_mcorr]) and CNMF (:blue-background[params_cnmf]).")
         
         if not existing_main:
             st.warning("No existing parameter files found. Please create one first.")
@@ -278,7 +290,7 @@ def main():
             
             # Let the user specify a new filename
             main_param_filename = st.text_input(
-                "Save as new file parameter file (name must start with params_):",
+                "Save the file parameter file (name must start with :blue-background[params_]):",
                 f"{chosen_fullpath.name}"
             )
             
@@ -286,7 +298,7 @@ def main():
             if not main_param_filename.startswith("params_"):
                 st.error("Filename must start with 'params_'")
             
-            if st.button("Save New CaImAn Parameter File"):
+            if st.button("Save CaImAn Parameter File"):
                 try:
                     new_content = json.loads(main_param_text)
                     new_path = params_dir / main_param_filename
@@ -326,11 +338,25 @@ def main():
         # ---------------------------------------------------------------------
         # STEP 2: Create or reuse the Z-shift param file (optional)
         # ---------------------------------------------------------------------
-        use_zshift = st.checkbox("Use Z-motion correction?", value=False, key="zshift_checkbox")
+        use_zshift = st.checkbox("Use Z-motion correction? (requires a z-stack)", value=False, key="zshift_checkbox")
 
         if use_zshift:            
-            st.write("The corresponding field in the Path file will be auto-filled with the selected (or created) Z-shift param file.")
-            
+            st.write('''
+            Enter the settings for z-stack used for z-motion correction (:blue-background[zstack_shift]) and set the z-motion correction method (:blue-background[subtract_z_motion])''')
+            # zmcorrcol1, zmcorrcol2, zmcorrcol3 = st.columns(3)
+            # with zmcorrcol2:
+            with st.container(key="z-mcorr-methods"):
+                st.write('''
+                    **"subtract_z_motion" options** (default: :grey-background[True])   
+                    - :grey-background[False]: Only z-pos will be computed.  
+                    - :grey-background[True]: Non-rigid F_anat will also be computed, but not subtracted, unless a :blue-background["subtract_method"] field is present.     
+                    
+                    **"subtract_method" options** (default: no method - do not include the field or set it to :grey-background[None])  
+                    - :grey-background[linear_regression_frames]: Subtract z-motion using linear regression on frames.
+                    - :grey-background[huber_regression_pixels]: Subtract z-motion using Huber regression on pixels.
+                    - :grey-background[huber_regression_frames]: Subtract z-motion using Huber regression on frames.
+                    ''')
+                    
             if not existing_zshift:
                 st.warning("No existing z-shift param files found. Please create one first.")
             else:
@@ -414,47 +440,50 @@ def main():
     # ---------------------------------------------------------------------
     with tab3:
         # st.header("Path File Setup", divider=True)
+        st.write('''The Path JSON file contains the paths to the data, export directory, and parameter files.  
+                 Edit the fields below as needed, check the preview in the left sidebar, and save the JSON file.''')
         # Radio to pick path file mode
-        path_file_mode = st.radio(
-            "Fill the fields below, check the preview, and save the JSON file.",
-            ("Load Existing", "Create from Template"),
-            index=1  # default to "Create from Template"
-        )
+        # path_file_mode = st.radio(
+        #     "Fill the fields below, check the preview, and save the JSON file.",
+        #     ("Load Existing", "Create from Template"),
+        #     index=0  # default to "Load Existing"
+        # )
+        
 
         # We'll store the loaded or template dictionary here
-        if path_file_mode == "Load Existing":
-            existing_paths_files = list_existing_path_files(paths_dir)
-            if not existing_paths_files:
-                st.warning("No existing path files found. Please create one first.")
-                path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
-            else:
-                path_fnames = [p.name for p in existing_paths_files]
-                chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames, index=path_fnames.index("paths_template.json") if "paths_template.json" in path_fnames else 0)
-                
-                chosen_idx = path_fnames.index(chosen_path_fname)
-                chosen_fullpath = existing_paths_files[chosen_idx]
-                
-                # Load the chosen path file into a dict
-                try:
-                    with open(chosen_fullpath, "r") as f:
-                        loaded_paths = json.load(f)
-                    st.info(f"Loaded existing path file: {chosen_fullpath}")
-                    path_data = loaded_paths
-                except Exception as e:
-                    st.error(f"Error loading {chosen_fullpath}: {e}")
-                    path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
-        else:
-            # Use the default path template
+        # if path_file_mode == "Load Existing":
+        existing_paths_files = list_existing_path_files(paths_dir)
+        if not existing_paths_files:
+            st.warning("No existing path files found. Please create one first.")
             path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+        else:
+            path_fnames = [p.name for p in existing_paths_files]
+            chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames, index=path_fnames.index("paths_template.json") if "paths_template.json" in path_fnames else 0)
+            
+            chosen_idx = path_fnames.index(chosen_path_fname)
+            chosen_fullpath = existing_paths_files[chosen_idx]
+            
+            # Load the chosen path file into a dict
+            try:
+                with open(chosen_fullpath, "r") as f:
+                    loaded_paths = json.load(f)
+                st.info(f"Loaded existing path file: {chosen_fullpath}")
+                path_data = loaded_paths
+            except Exception as e:
+                st.error(f"Error loading {chosen_fullpath}: {e}")
+                path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+        # else:
+        #     # Use the default path template
+        #     path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
 
         # --- Now let the user edit each field in the usual text inputs:
-        subject = st.text_input("Subject", value=path_data.get("subject", ""))
-        date_ = st.text_input("Date", value=path_data.get("date", datetime.now().strftime("%Y%m%d")))
-        exp_type = st.text_input("Experiment type", value=path_data.get("experiment_type", ""))
+        subject = st.text_input("Subject Name", value=path_data.get("subject", ""))
+        date_ = st.text_input("Experiment Date", value=path_data.get("date", datetime.now().strftime("%Y%m%d")))
+        exp_type = st.text_input("Experiment Type (e.g. :grey-background[GC8m_16x_zoom1_765pi] - typically matches the parameter file name.)", value=path_data.get("experiment_type", ""))
 
         # Concatenation groups
         concat_groups_str = st.text_input(
-            "Concatenation groups (comma-separated)",
+            "Concatenation groups (comma-separated). Use this to group runs together for processing. Default: empty field.",
             ",".join(str(x) for x in path_data.get("concatenation_groups", []))
         )
         try:
@@ -516,7 +545,7 @@ def main():
 
         # Fill references to param files from session_state if available     
         if st.session_state.get("caiman_param_file_path"):
-            if run_method == "Run on Openmind":
+            if run_method == "Run on Openmind cluster":
                 file_name = Path(st.session_state["caiman_param_file_path"]).name
                 remote_file_path = os.path.join(remote_params_dir, file_name)
                 path_file_dict["params_files"] = [remote_file_path]
@@ -524,7 +553,7 @@ def main():
                 path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
 
         if use_zshift and st.session_state.get("zshift_file_path"):
-            if run_method == "Run on Openmind":
+            if run_method == "Run on Openmind cluster":
                 file_name = Path(st.session_state["zshift_file_path"]).name
                 remote_file_path = os.path.join(remote_params_dir, file_name)
                 path_file_dict["z_params_files"] = [remote_file_path]
@@ -578,133 +607,172 @@ def main():
         # st.write("The pipeline can be run locally or on the Openmind cluster.")
 
         # 1) Button to run locally    
-        if st.button(f"Run Pipeline Locally ({platform.node()})"):
-            cmd = ["python", f"{caiman_pipeline_dir}/batch_mcorr_cnmf.py", path_json_name]
-            st.write(f"Running command locally: {' '.join(cmd)}")
-            try:
-                completed_proc = subprocess.run(cmd, capture_output=True, text=True)
-                if completed_proc.returncode == 0:
-                    st.success("Pipeline finished successfully!")
-                    st.text_area("Pipeline Output", completed_proc.stdout, height=200)
-                else:
-                    st.error(f"Pipeline exited with code {completed_proc.returncode}")
-                    st.text_area("Pipeline Error Output", completed_proc.stderr, height=200)
-            except Exception as e:
-                st.error(f"Error running pipeline locally: {e}")
-
-        # 2) Button to run on the cluster
-        if st.button("Run Pipeline on Cluster (Openmind)"):
-            # 2.1 Copy the path JSON to cluster
-            # 2.2 Copy param files if needed
-            # 2.3 SSH and run sbatch
-            
-            # Load environment variables from .env file
-            load_dotenv(dotenv_path=root_dir / "ui" / ".env")
-            # Get the SSH_LOGIN_NODE value
-            remote_host = os.getenv("SSH_LOGIN_NODE")
-            # remote_user = get_remote_user(remote_host) 
-            remote_pipeline_dir = os.getenv("OM_CODE_DIR")
-            remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths"
-            remote_params_dir = f"{remote_pipeline_dir}/Mesmerize/parameters"
-            
-            # We should have a local path to the paths JSON at this point, but check anyway:
-            local_path_json = paths_dir / path_json_name
-            if not local_path_json.exists():
-                st.error(f"Path JSON does not exist locally: {local_path_json}")
-            else:
+        if run_method == "Run locally":
+            if st.button(f"Run Pipeline Locally ({platform.node()})"):
+                cmd = ["python", f"{caiman_pipeline_dir}/batch_mcorr_cnmf.py", path_json_name]
+                st.write(f"Running command locally: {' '.join(cmd)}")
+                try:
+                    completed_proc = subprocess.run(cmd, capture_output=True, text=True)
+                    if completed_proc.returncode == 0:
+                        st.success("Pipeline finished successfully!")
+                        st.text_area("Pipeline Output", completed_proc.stdout, height=200)
+                    else:
+                        st.error(f"Pipeline exited with code {completed_proc.returncode}")
+                        st.text_area("Pipeline Error Output", completed_proc.stderr, height=200)
+                except Exception as e:
+                    st.error(f"Error running pipeline locally: {e}")
+        else:
+            # 2) Button to run on the cluster
+            if st.button("Run Pipeline on Cluster (Openmind)"):
+                # 2.1 Copy the path JSON to cluster
+                # 2.2 Copy param files if needed
+                # 2.3 SSH and run sbatch
                 
-                # Create remote directories if they do not exist
-                ssh_mkdir_cmd = [
-                    "ssh",
-                    remote_host,
-                    f"mkdir -p {remote_paths_dir} {remote_params_dir}"
-                ]
-                st.write(f"Running: {' '.join(ssh_mkdir_cmd)}")
-                try:
-                    ssh_mkdir_proc = subprocess.run(ssh_mkdir_cmd, capture_output=True, text=True)
-                    if ssh_mkdir_proc.returncode != 0:
-                        st.error(f"Failed to create remote directories: {ssh_mkdir_proc.stderr}")
+                # Load environment variables from .env file
+                load_dotenv(dotenv_path=root_dir / "ui" / ".env")
+                # Get the SSH_LOGIN_NODE value
+                remote_host = os.getenv("SSH_LOGIN_NODE")
+                # remote_user = get_remote_user(remote_host) 
+                remote_pipeline_dir = os.getenv("OM_CODE_DIR")
+                remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths"
+                remote_params_dir = f"{remote_pipeline_dir}/Mesmerize/parameters"
+                
+                # We should have a local path to the paths JSON at this point, but check anyway:
+                local_path_json = paths_dir / path_json_name
+                if not local_path_json.exists():
+                    st.error(f"Path JSON does not exist locally: {local_path_json}")
+                else:
+                    
+                    # Create remote directories if they do not exist
+                    ssh_mkdir_cmd = [
+                        "ssh",
+                        remote_host,
+                        f"mkdir -p {remote_paths_dir} {remote_params_dir}"
+                    ]
+                    # st.write(f"Running: {' '.join(ssh_mkdir_cmd)}")
+                    try:
+                        ssh_mkdir_proc = subprocess.run(ssh_mkdir_cmd, capture_output=True, text=True)
+                        if ssh_mkdir_proc.returncode != 0:
+                            st.error(f"Failed to create remote directories: {ssh_mkdir_proc.stderr}")
+                            st.stop()
+                        else:
+                            st.info("Remote directories created or already exist.")
+                    except Exception as e:
+                        st.error(f"Error creating remote directories: {e}")
                         st.stop()
-                    else:
-                        st.info("Remote directories created or already exist.")
-                except Exception as e:
-                    st.error(f"Error creating remote directories: {e}")
-                    st.stop()
 
-                # 1. scp the paths JSON file to the cluster
-                scp_cmd = [
-                    "scp",
-                    str(local_path_json),
-                    f"{remote_host}:{remote_paths_dir}/{path_json_name}"
-                ]
-                st.write(f"Running: {' '.join(scp_cmd)}")
-                try:
-                    scp_proc = subprocess.run(scp_cmd, capture_output=True, text=True)
-                    if scp_proc.returncode != 0:
-                        st.error(f"SCP for path file failed: {scp_proc.stderr}")
-                        st.stop()  # stop the Streamlit flow
-                    else:
-                        st.info("Path JSON copied to cluster.")
-                except Exception as e:
-                    st.error(f"Error copying path file to cluster: {e}")
-                    st.stop()
-
-                # 2. scp the param files similarly (only if these exist on the local machine)
-                if st.session_state["caiman_param_file_path"]:
-                    local_param = Path(st.session_state["caiman_param_file_path"])
-                    if local_param.exists():
-                        scp_params_cmd = [
-                            "scp",
-                            str(local_param),
-                            f"{remote_host}:{remote_params_dir}/{local_param.name}"
-                        ]
-                        st.write(f"Running: {' '.join(scp_params_cmd)}")
-                        scp_proc2 = subprocess.run(scp_params_cmd, capture_output=True, text=True)
-                        if scp_proc2.returncode != 0:
-                            st.error(f"SCP for main param failed: {scp_proc2.stderr}")
-                            st.stop()
+                    # 1. scp the paths JSON file to the cluster
+                    scp_cmd = [
+                        "scp",
+                        str(local_path_json),
+                        f"{remote_host}:{remote_paths_dir}/{path_json_name}"
+                    ]
+                    # st.write(f"Running: {' '.join(scp_cmd)}")
+                    try:
+                        scp_proc = subprocess.run(scp_cmd, capture_output=True, text=True)
+                        if scp_proc.returncode != 0:
+                            st.error(f"SCP for Path file failed: {scp_proc.stderr}")
+                            st.stop()  # stop the Streamlit flow
                         else:
-                            st.info("Caiman parameter file copied to cluster.")
-                    else:
-                        st.warning(f"Local param file does not exist: {local_param}")
+                            st.info("Path file copied to cluster.")
+                    except Exception as e:
+                        st.error(f"Error copying Path file to cluster: {e}")
+                        st.stop()
 
-                if st.session_state["zshift_file_path"]:
-                    local_zparam = Path(st.session_state["zshift_file_path"])
-                    if local_zparam.exists():
-                        scp_zparams_cmd = [
-                            "scp",
-                            str(local_zparam),
-                            f"{remote_host}:{remote_params_dir}/{local_zparam.name}"
-                        ]
-                        st.write(f"Running: {' '.join(scp_zparams_cmd)}")
-                        scp_proc3 = subprocess.run(scp_zparams_cmd, capture_output=True, text=True)
-                        if scp_proc3.returncode != 0:
-                            st.error(f"SCP for Z-shift param failed: {scp_proc3.stderr}")
-                            st.stop()
+                    # 2. scp the param files similarly (only if these exist on the local machine)
+                    if st.session_state["caiman_param_file_path"]:
+                        local_param = Path(st.session_state["caiman_param_file_path"])
+                        if local_param.exists():
+                            scp_params_cmd = [
+                                "scp",
+                                str(local_param),
+                                f"{remote_host}:{remote_params_dir}/{local_param.name}"
+                            ]
+                            st.write(f"Running: {' '.join(scp_params_cmd)}")
+                            scp_proc2 = subprocess.run(scp_params_cmd, capture_output=True, text=True)
+                            if scp_proc2.returncode != 0:
+                                st.error(f"SCP for CaImAn parameter failed: {scp_proc2.stderr}")
+                                st.stop()
+                            else:
+                                st.info("CaImAn parameter file copied to cluster.")
                         else:
-                            st.info("Z-shift parameter file copied to cluster.")
-                    else:
-                        st.warning(f"Local Z-shift param file does not exist: {local_zparam}")
+                            st.warning(f"Local param file does not exist: {local_param}")
 
-                # 3. SSH to cluster, run sbatch
-                remote_scripts_dir = f"{remote_pipeline_dir}/scripts"
-                cluster_cmd = (
-                    f"cd {remote_scripts_dir} && sbatch om_batch_mcorr_cnmf.sh "
-                    f"{remote_paths_dir}/{path_json_name}"
-                )
-                ssh_cmd = ["ssh", remote_host, cluster_cmd]
+                    if st.session_state["zshift_file_path"]:
+                        local_zparam = Path(st.session_state["zshift_file_path"])
+                        if local_zparam.exists():
+                            scp_zparams_cmd = [
+                                "scp",
+                                str(local_zparam),
+                                f"{remote_host}:{remote_params_dir}/{local_zparam.name}"
+                            ]
+                            st.write(f"Running: {' '.join(scp_zparams_cmd)}")
+                            scp_proc3 = subprocess.run(scp_zparams_cmd, capture_output=True, text=True)
+                            if scp_proc3.returncode != 0:
+                                st.error(f"SCP for Z-shift param failed: {scp_proc3.stderr}")
+                                st.stop()
+                            else:
+                                st.info("Z-shift parameter file copied to cluster.")
+                        else:
+                            st.warning(f"Local Z-shift param file does not exist: {local_zparam}")
 
-                st.write(f"Running: {' '.join(ssh_cmd)}")
-                try:
-                    ssh_proc = subprocess.run(ssh_cmd, capture_output=True, text=True)
-                    if ssh_proc.returncode == 0:
-                        st.success("Submitted job to cluster via sbatch!")
-                        st.text_area("Cluster Output", ssh_proc.stdout, height=200)
+                    # 3. SSH to cluster, copy script file, then run sbatch
+                    remote_scripts_dir = f"{remote_pipeline_dir}/scripts"
+                    if copy_files:
+                        script_filename = "cluster_processing.sh"
                     else:
-                        st.error(f"Cluster sbatch command failed with code {ssh_proc.returncode}")
-                        st.text_area("Cluster Error", ssh_proc.stderr, height=200)
-                except Exception as e:
-                    st.error(f"Error running sbatch on cluster: {e}")
+                        script_filename = "om_batch_mcorr_cnmf.sh"
+                    
+                    # Check if it exists remotely, and if so download it
+                    remote_script_path = f"{remote_scripts_dir}/{script_filename}"
+                    ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_script_path}"]
+                    try:
+                        ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
+                        if ssh_ls_proc.returncode == 0:
+                            st.info("Script file already exists on cluster.")
+                            # Download the script file
+                            scp_script_cmd = [
+                                "scp",
+                                f"{remote_host}:{remote_script_path}",
+                                f"{scripts_dir}/{script_filename}"
+                            ]
+                            scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
+                            if scp_script_proc.returncode != 0:
+                                st.error(f"SCP for script file failed: {scp_script_proc.stderr}")
+                            
+                        else:
+                            # st.warning(f"Script file not found on cluster: {ssh_ls_proc.stderr}")
+                            # Create the script file locally
+                            if script_filename == "cluster_processing.sh":
+                                with open(scripts_dir / "cluster_processing_template.sh", "r") as f:
+                                    script_template = f.read()
+                            elif script_filename == "om_batch_mcorr_cnmf.sh":
+                                with open(scripts_dir / "om_batch_mcorr_cnmf_template.sh", "r") as f:
+                                    script_template = f.read()
+                            with open(scripts_dir / script_filename, "w") as f:
+                                f.write(script_template)
+                            st.info("Script file created locally.")
+                            
+                    except Exception as e:
+                        st.error(f"Error checking for script file on cluster: {e}")
+                        
+                    cluster_cmd = (
+                        f"cd {remote_scripts_dir} && sbatch {script_filename} "
+                        f"{remote_paths_dir}/{path_json_name}"
+                    )
+                    ssh_cmd = ["ssh", remote_host, cluster_cmd]
+
+                    # st.write(f"Running: {' '.join(ssh_cmd)}")
+                    try:
+                        ssh_proc = subprocess.run(ssh_cmd, capture_output=True, text=True)
+                        if ssh_proc.returncode == 0:
+                            st.success("Submitted job to cluster via sbatch!")
+                            st.text_area("Cluster Output", ssh_proc.stdout, height=200)
+                        else:
+                            st.error(f"Cluster sbatch command failed with code {ssh_proc.returncode}")
+                            st.text_area("Cluster Error", ssh_proc.stderr, height=200)
+                    except Exception as e:
+                        st.error(f"Error running sbatch on cluster: {e}")
 
     # ---------------------------------------------------------------------
     "---"
