@@ -3,7 +3,6 @@
 # Define the environment directory name and archive file
 CONDA_ENV_NAME="analysis2p_ui"
 ENV_DIR=$(conda info --envs | grep "$CONDA_ENV_NAME" | awk '{print $NF}')
-ARCHIVE_FILE="analysis2p_ui.tar.gz"
 
 # If the environment folder doesn't exist, extract it
 if [ ! -d "$ENV_DIR" ]; then
@@ -12,6 +11,13 @@ if [ ! -d "$ENV_DIR" ]; then
     if [ ! -d "$TARGET_DIR" ]; then
         mkdir -p "$TARGET_DIR"
     fi
+
+    # Download the portable environment
+    echo "Environment directory not found: $ENV_DIR. Downloading and extracting the portable environment..."
+    ARCHIVE_FILE="analysis2p_ui.tar.gz"
+    GITHUB_RELEASE_URL="https://github.com/pseudomanu/Analysis_2P/releases/download/0.3.5/$ARCHIVE_FILE"
+    curl -L -o "$ARCHIVE_FILE" "$GITHUB_RELEASE_URL"
+    
     echo "Extracting the portable environment..."
     tar -xzf "$ARCHIVE_FILE" -C "$TARGET_DIR"
     # After extraction, the environment folder will be inside TARGET_DIR
