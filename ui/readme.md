@@ -9,6 +9,7 @@ If you want to create a dedicated environment for the UI, you can use the follow
 ```bash
 conda create -n analysis2p_ui python=3.9
 ```
+
 If running the pipeline on the cluster, make sure you have the `.env` file in the `/scripts/utils` directory, with the following content:
 ```
 SSH_LOGIN_NODE=your_login_node
@@ -21,6 +22,7 @@ The `OM_USER_DIR_ALIAS` is the alias for the user directory on the cluster.
 Use one of the following methods to run the UI: 
 * Run the Python script:
 ```bash
+conda activate analysis2p_ui
 cd ui
 streamlit run ui_app.py
 ```
