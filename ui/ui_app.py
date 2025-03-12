@@ -181,8 +181,9 @@ def main():
         st.header("Analysis 2P: motion correction and CNMF") #, divider="green")
     with topcol2:        
         experimenter = st.text_input("Experimenter", os.getenv("EXPERIMENTER"))
-        os.environ["EXPERIMENTER"] = experimenter
-        set_key(str(root_dir / "ui" / ".env"), "EXPERIMENTER", experimenter)
+        if experimenter:
+            os.environ["EXPERIMENTER"] = experimenter
+            set_key(str(root_dir / "ui" / ".env"), "EXPERIMENTER", experimenter)
         
     # st.write("1. and 2. Create or re-use the parameter file(s).")
     # st.write("3. Create a paths JSON file.")
@@ -276,7 +277,8 @@ def main():
                     chosen_file_content["notes"] = {}
                 
                 # Update the notes section:
-                chosen_file_content["notes"]["author"] = experimenter  # experimenter set at the top of the page
+                if os.getenv("EXPERIMENTER"):
+                    chosen_file_content["notes"]["author"] = experimenter  # experimenter set at the top of the page
                 chosen_file_content["notes"]["date"] = datetime.now().strftime("%Y-%m-%d")
                 
                 default_text = json.dumps(chosen_file_content, indent=4)
@@ -548,16 +550,18 @@ def main():
         if st.session_state.get("caiman_param_file_path"):
             if run_method == "Run on Openmind cluster":
                 file_name = Path(st.session_state["caiman_param_file_path"]).name
-                remote_file_path = os.path.join(remote_params_dir, file_name)
-                path_file_dict["params_files"] = [remote_file_path]
+                remote_file_path = Path(remote_params_dir) / file_name
+                remote_file_path_str = str(remote_file_path).replace("\\", "/")
+                path_file_dict["params_files"] = [remote_file_path_str]
             else:
                 path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
 
         if use_zshift and st.session_state.get("zshift_file_path"):
             if run_method == "Run on Openmind cluster":
                 file_name = Path(st.session_state["zshift_file_path"]).name
-                remote_file_path = os.path.join(remote_params_dir, file_name)
-                path_file_dict["z_params_files"] = [remote_file_path]
+                remote_file_path = Path(remote_params_dir) / file_name
+                remote_file_path_str = str(remote_file_path).replace("\\", "/")
+                path_file_dict["z_params_files"] = [remote_file_path_str]
             else:
                 path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
         
@@ -652,18 +656,18 @@ def main():
                 with open(scripts_dir / "om_batch_mcorr_cnmf.sh", "r") as f:
                     sbatch_lines = [line for line in f if line.startswith("#SBATCH")]
 
-            # Parse the SBATCH directives using regular expressions with safety checks
-            if len(sbatch_lines) >= 4:
-                walltime_match = re.search(r"-t\s+(\S+)", sbatch_lines[0])
-                nodes_match    = re.search(r"-N\s+(\S+)", sbatch_lines[1])
-                cores_match    = re.search(r"-n\s+(\S+)", sbatch_lines[2])
-                mem_match      = re.search(r"--mem=(\S+)", sbatch_lines[3])
-                batch_mcorr_cnmf_walltime = walltime_match.group(1) if walltime_match else "00:00:00"
-                batch_mcorr_cnmf_nodes    = nodes_match.group(1)    if nodes_match    else "1"
-                batch_mcorr_cnmf_cores    = cores_match.group(1)    if cores_match    else "5"
-                batch_mcorr_cnmf_mem      = mem_match.group(1)      if mem_match      else "120G"
-            else:
-                st.error("Not enough SBATCH directives found in the template.")
+                # Parse the SBATCH directives using regular expressions with safety checks
+                if len(sbatch_lines) >= 4:
+                    walltime_match = re.search(r"-t\s+(\S+)", sbatch_lines[0])
+                    nodes_match    = re.search(r"-N\s+(\S+)", sbatch_lines[1])
+                    cores_match    = re.search(r"-n\s+(\S+)", sbatch_lines[2])
+                    mem_match      = re.search(r"--mem=(\S+)", sbatch_lines[3])
+                    batch_mcorr_cnmf_walltime = walltime_match.group(1) if walltime_match else "00:00:00"
+                    batch_mcorr_cnmf_nodes    = nodes_match.group(1)    if nodes_match    else "1"
+                    batch_mcorr_cnmf_cores    = cores_match.group(1)    if cores_match    else "5"
+                    batch_mcorr_cnmf_mem      = mem_match.group(1)      if mem_match      else "120G"
+                else:
+                    st.error("Not enough SBATCH directives found in the template.")
                 
             # Always create a cluster_processing.sh file if it doesn't exist 
             if not (scripts_dir / "cluster_processing.sh").exists():
