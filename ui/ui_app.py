@@ -262,10 +262,21 @@ def main():
             st.warning("No existing parameter files found. Please create one first.")
         else:
             main_fnames = [p.name for p in existing_main]
+
+            # Compute default index from session state if available
+            if "caiman_param_file_path" in st.session_state and st.session_state["caiman_param_file_path"]:
+                current_main_name = Path(st.session_state["caiman_param_file_path"]).name
+                if current_main_name in main_fnames:
+                    default_index = main_fnames.index(current_main_name)
+                else:
+                    default_index = main_fnames.index("params_mcorr_cnmf_template.json") if "params_mcorr_cnmf_template.json" in main_fnames else 0
+            else:
+                default_index = main_fnames.index("params_mcorr_cnmf_template.json") if "params_mcorr_cnmf_template.json" in main_fnames else 0
+
             chosen_main_fname = st.selectbox(
                 "Select an existing CaImAn parameter file:",
                 main_fnames,
-                index=main_fnames.index("params_mcorr_cnmf_template.json") if "params_mcorr_cnmf_template.json" in main_fnames else 0
+                index=default_index
             )
             
             chosen_idx = main_fnames.index(chosen_main_fname)
@@ -369,10 +380,21 @@ def main():
                 st.warning("No existing z-shift param files found. Please create one first.")
             else:
                 zshift_fnames = [p.name for p in existing_zshift]
+
+                # Compute default index based on session state if available
+                if "zshift_file_path" in st.session_state and st.session_state["zshift_file_path"]:
+                    current_zshift_name = Path(st.session_state["zshift_file_path"]).name
+                    if current_zshift_name in zshift_fnames:
+                        default_z_index = zshift_fnames.index(current_zshift_name)
+                    else:
+                        default_z_index = zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
+                else:
+                    default_z_index = zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
+
                 chosen_zshift_fname = st.selectbox(
                     "Select an existing Z-shift parameter file",
                     zshift_fnames,
-                    index=zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
+                    index=default_z_index
                 )
                 
                 chosen_idx = zshift_fnames.index(chosen_zshift_fname)
@@ -480,9 +502,29 @@ def main():
             except Exception as e:
                 st.error(f"Error loading {chosen_fullpath}: {e}")
                 path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
-        # else:
-        #     # Use the default path template
-        #     path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+
+            # --- Automatically select parameter files if they exist locally ---
+            # Check for CaImAn parameter file(s)
+            if "params_files" in path_data and path_data["params_files"]:
+                param_candidates = [Path(p).name for p in path_data["params_files"]]
+                existing_main_params = list_existing_param_files(params_dir)["main"]
+                for candidate in param_candidates:
+                    for p in existing_main_params:
+                        if candidate == p.name:
+                            st.session_state["caiman_param_file_path"] = p
+                            st.info(f"Automatically selected CaImAn parameter file: {p.name}")
+                            break  # Select the first match
+
+            # Check for z-shift parameter file(s)
+            if "z_params_files" in path_data and path_data["z_params_files"]:
+                zparam_candidates = [Path(p).name for p in path_data["z_params_files"]]
+                existing_zshift_params = list_existing_param_files(params_dir)["zshift"]
+                for candidate in zparam_candidates:
+                    for p in existing_zshift_params:
+                        if candidate == p.name:
+                            st.session_state["zshift_file_path"] = p
+                            st.info(f"Automatically selected Z-shift parameter file: {p.name}")
+                            break  # Select the first match
 
         # --- Now let the user edit each field in the usual text inputs:
         subject = st.text_input("Subject Name", value=path_data.get("subject", ""))
