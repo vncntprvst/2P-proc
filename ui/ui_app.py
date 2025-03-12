@@ -212,9 +212,9 @@ def main():
                     
                     # Create input fields for each variable
                     new_remote_host = st.text_input("The SSH login alias (e.g., :grey-background[om7])", value=env_values.get("SSH_LOGIN_NODE", ""))
-                    new_remote_pipeline_dir = st.text_input("The remote code directory (e.g., :grey-background[<om_user_dir>/code/Analysis_2P], or :grey-background[/home/$USER/scripts])  ", value=env_values.get("OM_CODE_DIR", ""))
-                    new_remote_scratch = st.text_input("[currently unused] The root data processing directory (e.g., :grey-background[<scratch space>/MyName]) ", value=env_values.get("OM_SCRATCH_DIR", ""))
-                    new_nese_user_dir = st.text_input("[optional] Your data directory on NESE (e.g., :grey-background[<nese_lab_dir>/MyName])", value=env_values.get("NESE_USER_DIR", ""))
+                    new_remote_pipeline_dir = st.text_input("The remote code directory (e.g., :grey-background[<om_user_dir>/code/Analysis_2P], or :grey-background[/home/$USER/scripts])", value=env_values.get("OM_CODE_DIR", ""))
+                    new_remote_scratch = st.text_input("[currently unused] The root data processing directory (e.g., :grey-background[<scratch space>/MyName])", value=env_values.get("OM_SCRATCH_DIR", ""))
+                    new_nese_user_dir = st.text_input("[currently unused] Your data directory on NESE (e.g., :grey-background[<nese_lab_dir>/MyName])", value=env_values.get("NESE_USER_DIR", ""))
                     
                     # A button to save the updates
                     if st.button("Save Settings"):
@@ -222,8 +222,13 @@ def main():
                         set_key(str(env_path), "NESE_USER_DIR", new_nese_user_dir)
                         set_key(str(env_path), "OM_CODE_DIR", new_remote_pipeline_dir)
                         set_key(str(env_path), "OM_SCRATCH_DIR", new_remote_scratch)
+                        # Update session state variables for immediate access
+                        st.session_state["remote_host"] = new_remote_host
+                        st.session_state["remote_pipeline_dir"] = new_remote_pipeline_dir
+                        st.session_state["remote_scratch"] = new_remote_scratch
+                        st.session_state["nese_user_dir"] = new_nese_user_dir
                         st.success("Settings updated!")
-                        
+ 
                     # Set the environment variables remote_paths_dir and remote_params_dir
                     remote_params_dir = f"{new_remote_pipeline_dir}/parameters"
                     remote_paths_dir = f"{new_remote_pipeline_dir}/paths"
@@ -249,7 +254,7 @@ def main():
     
     with tab2:
         # ---------------------------------------------------------------------
-        # STEP 1: Create or reuse the CaImAn param file
+        # STEP 2: Create or reuse the CaImAn param file
         # ---------------------------------------------------------------------
         st.write("Enter the parameters for x/y motion correction (:blue-background[params_mcorr]) and CNMF (:blue-background[params_cnmf]).")
         
@@ -339,7 +344,7 @@ def main():
 
     with tab3:
         # ---------------------------------------------------------------------
-        # STEP 2: Create or reuse the Z-shift param file (optional)
+        # STEP 3: Create or reuse the Z-shift param file (optional)
         # ---------------------------------------------------------------------
         use_zshift = st.checkbox("Use Z-motion correction? (requires a z-stack)", value=False, key="zshift_checkbox")
 
@@ -439,7 +444,7 @@ def main():
             st.session_state["zshift_file_path"] = None
 
     # ---------------------------------------------------------------------
-    # STEP 3: Create or load the path JSON, referencing the selected files
+    # STEP 1: Create or load the path JSON, referencing the selected files
     # ---------------------------------------------------------------------
     with tab1:
         # st.header("Path File Setup", divider=True)
@@ -609,13 +614,16 @@ def main():
     # ---------------------------------------------------------------------
     with tab4:
         if run_method == "Run on Openmind cluster":
-            env_path = root_dir / "ui" / ".env"
-            env_values = dotenv_values(env_path)
-            remote_host = os.getenv("SSH_LOGIN_NODE")
-            remote_pipeline_dir = os.getenv("OM_CODE_DIR", "")
-                    
+            # env_path = root_dir / "ui" / ".env"
+            # env_values = dotenv_values(env_path)
+            # remote_host = os.getenv("SSH_LOGIN_NODE")
+            # remote_pipeline_dir = os.getenv("OM_CODE_DIR", "")
+            remote_host = st.session_state.get("remote_host", os.getenv("SSH_LOGIN_NODE"))
+            remote_pipeline_dir = st.session_state.get("remote_pipeline_dir", os.getenv("OM_CODE_DIR", ""))
+    
             if not remote_pipeline_dir:
                 st.error("Please set the remote pipeline directory in the settings.")
+                st.stop()
             else:
                 # Copy or create the batch script file 
                 remote_scripts_dir = f"{remote_pipeline_dir}/scripts"
