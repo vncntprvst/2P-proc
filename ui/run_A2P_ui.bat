@@ -1,60 +1,31 @@
 @echo off
 setlocal enabledelayedexpansion
 SET CONDA_ENV_NAME=analysis2p_ui
-SET LOGFILE=install_log.txt
+SET LOGFILE=a2p_ui_log.txt
 
 REM --- Check if the conda environment exists first, without logging ---
 conda env list | findstr /I "%CONDA_ENV_NAME%" >nul
 if not errorlevel 1 (
-    REM Environment exists; delete any previous log and run the app without logging.
     if exist %LOGFILE% del %LOGFILE%
     echo Environment %CONDA_ENV_NAME% found.
 
-    echo Checking if port 8502 is in use... >> %LOGFILE%
+    @REM echo Finding a free port... >> %LOGFILE%
 
-    for /f "tokens=5" %%a in ('netstat -aon ^| findstr "127.0.0.1:8502" ^| findstr "LISTENING"') do (
-        set "PID=%%a"
-        echo Port 8502 is in use by PID !PID!. Checking process details... >> %LOGFILE%
+    REM Start looking for a free port at 8502
+    set PORT=8502
 
-        if not "!PID!"=="0" (
-            REM Retrieve process details using WMIC
-            set "commandline="
-            set "processname="
-            
-            for /f "tokens=2 delims=," %%b in ('wmic process where "ProcessId=!PID!" get CommandLine /format:csv 2^>nul') do (
-                set "commandline=%%b"
-            )
-
-            for /f "tokens=1 delims=," %%c in ('wmic process where "ProcessId=!PID!" get Caption /format:csv 2^>nul') do (
-                set "processname=%%c"
-            )
-
-            REM Log process details
-            echo Process Name: !processname! Command Line: !commandline! >> %LOGFILE%
-
-            REM If "streamlit" or "python" appears in the process, terminate it
-            if defined commandline (
-                echo Checking for Streamlit/Python process... >> %LOGFILE%
-                echo !commandline! | findstr /I "streamlit python.exe" >nul
-                if not errorlevel 1 (
-                    echo Streamlit or Python process detected. Killing PID !PID! >> %LOGFILE%
-                    taskkill /PID !PID! /F >> %LOGFILE% 2>&1
-                    timeout /t 3 /nobreak >nul
-                ) else (
-                    echo PID !PID! does not seem to be Streamlit. Skipping termination. >> %LOGFILE%
-                )
-            ) else (
-                echo Could not retrieve command line details for PID !PID!. Skipping... >> %LOGFILE%
-            )
-        ) else (
-            echo No process found on port 8502. >> %LOGFILE%
-        )
+    :CHECK_PORT
+    netstat -ano | findstr ":%PORT%" | findstr "LISTENING" >nul
+    if not errorlevel 1 (
+        set /a PORT+=1
+        goto CHECK_PORT
     )
 
+    @REM echo Using port !PORT! for Streamlit. >> %LOGFILE%
+
     call conda activate %CONDA_ENV_NAME%
-    echo Running the app on port 8502... 
-    @REM streamlit run ui_app.py
-    streamlit run ui_app.py --server.port 8502
+    echo Running the app on port !PORT!...
+    streamlit run ui_app.py --server.port !PORT!
 
     echo Press any key to exit.
     pause
