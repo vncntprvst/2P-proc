@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import re
+import time
 import signal
 import platform
 from pathlib import Path
@@ -523,7 +524,7 @@ def main():
                     for p in existing_main_params:
                         if candidate == p.name:
                             st.session_state["caiman_param_file_path"] = p
-                            st.info(f"Automatically selected CaImAn parameter file: grey-background[{p.name}]")
+                            st.info(f"Automatically selected CaImAn parameter file: :grey-background[{p.name}]")
                             break  # Select the first match
 
             # Check for z-shift parameter file(s)
@@ -534,7 +535,7 @@ def main():
                     for p in existing_zshift_params:
                         if candidate == p.name:
                             st.session_state["zshift_file_path"] = p
-                            st.info(f"Automatically selected Z-shift parameter file: grey-background[{p.name}]")
+                            st.info(f"Automatically selected Z-shift parameter file: :grey-background[{p.name}]")
                             break  # Select the first match
 
         # --- Now let the user edit each field in the usual text inputs:
@@ -627,7 +628,7 @@ def main():
     # --- Display the current state of the path file
     # Preview JSON
     st.sidebar.subheader("Path File Preview") #divider=True)
-    st.sidebar.write('''Auto-filled from the forms on the right side.  
+    st.sidebar.write('''Filling the forms to the right will automatically update the fields below.  
                      Save or download the File path below once ready.''')
     st.sidebar.write(''':material/info: The fields :grey-background[data_paths], :grey-background[export_paths], and :grey-background[params_files] must be filled.''')
     st.sidebar.json(path_file_dict)
@@ -997,11 +998,63 @@ def main():
                         if ssh_proc.returncode == 0:
                             st.success("Submitted job to cluster via sbatch!")
                             st.text_area("Cluster Output", ssh_proc.stdout, height=200)
+                            job_id_match = re.search(r"Submitted batch job (\d+)", ssh_proc.stdout)
+                            if job_id_match:
+                                st.session_state["last_job_id"] = job_id_match.group(1)
                         else:
                             st.error(f"⚠️ Cluster sbatch command failed with code {ssh_proc.returncode}")
                             st.text_area("Cluster Error", ssh_proc.stderr, height=200)
+                            st.session_state["last_job_id"] = None            
                     except Exception as e:
                         st.error(f"⚠️ Error running sbatch on cluster: {e}")
+
+        # Check if a job ID was submitted
+        if "last_job_id" in st.session_state:
+            job_id = st.session_state["last_job_id"]
+            st.info(f"Latest submitted job ID: {job_id}")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Kill job button
+                if st.button("Kill Job", key="kill_job_button", help="Cancel the last submitted job"):
+                    remote_host = st.session_state.get("remote_host", os.getenv("SSH_LOGIN_NODE"))
+                    cancel_cmd = f"ssh {remote_host} scancel {job_id}"
+                    cancel_proc = subprocess.run(cancel_cmd, shell=True, capture_output=True, text=True)
+
+                    if cancel_proc.returncode == 0:
+                        st.success(f"Job {job_id} successfully canceled.")
+                        del st.session_state["last_job_id"]
+                    else:
+                        st.error(f"Failed to cancel job {job_id}: {cancel_proc.stderr}")
+
+            with col2:
+                # Determine which script was used
+                script_type = st.session_state.get("last_script", "cluster_processing.sh")  # Default to cluster_processing.sh
+                log_filename = f"cluster_processing-{job_id}.ans" if "cluster_processing" in script_type else f"batch_mcorr_cnmf-{job_id}.ans"
+                remote_log_path = f"{st.session_state.get('remote_pipeline_dir')}/scripts/slurm_logs/{log_filename}"
+
+                # Download log button
+                if st.button("Download Log", key="download_log_button", help="Fetch job log file from cluster"):
+                    remote_host = st.session_state.get("remote_host", os.getenv("SSH_LOGIN_NODE"))
+                    local_log_path = f"/mnt/data/{log_filename}"  # Temporarily store in /mnt/data
+
+                    scp_cmd = f"scp {remote_host}:{remote_log_path} {local_log_path}"
+                    scp_proc = subprocess.run(scp_cmd, shell=True, capture_output=True, text=True)
+
+                    if scp_proc.returncode == 0:
+                        st.success(f"Log file {log_filename} downloaded successfully.")
+                        with open(local_log_path, "r") as log_file:
+                            log_content = log_file.read()
+                        st.text_area("Log File Contents", log_content, height=300)
+                        st.download_button(
+                            label="Download Log File",
+                            data=log_content,
+                            file_name=log_filename,
+                            mime="text/plain"
+                        )
+                    else:
+                        st.error(f"Failed to download log file {log_filename}: {scp_proc.stderr}")
 
     # ---------------------------------------------------------------------
     "---"
