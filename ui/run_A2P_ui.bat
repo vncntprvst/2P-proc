@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 SET CONDA_ENV_NAME=analysis2p_ui
 SET LOGFILE=install_log.txt
 
@@ -8,20 +9,29 @@ if not errorlevel 1 (
     REM Environment exists; delete any previous log and run the app without logging.
     if exist %LOGFILE% del %LOGFILE%
     echo Environment %CONDA_ENV_NAME% found.
-    REM Check if port 8501 is in use on localhost (127.0.0.1)
-    netstat -ano | findstr "127.0.0.1:8501" >nul
-    if not errorlevel 1 (
-        echo Port 8501 on localhost is in use.
-        REM Iterate through each line that matches exactly the local address
-        for /f "tokens=5" %%a in ('netstat -aon ^| findstr "127.0.0.1:8501"') do (
-            if not "%%a"=="0" (
-                echo Killing process with PID %%a
-                taskkill /PID %%a /F
-            ) else (
-                echo Skipping critical system process with PID 0.
+
+    REM Check if port 8501 is in use on localhost (127.0.0.1) and in LISTENING state
+    for /f "tokens=5" %%a in ('netstat -aon ^| findstr "127.0.0.1:8501" ^| findstr "LISTENING"') do (
+        set "PID=%%a"
+        if not "!PID!"=="0" (
+            REM Retrieve process name using TASKLIST in CSV format
+            for /f "usebackq tokens=1 delims=," %%b in (`tasklist /FI "PID eq !PID!" /FO CSV /NH`) do (
+                set "procname=%%~b"
+                REM Remove any quotes from the process name
+                set "procname=!procname:"=!"
+                REM If the process is python.exe (assumed to be your Streamlit app), then kill it.
+                if /I "!procname!"=="python.exe" (
+                    echo Killing process with PID !PID! (^!procname!^)
+                    taskkill /PID !PID! /F
+                ) else (
+                    @REM echo Skipping process with PID !PID! (^!procname!^) - not our target.
+                )
             )
+        ) else (
+            @REM echo Skipping critical system process with PID 0.
         )
-    )      
+    )
+     
     call conda activate %CONDA_ENV_NAME%
     echo Running the app...
     streamlit run ui_app.py
