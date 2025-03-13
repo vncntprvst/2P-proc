@@ -987,7 +987,7 @@ def main():
                     else:
                         script_filename = "om_batch_mcorr_cnmf.sh"
                     cluster_cmd = (
-                        f"cd {remote_scripts_dir} && sbatch {script_filename} "
+                        f"cd {remote_scripts_dir} && EMAIL=$USER@mit.edu && sbatch --mail-user=$EMAIL {script_filename} "
                         f"{remote_paths_dir}/{path_json_name}"
                     )
                     ssh_cmd = ["ssh", remote_host, cluster_cmd]
@@ -1035,18 +1035,18 @@ def main():
                 remote_log_path = f"{st.session_state.get('remote_pipeline_dir')}/scripts/slurm_logs/{log_filename}"
 
                 # Download log button
-                if st.button("Download Log", key="download_log_button", help="Fetch job log file from cluster"):
+                if st.button("Show Logs", key="show_logs_button", help="Fetch job log file from cluster"):
                     remote_host = st.session_state.get("remote_host", os.getenv("SSH_LOGIN_NODE"))
-                    local_log_path = f"/mnt/data/{log_filename}"  # Temporarily store in /mnt/data
 
-                    scp_cmd = f"scp {remote_host}:{remote_log_path} {local_log_path}"
+                    scp_cmd = f"ssh {remote_host} cat {remote_log_path}"
                     scp_proc = subprocess.run(scp_cmd, shell=True, capture_output=True, text=True)
 
                     if scp_proc.returncode == 0:
-                        st.success(f"Log file {log_filename} downloaded successfully.")
-                        with open(local_log_path, "r") as log_file:
-                            log_content = log_file.read()
+                        log_content = scp_proc.stdout  # Read log content directly from SSH
+
+                        st.success(f"Log file {log_filename} retrieved successfully.")
                         st.text_area("Log File Contents", log_content, height=300)
+
                         st.download_button(
                             label="Download Log File",
                             data=log_content,
@@ -1054,7 +1054,8 @@ def main():
                             mime="text/plain"
                         )
                     else:
-                        st.error(f"Failed to download log file {log_filename}: {scp_proc.stderr}")
+                        st.error(f"Failed to retrieve log file {log_filename}: {scp_proc.stderr}")
+
 
     # ---------------------------------------------------------------------
     "---"
