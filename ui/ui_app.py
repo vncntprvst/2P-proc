@@ -166,9 +166,20 @@ def get_remote_user(host):
         else:
             raise Exception(f"Failed to get remote user: {result.stderr}")
     except Exception as e:
-        st.error(f"Error getting remote user: {e}")
+        st.error(f"⚠️ Error getting remote user: {e}")
         return None
     
+# -------------------------------------------------------------------------
+# Convert Windows-style line endings to Unix-style
+# -------------------------------------------------------------------------    
+def convert_to_unix(filepath):
+    """Ensures file has UNIX line endings."""
+    with open(filepath, "rb") as f:
+        content = f.read()
+    content = content.replace(b"\r\n", b"\n")  # Convert Windows CRLF to UNIX LF
+    with open(filepath, "wb") as f:
+        f.write(content)
+        
 # -------------------------------------------------------------------------
 # Main Streamlit App
 # -------------------------------------------------------------------------
@@ -299,7 +310,7 @@ def main():
                 
                 default_text = json.dumps(chosen_file_content, indent=4)
             except Exception as e:
-                default_text = f"Error reading file: {e}"
+                default_text = f"⚠️ Error reading file: {e}"
                 
             main_param_text = st.text_area(
                 "Edit the parameters as needed, then save the file below if you made any change.",
@@ -337,7 +348,7 @@ def main():
                         st.session_state["caiman_param_file_path"] = new_path
                         st.success(f"Saved new CaImAn param file to {new_path}")
                 except Exception as e:
-                    st.error(f"Error saving param file: {e}")
+                    st.error(f"⚠️ Error saving param file: {e}")
 
             if st.session_state.get("pending_overwrite", False):
                 if st.button("Confirm Overwrite"):
@@ -351,7 +362,7 @@ def main():
                         st.success(f"Overwritten file at {new_path}")
                         st.session_state.pending_overwrite = False  # Reset the flag
                     except Exception as e:
-                        st.error(f"Error overwriting file: {e}")
+                        st.error(f"⚠️ Error overwriting file: {e}")
 
     with tab3:
         # ---------------------------------------------------------------------
@@ -407,7 +418,7 @@ def main():
                         chosen_file_content = json.load(f)
                     default_text = json.dumps(chosen_file_content, indent=4)
                 except Exception as e:
-                    default_text = f"Error reading file: {e}"
+                    default_text = f"⚠️ Error reading file: {e}"
                 
                 zshift_text = st.text_area(
                     "Edit the parameters as needed. A new file can be saved below.",
@@ -443,7 +454,7 @@ def main():
                             st.session_state["zshift_file_path"] = new_path
                             st.success(f"Saved new Z-shift param file to {new_path}")
                     except Exception as e:
-                        st.error(f"Error saving param file: {e}")
+                        st.error(f"⚠️ Error saving param file: {e}")
 
                 if st.session_state.get("pending_zshift_overwrite", False):
                     if st.button("Confirm Overwrite (Z-shift)"):
@@ -457,7 +468,7 @@ def main():
                             st.success(f"Overwritten file at {new_path}")
                             st.session_state.pending_zshift_overwrite = False  # Reset the flag
                         except Exception as e:
-                            st.error(f"Error overwriting file: {e}")
+                            st.error(f"⚠️ Error overwriting file: {e}")
 
 
         else:
@@ -500,7 +511,7 @@ def main():
                 st.info(f"Loaded existing path file: {chosen_fullpath}")
                 path_data = loaded_paths
             except Exception as e:
-                st.error(f"Error loading {chosen_fullpath}: {e}")
+                st.error(f"⚠️ Error loading {chosen_fullpath}: {e}")
                 path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
 
             # --- Automatically select parameter files if they exist locally ---
@@ -644,7 +655,7 @@ def main():
                     json.dump(path_file_dict, f, indent=4)
                 st.sidebar.success(f"Saved {path_json_name} locally to {path_file_path}")
             except Exception as e:
-                st.sidebar.error(f"Error saving path JSON: {e}")
+                st.sidebar.error(f"⚠️ Error saving path JSON: {e}")
     with col2:
         st.sidebar.download_button(
             label="Download Path JSON",
@@ -688,7 +699,7 @@ def main():
                         ]
                         scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
                         if scp_script_proc.returncode != 0:
-                            st.error(f"SCP for script file failed: {scp_script_proc.stderr}")
+                            st.error(f"⚠️ SCP for script file failed: {scp_script_proc.stderr}")
                         # st.info(f"Script file {batch_script_filename} copied from {Path(remote_script_path).parent} to {scripts_dir}.")
                         st.info(f":green-background[{batch_script_filename}] retrieved from cluster.")
                         
@@ -755,7 +766,7 @@ def main():
                         st.success("Pipeline finished successfully!")
                         st.text_area("Pipeline Output", completed_proc.stdout, height=200)
                     else:
-                        st.error(f"Pipeline exited with code {completed_proc.returncode}")
+                        st.error(f"⚠️ Pipeline exited with code {completed_proc.returncode}")
                         st.text_area("Pipeline Error Output", completed_proc.stderr, height=200)
                 except Exception as e:
                     st.error(f"Error running pipeline locally: {e}")
@@ -780,6 +791,16 @@ def main():
                 if not local_path_json.exists():
                     st.error(f"Path JSON does not exist locally: {local_path_json}")
                 else:
+                    # First check that remote_pipeline_dir
+                    ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_pipeline_dir}"]
+                    try:
+                        ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
+                        if ssh_ls_proc.returncode != 0:
+                            st.error(f"⚠️ Remote pipeline directory does not exist: {ssh_ls_proc.stderr}")
+                            st.stop()
+                    except Exception as e:
+                        st.error(f"Error checking remote pipeline directory: {e}")
+                        st.stop()
                     
                     # Create remote directories if they do not exist
                     ssh_mkdir_cmd = [
@@ -794,9 +815,9 @@ def main():
                             st.error(f"Failed to create remote directories: {ssh_mkdir_proc.stderr}")
                             st.stop()
                         else:
-                            st.info("Remote directories created or already exist.")
+                            st.info("✅ Remote directories created or already exist.")
                     except Exception as e:
-                        st.error(f"Error creating remote directories: {e}")
+                        st.error(f"⚠️ Error creating remote directories: {e}")
                         st.stop()
 
                     # 1. scp the paths JSON file to the cluster
@@ -812,9 +833,9 @@ def main():
                             st.error(f"SCP for Path file failed: {scp_proc.stderr}")
                             st.stop()  # stop the Streamlit flow
                         else:
-                            st.info("Path file copied to cluster.")
+                            st.info("✅ Path file copied to cluster.")
                     except Exception as e:
-                        st.error(f"Error copying Path file to cluster: {e}")
+                        st.error(f"⚠️ Error copying Path file to cluster: {e}")
                         st.stop()
 
                     # 2. scp the param files similarly (only if these exist on the local machine)
@@ -832,7 +853,7 @@ def main():
                                 st.error(f"SCP for CaImAn parameter failed: {scp_proc2.stderr}")
                                 st.stop()
                             else:
-                                st.info("CaImAn parameter file copied to cluster.")
+                                st.info("✅ CaImAn parameter file copied to cluster.")
                         else:
                             st.warning(f"Local param file does not exist: {local_param}")
 
@@ -847,10 +868,10 @@ def main():
                             # st.write(f"Running: {' '.join(scp_zparams_cmd)}")
                             scp_proc3 = subprocess.run(scp_zparams_cmd, capture_output=True, text=True)
                             if scp_proc3.returncode != 0:
-                                st.error(f"SCP for Z-shift param failed: {scp_proc3.stderr}")
+                                st.error(f"⚠️ SCP for Z-shift param failed: {scp_proc3.stderr}")
                                 st.stop()
                             else:
-                                st.info("Z-shift parameter file copied to cluster.")
+                                st.info("✅ Z-shift parameter file copied to cluster.")
                         else:
                             st.warning(f"Local Z-shift param file does not exist: {local_zparam}")
 
@@ -872,36 +893,93 @@ def main():
                     with open(scripts_dir / batch_script_filename, "w", newline="\n") as f:
                         f.write(script_updated)
                         
+                    # Ensure UNIX-style line endings BEFORE copying to the cluster
+                    batch_script_path = scripts_dir / batch_script_filename
+                    convert_to_unix(batch_script_path)
+                    
                     # Copy the updated script to the cluster
-                    # Check one last time for Windows line endings
-                    with open(scripts_dir / batch_script_filename, "r") as f:
-                        script_content = f.read()
-                        if "\r\n" in script_content:
-                            st.error("Script file still contains Windows line endings. Please fix this.")
-                            st.stop()
-                    with open(scripts_dir / "cluster_processing.sh", "r") as f:
-                        script_content2 = f.read()
-                        if "\r\n" in script_content2:
-                            st.error("cluster_processing.sh file still contains Windows line endings. Please fix this.")
-                            st.stop()
-                            
                     if copy_files:
+                        cluster_processing_path = scripts_dir / "cluster_processing.sh"
+                        convert_to_unix(cluster_processing_path)
                         # Copy both the batch script and the cluster_processing.sh
                         scp_script_cmd = [
                             "scp",
-                            str(scripts_dir / batch_script_filename),
-                            str(scripts_dir / "cluster_processing.sh"),
+                            str(batch_script_path),
+                            str(cluster_processing_path),
                             f"{remote_host}:{remote_scripts_dir}"
                         ]
                     else:
                         scp_script_cmd = [
                             "scp",
-                            str(scripts_dir / batch_script_filename),
+                            str(batch_script_path),
                             f"{remote_host}:{remote_scripts_dir}/{batch_script_filename}"
                         ]
                     # st.write(f"Running: {' '.join(scp_script_cmd)}")
                     scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
-                        
+                    if scp_script_proc.returncode != 0:
+                        st.error(f"⚠️ SCP for batch scripts failed: {scp_script_proc.stderr}")
+                    else:
+                        st.info(f"✅ Batch scripts successfully copied to {remote_scripts_dir}.")
+                    
+                    # --- Check that the utils scripts are in the remote scripts/utils folder --- #
+                    # Define local and remote utils directories
+                    local_utils_dir = scripts_dir / "utils"
+                    remote_utils_dir = f"{remote_pipeline_dir}/scripts/utils"
+
+                    # 1. Ensure the remote utils/ directory exists
+                    ssh_mkdir_utils_cmd = ["ssh", remote_host, f"mkdir -p {remote_utils_dir}"]
+                    try:
+                        ssh_mkdir_utils_proc = subprocess.run(ssh_mkdir_utils_cmd, capture_output=True, text=True)
+                        if ssh_mkdir_utils_proc.returncode == 0:
+                            st.info(f"Ensured remote utils directory exists: {remote_utils_dir}")
+                        else:
+                            st.error(f"Failed to create remote utils directory: {ssh_mkdir_utils_proc.stderr}")
+                            st.stop()
+                    except Exception as e:
+                        st.error(f"Error ensuring remote utils directory: {e}")
+                        st.stop()
+
+                    # 2. List local and remote utils files
+                    local_utils_files = [f.name for f in local_utils_dir.iterdir() if f.is_file()]
+
+                    # Get list of remote utils files via SSH
+                    ssh_list_cmd = ["ssh", remote_host, f"ls {remote_utils_dir}"]
+                    try:
+                        ssh_list_proc = subprocess.run(ssh_list_cmd, capture_output=True, text=True)
+                        if ssh_list_proc.returncode == 0:
+                            remote_utils_files = ssh_list_proc.stdout.split()
+                        else:
+                            st.warning(f"Remote utils directory does not exist or is empty: {remote_utils_dir}")
+                            remote_utils_files = []
+                    except Exception as e:
+                        st.error(f"Error listing remote utils directory: {e}")
+                        remote_utils_files = []
+
+                    # 3. Find and Copy Missing Files
+                    missing_utils_files = [f for f in local_utils_files if f not in remote_utils_files]
+
+                    if missing_utils_files:
+                        st.info(f"Copying {len(missing_utils_files)} missing utils files to cluster...")
+                        for filename in missing_utils_files:
+                            local_path = local_utils_dir / filename
+                            remote_path = f"{remote_utils_dir}/{filename}"
+
+                            # Run SCP
+                            scp_utils_cmd = ["scp", str(local_path), f"{remote_host}:{remote_path}"]
+                            try:
+                                scp_utils_proc = subprocess.run(scp_utils_cmd, capture_output=True, text=True)
+                                if scp_utils_proc.returncode == 0:
+                                    st.success(f"Copied {filename} to cluster.")
+                                else:
+                                    error_msg = scp_utils_proc.stderr.lower()
+                                    st.error(f"Failed to copy {filename}: {scp_utils_proc.stderr}")
+                            except Exception as e:
+                                st.error(f"Error copying {filename} to cluster: {e}")
+                    else:
+                        st.success("All required utils files are already present on the cluster.")
+
+  
+                    # --- Run the batch script on the cluster --- #
                     # Create the sbatch command
                     if copy_files:
                         script_filename = "cluster_processing.sh"
@@ -920,10 +998,10 @@ def main():
                             st.success("Submitted job to cluster via sbatch!")
                             st.text_area("Cluster Output", ssh_proc.stdout, height=200)
                         else:
-                            st.error(f"Cluster sbatch command failed with code {ssh_proc.returncode}")
+                            st.error(f"⚠️ Cluster sbatch command failed with code {ssh_proc.returncode}")
                             st.text_area("Cluster Error", ssh_proc.stderr, height=200)
                     except Exception as e:
-                        st.error(f"Error running sbatch on cluster: {e}")
+                        st.error(f"⚠️ Error running sbatch on cluster: {e}")
 
     # ---------------------------------------------------------------------
     "---"
