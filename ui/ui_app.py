@@ -784,7 +784,7 @@ def main():
                 remote_host = os.getenv("SSH_LOGIN_NODE")
                 # remote_user = get_remote_user(remote_host) 
                 remote_pipeline_dir = os.getenv("OM_CODE_DIR")
-                remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths"
+                remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths/openmind"
                 remote_params_dir = f"{remote_pipeline_dir}/Mesmerize/parameters"
                 
                 # We should have a local path to the paths JSON at this point, but check anyway:
