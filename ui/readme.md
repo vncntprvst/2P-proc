@@ -22,8 +22,8 @@ The `OM_USER_DIR_ALIAS` is the alias for the user directory on the cluster.
 Use one of the following methods to run the UI: 
 * Run the Python script:
 ```bash
-conda activate analysis2p_ui
 cd ui
+conda activate analysis2p_ui
 streamlit run ui_app.py
 ```
 * Run the Batch/Script File:

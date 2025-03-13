@@ -250,7 +250,7 @@ def main():
         
     # ---------------------------------------------------------------------
 
-    tab1, tab2, tab3, tab4 = st.tabs([":twisted_rightwards_arrows: Path file ", ":crocodile: Caiman parameters ", ":elevator: Correct z-motion", ":woman-running: Run the pipeline"])
+    tab1, tab2, tab3, tab4 = st.tabs([":twisted_rightwards_arrows: Path file ", ":crocodile: Caiman parameters ", ":material/flex_direction: Correct z-motion", ":woman-running: Run the pipeline"])
     
     with tab2:
         # ---------------------------------------------------------------------
@@ -512,7 +512,7 @@ def main():
                     for p in existing_main_params:
                         if candidate == p.name:
                             st.session_state["caiman_param_file_path"] = p
-                            st.info(f"Automatically selected CaImAn parameter file: {p.name}")
+                            st.info(f"Automatically selected CaImAn parameter file: grey-background[{p.name}]")
                             break  # Select the first match
 
             # Check for z-shift parameter file(s)
@@ -523,7 +523,7 @@ def main():
                     for p in existing_zshift_params:
                         if candidate == p.name:
                             st.session_state["zshift_file_path"] = p
-                            st.info(f"Automatically selected Z-shift parameter file: {p.name}")
+                            st.info(f"Automatically selected Z-shift parameter file: grey-background[{p.name}]")
                             break  # Select the first match
 
         # --- Now let the user edit each field in the usual text inputs:
@@ -616,7 +616,9 @@ def main():
     # --- Display the current state of the path file
     # Preview JSON
     st.sidebar.subheader("Path File Preview") #divider=True)
-    st.sidebar.write("Auto-filled. Save or download below once ready.")
+    st.sidebar.write('''Auto-filled from the forms on the right side.  
+                     Save or download the File path below once ready.''')
+    st.sidebar.write(''':material/info: The fields :grey-background[data_paths], :grey-background[export_paths], and :grey-background[params_files] must be filled.''')
     st.sidebar.json(path_file_dict)
 
     # --- Suggest a default filename based on subject, date and run numbers
@@ -718,6 +720,13 @@ def main():
                     batch_mcorr_cnmf_mem      = mem_match.group(1)      if mem_match      else "120G"
                 else:
                     st.error("Not enough SBATCH directives found in the template.")
+                    
+                # Now create fields to edit these values
+                st.write("#### Cluster Job Parameters")
+                batch_mcorr_cnmf_walltime = st.text_input("Walltime (HH:MM:SS)", value=batch_mcorr_cnmf_walltime)
+                batch_mcorr_cnmf_nodes    = st.text_input("Number of nodes", value=batch_mcorr_cnmf_nodes)
+                batch_mcorr_cnmf_cores    = st.text_input("Number of cores", value=batch_mcorr_cnmf_cores)
+                batch_mcorr_cnmf_mem      = st.text_input("Memory per node (e.g., 120G)", value=batch_mcorr_cnmf_mem)
                 
             # Always create a cluster_processing.sh file if it doesn't exist 
             if not (scripts_dir / "cluster_processing.sh").exists():
@@ -725,8 +734,15 @@ def main():
                 with open(scripts_dir / "cluster_processing_template.sh", "r") as f:
                     script_template = f.read()
                 with open(scripts_dir / "cluster_processing.sh", "w") as f:
-                    f.write(script_template)
+                    f.write(script_template)                    
                 st.info(f":grey-background[cluster_processing.sh] created from template.")
+            
+            # Replace Windows-style line endings with Unix-style
+            with open(scripts_dir / "cluster_processing.sh", "r") as f:
+                script_template = f.read()
+                script_template = script_template.replace("\r\n", "\n")
+            with open(scripts_dir / "cluster_processing.sh", "w") as f:
+                f.write(script_template)
                                 
         # 1) Button to run locally    
         if run_method == "Run locally":
@@ -810,7 +826,7 @@ def main():
                                 str(local_param),
                                 f"{remote_host}:{remote_params_dir}/{local_param.name}"
                             ]
-                            st.write(f"Running: {' '.join(scp_params_cmd)}")
+                            # st.write(f"Running: {' '.join(scp_params_cmd)}")
                             scp_proc2 = subprocess.run(scp_params_cmd, capture_output=True, text=True)
                             if scp_proc2.returncode != 0:
                                 st.error(f"SCP for CaImAn parameter failed: {scp_proc2.stderr}")
@@ -828,7 +844,7 @@ def main():
                                 str(local_zparam),
                                 f"{remote_host}:{remote_params_dir}/{local_zparam.name}"
                             ]
-                            st.write(f"Running: {' '.join(scp_zparams_cmd)}")
+                            # st.write(f"Running: {' '.join(scp_zparams_cmd)}")
                             scp_proc3 = subprocess.run(scp_zparams_cmd, capture_output=True, text=True)
                             if scp_proc3.returncode != 0:
                                 st.error(f"SCP for Z-shift param failed: {scp_proc3.stderr}")
@@ -843,17 +859,32 @@ def main():
                     with open(scripts_dir / batch_script_filename, "r") as f:
                         script_template = f.read()
 
-                    # Update SBATCH directives with user-provided inputs
-                    script_updated = re.sub(r"(-t\s+)\S+", r"\1" + batch_mcorr_cnmf_walltime, script_template)
-                    script_updated = re.sub(r"(-N\s+)\S+", r"\1" + batch_mcorr_cnmf_nodes,    script_updated)
-                    script_updated = re.sub(r"(-n\s+)\S+", r"\1" + batch_mcorr_cnmf_cores,    script_updated)
-                    script_updated = re.sub(r"(--mem=)\S+", r"\1" + batch_mcorr_cnmf_mem,      script_updated)
+                    # Update SBATCH directives with user-provided inputs using unambiguous group syntax:
+                    script_updated = re.sub(r"(-t\s+)\S+", r"\g<1>" + batch_mcorr_cnmf_walltime, script_template)
+                    script_updated = re.sub(r"(-N\s+)\S+", r"\g<1>" + batch_mcorr_cnmf_nodes, script_updated)
+                    script_updated = re.sub(r"(-n\s+)\S+", r"\g<1>" + batch_mcorr_cnmf_cores, script_updated)
+                    script_updated = re.sub(r"(--mem=)\S+", r"\g<1>" + batch_mcorr_cnmf_mem, script_updated)
 
-                    # Write the updated script to the appropriate file in the scripts directory
-                    with open(scripts_dir / batch_script_filename, "w") as f:
-                        f.write(script_updated)      
+                    # Convert Windows CRLF line breaks to UNIX LF line breaks
+                    script_updated = script_updated.replace("\r\n", "\n")
+
+                    # Write the file with Unix line breaks:
+                    with open(scripts_dir / batch_script_filename, "w", newline="\n") as f:
+                        f.write(script_updated)
                         
                     # Copy the updated script to the cluster
+                    # Check one last time for Windows line endings
+                    with open(scripts_dir / batch_script_filename, "r") as f:
+                        script_content = f.read()
+                        if "\r\n" in script_content:
+                            st.error("Script file still contains Windows line endings. Please fix this.")
+                            st.stop()
+                    with open(scripts_dir / "cluster_processing.sh", "r") as f:
+                        script_content2 = f.read()
+                        if "\r\n" in script_content2:
+                            st.error("cluster_processing.sh file still contains Windows line endings. Please fix this.")
+                            st.stop()
+                            
                     if copy_files:
                         # Copy both the batch script and the cluster_processing.sh
                         scp_script_cmd = [
@@ -868,7 +899,7 @@ def main():
                             str(scripts_dir / batch_script_filename),
                             f"{remote_host}:{remote_scripts_dir}/{batch_script_filename}"
                         ]
-                    st.write(f"Running: {' '.join(scp_script_cmd)}")
+                    # st.write(f"Running: {' '.join(scp_script_cmd)}")
                     scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
                         
                     # Create the sbatch command
@@ -882,7 +913,7 @@ def main():
                     )
                     ssh_cmd = ["ssh", remote_host, cluster_cmd]
 
-                    st.write(f"Running: {' '.join(ssh_cmd)}")
+                    st.write(f"Running: :grey-background[{' '.join(ssh_cmd)}]")
                     try:
                         ssh_proc = subprocess.run(ssh_cmd, capture_output=True, text=True)
                         if ssh_proc.returncode == 0:
