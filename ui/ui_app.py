@@ -919,7 +919,7 @@ def main():
                     if scp_script_proc.returncode != 0:
                         st.error(f"⚠️ SCP for batch scripts failed: {scp_script_proc.stderr}")
                     else:
-                        st.info(f"✅ Batch scripts successfully copied to {remote_scripts_dir}.")
+                        st.info(f"✅ Batch scripts successfully copied to :grey-background[{remote_scripts_dir}].")
                     
                     # --- Check that the utils scripts are in the remote scripts/utils folder --- #
                     # Define local and remote utils directories
@@ -930,13 +930,13 @@ def main():
                     ssh_mkdir_utils_cmd = ["ssh", remote_host, f"mkdir -p {remote_utils_dir}"]
                     try:
                         ssh_mkdir_utils_proc = subprocess.run(ssh_mkdir_utils_cmd, capture_output=True, text=True)
-                        if ssh_mkdir_utils_proc.returncode == 0:
-                            st.info(f"Ensured remote utils directory exists: {remote_utils_dir}")
-                        else:
-                            st.error(f"Failed to create remote utils directory: {ssh_mkdir_utils_proc.stderr}")
+                        if ssh_mkdir_utils_proc.returncode != 0:
+                        #     st.info(f"Ensured remote utils directory exists: :grey-background[{remote_utils_dir}]")
+                        # else:
+                            st.error(f"⚠️ Failed to create remote utils directory: {ssh_mkdir_utils_proc.stderr}")
                             st.stop()
                     except Exception as e:
-                        st.error(f"Error ensuring remote utils directory: {e}")
+                        st.error(f"⚠️ Error ensuring remote utils directory: {e}")
                         st.stop()
 
                     # 2. List local and remote utils files
@@ -969,7 +969,7 @@ def main():
                             try:
                                 scp_utils_proc = subprocess.run(scp_utils_cmd, capture_output=True, text=True)
                                 if scp_utils_proc.returncode == 0:
-                                    st.success(f"Copied {filename} to cluster.")
+                                    st.success(f"Copied :grey-background[{filename}] to cluster.")
                                 else:
                                     error_msg = scp_utils_proc.stderr.lower()
                                     st.error(f"Failed to copy {filename}: {scp_utils_proc.stderr}")
