@@ -10,31 +10,52 @@ if not errorlevel 1 (
     if exist %LOGFILE% del %LOGFILE%
     echo Environment %CONDA_ENV_NAME% found.
 
-    REM Check if port 8501 is in use on localhost (127.0.0.1) and in LISTENING state
-    for /f "tokens=5" %%a in ('netstat -aon ^| findstr "127.0.0.1:8501" ^| findstr "LISTENING"') do (
+    echo Checking if port 8502 is in use... >> %LOGFILE%
+
+    for /f "tokens=5" %%a in ('netstat -aon ^| findstr "127.0.0.1:8502" ^| findstr "LISTENING"') do (
         set "PID=%%a"
+        echo Port 8502 is in use by PID !PID!. Checking process details... >> %LOGFILE%
+
         if not "!PID!"=="0" (
-            REM Retrieve process name using TASKLIST in CSV format
-            for /f "usebackq tokens=1 delims=," %%b in (`tasklist /FI "PID eq !PID!" /FO CSV /NH`) do (
-                set "procname=%%~b"
-                REM Remove any quotes from the process name
-                set "procname=!procname:"=!"
-                REM If the process is python.exe (assumed to be your Streamlit app), then kill it.
-                if /I "!procname!"=="python.exe" (
-                    echo Killing process with PID !PID! (^!procname!^)
-                    taskkill /PID !PID! /F
+            REM Retrieve process details using WMIC
+            set "commandline="
+            set "processname="
+            
+            for /f "tokens=2 delims=," %%b in ('wmic process where "ProcessId=!PID!" get CommandLine /format:csv 2^>nul') do (
+                set "commandline=%%b"
+            )
+
+            for /f "tokens=1 delims=," %%c in ('wmic process where "ProcessId=!PID!" get Caption /format:csv 2^>nul') do (
+                set "processname=%%c"
+            )
+
+            REM Log process details
+            echo Process Name: !processname! Command Line: !commandline! >> %LOGFILE%
+
+            REM If "streamlit" or "python" appears in the process, terminate it
+            if defined commandline (
+                echo Checking for Streamlit/Python process... >> %LOGFILE%
+                echo !commandline! | findstr /I "streamlit python.exe" >nul
+                if not errorlevel 1 (
+                    echo Streamlit or Python process detected. Killing PID !PID! >> %LOGFILE%
+                    taskkill /PID !PID! /F >> %LOGFILE% 2>&1
+                    timeout /t 3 /nobreak >nul
                 ) else (
-                    @REM echo Skipping process with PID !PID! (^!procname!^) - not our target.
+                    echo PID !PID! does not seem to be Streamlit. Skipping termination. >> %LOGFILE%
                 )
+            ) else (
+                echo Could not retrieve command line details for PID !PID!. Skipping... >> %LOGFILE%
             )
         ) else (
-            @REM echo Skipping critical system process with PID 0.
+            echo No process found on port 8502. >> %LOGFILE%
         )
     )
-     
+
     call conda activate %CONDA_ENV_NAME%
-    echo Running the app...
-    streamlit run ui_app.py
+    echo Running the app on port 8502... 
+    @REM streamlit run ui_app.py
+    streamlit run ui_app.py --server.port 8502
+
     echo Press any key to exit.
     pause
     exit /b 0
