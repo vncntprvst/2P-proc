@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import re
+import shutil
 import time
 import signal
 import platform
@@ -180,7 +181,29 @@ def convert_to_unix(filepath):
     content = content.replace(b"\r\n", b"\n")  # Convert Windows CRLF to UNIX LF
     with open(filepath, "wb") as f:
         f.write(content)
-        
+
+# -------------------------------------------------------------------------
+# Helper functions for handling ANSI escape codes
+# -------------------------------------------------------------------------
+def strip_ansi(text):
+    """Removes ANSI escape codes from the given text."""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+def convert_ansi_to_html(text):
+    """Converts ANSI text to HTML using ansi2html if available."""
+    try:
+        # Check if ansi2html is installed
+        if shutil.which("ansi2html"):
+            process = subprocess.run(["ansi2html"], input=text, text=True, capture_output=True)
+            if process.returncode == 0:
+                return process.stdout
+    except Exception as e:
+        st.warning(f"ANSI to HTML conversion failed: {e}")
+    
+    # Fallback: Strip ANSI codes
+    return f"<pre>{strip_ansi(text)}</pre>"
+
 # -------------------------------------------------------------------------
 # Main Streamlit App
 # -------------------------------------------------------------------------
@@ -903,9 +926,14 @@ def main():
 
                     if scp_proc.returncode == 0:
                         log_content = scp_proc.stdout  # Read log content directly from SSH
-
                         st.success(f"Log file {log_filename} retrieved successfully.")
-                        st.text_area("Log File Contents", log_content, height=300)
+                        # Try converting ANSI to HTML, or strip ANSI formatting if conversion fails
+                        if shutil.which("ansi2html"):
+                            formatted_log = convert_ansi_to_html(log_content)
+                            st.markdown(formatted_log, unsafe_allow_html=True)
+                        else:
+                            stripped_log = strip_ansi(log_content)
+                            st.text_area("Log File Contents", stripped_log, height=300)
 
                         st.download_button(
                             label="Download Log File",

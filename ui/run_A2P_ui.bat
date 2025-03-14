@@ -47,7 +47,7 @@ if "%choice%"=="1" (
     echo Installing conda environment... >> %LOGFILE%
     conda create -n %CONDA_ENV_NAME% python=3.9 -y >> %LOGFILE% 2>&1
     call conda activate %CONDA_ENV_NAME% >> %LOGFILE% 2>&1
-    pip install streamlit python-dotenv >> %LOGFILE% 2>&1
+    pip install streamlit python-dotenv ansi2html >> %LOGFILE% 2>&1
     echo Installation complete. Restarting script... >> %LOGFILE%
     pause
     call "%~f0"
