@@ -242,8 +242,8 @@ def main():
                         st.success("Settings updated!")
  
                     # Set the environment variables remote_paths_dir and remote_params_dir
-                    remote_params_dir = f"{new_remote_code_dir}/Mesmerize/parameters"
-                    remote_paths_dir = f"{new_remote_code_dir}/Mesmerize/paths"
+                    remote_params_dir = Path(Path(new_remote_code_dir) / "Mesmerize" / "parameters").as_posix()
+                    remote_paths_dir = Path(Path(new_remote_code_dir) / "Mesmerize" / "paths" / "openmind").as_posix()
 
             # else:
                 # When "Run locally" is selected, show a disabled settings button
@@ -685,7 +685,7 @@ def main():
                 batch_script_filename = "om_batch_mcorr_cnmf.sh"
                 
                 # Check if it exists remotely, and if so download it
-                remote_script_path = f"{remote_scripts_dir}/{batch_script_filename}"
+                remote_script_path = Path(Path(remote_scripts_dir) / batch_script_filename).as_posix()
                 ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_script_path}"]
                 try:
                     ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
@@ -773,245 +773,100 @@ def main():
         else:
             # 2) Button to run on the cluster
             if st.button("Run Pipeline on Cluster (Openmind)"):
-                # 2.1 Copy the path JSON to cluster
-                # 2.2 Copy param files if needed
-                # 2.3 SSH and run sbatch
-                
-                # Load environment variables from .env file
+                # Load environment variables
                 load_dotenv(dotenv_path=code_dir / "ui" / ".env")
-                # Get the SSH_LOGIN_NODE value
                 remote_host = os.getenv("SSH_LOGIN_NODE")
-                # remote_user = get_remote_user(remote_host) 
                 remote_code_dir = os.getenv("OM_CODE_DIR")
                 remote_pipeline_dir = f"{remote_code_dir}/Mesmerize"
                 remote_paths_dir = f"{remote_pipeline_dir}/paths/openmind"
                 remote_params_dir = f"{remote_pipeline_dir}/parameters"
-                
-                # We should have a local path to the paths JSON at this point, but check anyway:
+                remote_scripts_dir = f"{remote_code_dir}/scripts"
+                remote_utils_dir = f"{remote_code_dir}/scripts/utils"
+
                 local_path_json = paths_dir / path_json_name
                 if not local_path_json.exists():
                     st.error(f"Path JSON does not exist locally: {local_path_json}")
-                else:
-                    # First check that remote_code_dir exists
-                    ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_code_dir}"]
-                    try:
-                        ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
-                        if ssh_ls_proc.returncode != 0:
-                            st.error(f"⚠️ Remote pipeline directory does not exist: {ssh_ls_proc.stderr}")
-                            st.stop()
-                    except Exception as e:
-                        st.error(f"Error checking remote pipeline directory: {e}")
-                        st.stop()
-                    
-                    # Create remote directories if they do not exist
-                    ssh_mkdir_cmd = [
-                        "ssh",
-                        remote_host,
-                        f"mkdir -p {remote_paths_dir} {remote_params_dir}"
-                    ]
-                    # st.write(f"Running: {' '.join(ssh_mkdir_cmd)}")
-                    try:
-                        ssh_mkdir_proc = subprocess.run(ssh_mkdir_cmd, capture_output=True, text=True)
-                        if ssh_mkdir_proc.returncode != 0:
-                            st.error(f"Failed to create remote directories: {ssh_mkdir_proc.stderr}")
-                            st.stop()
-                        else:
-                            st.info("✅ Remote directories created or already exist.")
-                    except Exception as e:
-                        st.error(f"⚠️ Error creating remote directories: {e}")
-                        st.stop()
+                    st.stop()
 
-                    # 1. scp the paths JSON file to the cluster
-                    scp_cmd = [
-                        "scp",
-                        str(local_path_json),
-                        f"{remote_host}:{remote_paths_dir}/{path_json_name}"
-                    ]
-                    # st.write(f"Running: {' '.join(scp_cmd)}")
-                    try:
-                        scp_proc = subprocess.run(scp_cmd, capture_output=True, text=True)
-                        if scp_proc.returncode != 0:
-                            st.error(f"SCP for Path file failed: {scp_proc.stderr}")
-                            st.stop()  # stop the Streamlit flow
-                        else:
-                            st.info("✅ Path file copied to cluster.")
-                    except Exception as e:
-                        st.error(f"⚠️ Error copying Path file to cluster: {e}")
-                        st.stop()
-
-                    # 2. scp the param files similarly (only if these exist on the local machine)
-                    if st.session_state["caiman_param_file_path"]:
-                        local_param = Path(st.session_state["caiman_param_file_path"])
-                        if local_param.exists():
-                            scp_params_cmd = [
-                                "scp",
-                                str(local_param),
-                                f"{remote_host}:{remote_params_dir}/{local_param.name}"
-                            ]
-                            # st.write(f"Running: {' '.join(scp_params_cmd)}")
-                            scp_proc2 = subprocess.run(scp_params_cmd, capture_output=True, text=True)
-                            if scp_proc2.returncode != 0:
-                                st.error(f"SCP for CaImAn parameter failed: {scp_proc2.stderr}")
-                                st.stop()
-                            else:
-                                st.info("✅ CaImAn parameter file copied to cluster.")
-                        else:
-                            st.warning(f"Local param file does not exist: {local_param}")
-
-                    if st.session_state["zshift_file_path"]:
-                        local_zparam = Path(st.session_state["zshift_file_path"])
-                        if local_zparam.exists():
-                            scp_zparams_cmd = [
-                                "scp",
-                                str(local_zparam),
-                                f"{remote_host}:{remote_params_dir}/{local_zparam.name}"
-                            ]
-                            # st.write(f"Running: {' '.join(scp_zparams_cmd)}")
-                            scp_proc3 = subprocess.run(scp_zparams_cmd, capture_output=True, text=True)
-                            if scp_proc3.returncode != 0:
-                                st.error(f"⚠️ SCP for Z-shift param failed: {scp_proc3.stderr}")
-                                st.stop()
-                            else:
-                                st.info("✅ Z-shift parameter file copied to cluster.")
-                        else:
-                            st.warning(f"Local Z-shift param file does not exist: {local_zparam}")
-
-                    # 3. SSH to cluster and run sbatch
-                    # Copy SBATCH directives to the script and push to cluster
-                    with open(scripts_dir / batch_script_filename, "r") as f:
-                        script_template = f.read()
-
-                    # Update SBATCH directives with user-provided inputs using unambiguous group syntax:
-                    script_updated = re.sub(r"(-t\s+)\S+", r"\g<1>" + batch_mcorr_cnmf_walltime, script_template)
-                    script_updated = re.sub(r"(-N\s+)\S+", r"\g<1>" + batch_mcorr_cnmf_nodes, script_updated)
-                    script_updated = re.sub(r"(-n\s+)\S+", r"\g<1>" + batch_mcorr_cnmf_cores, script_updated)
-                    script_updated = re.sub(r"(--mem=)\S+", r"\g<1>" + batch_mcorr_cnmf_mem, script_updated)
-
-                    # Convert Windows CRLF line breaks to UNIX LF line breaks
-                    script_updated = script_updated.replace("\r\n", "\n")
-
-                    # Write the file with Unix line breaks:
-                    with open(scripts_dir / batch_script_filename, "w", newline="\n") as f:
-                        f.write(script_updated)
-                        
-                    # Ensure UNIX-style line endings BEFORE copying to the cluster
-                    batch_script_path = scripts_dir / batch_script_filename
-                    convert_to_unix(batch_script_path)
-                    
-                    # Copy the updated script to the cluster
-                    if copy_files:
-                        cluster_processing_path = scripts_dir / "cluster_processing.sh"
-                        convert_to_unix(cluster_processing_path)
-                        # Copy both the batch script and the cluster_processing.sh
-                        scp_script_cmd = [
-                            "scp",
-                            str(batch_script_path),
-                            str(cluster_processing_path),
-                            f"{remote_host}:{remote_scripts_dir}"
-                        ]
-                    else:
-                        scp_script_cmd = [
-                            "scp",
-                            str(batch_script_path),
-                            f"{remote_host}:{remote_scripts_dir}/{batch_script_filename}"
-                        ]
-                    # st.write(f"Running: {' '.join(scp_script_cmd)}")
-                    scp_script_proc = subprocess.run(scp_script_cmd, capture_output=True, text=True)
-                    if scp_script_proc.returncode != 0:
-                        st.error(f"⚠️ SCP for batch scripts failed: {scp_script_proc.stderr}")
-                    else:
-                        st.info(f"✅ Batch scripts successfully copied to :grey-background[{remote_scripts_dir}].")
-                    
-                    # --- Check that the utils scripts are in the remote scripts/utils folder --- #
-                    # Define local and remote utils directories
-                    local_utils_dir = scripts_dir / "utils"
-                    remote_utils_dir = f"{remote_code_dir}/scripts/utils"
-
-                    # 1. Ensure the remote utils/ directory exists
-                    ssh_mkdir_utils_cmd = ["ssh", remote_host, f"mkdir -p {remote_utils_dir}"]
-                    try:
-                        ssh_mkdir_utils_proc = subprocess.run(ssh_mkdir_utils_cmd, capture_output=True, text=True)
-                        if ssh_mkdir_utils_proc.returncode != 0:
-                        #     st.info(f"Ensured remote utils directory exists: :grey-background[{remote_utils_dir}]")
-                        # else:
-                            st.error(f"⚠️ Failed to create remote utils directory: {ssh_mkdir_utils_proc.stderr}")
-                            st.stop()
-                    except Exception as e:
-                        st.error(f"⚠️ Error ensuring remote utils directory: {e}")
-                        st.stop()
-
-                    # 2. List local and remote utils files
-                    local_utils_files = [f.name for f in local_utils_dir.iterdir() if f.is_file() and f.name != ".env"]
-
-                    # Get list of remote utils files via SSH
-                    ssh_list_cmd = ["ssh", remote_host, f"ls {remote_utils_dir}"]
-                    try:
-                        ssh_list_proc = subprocess.run(ssh_list_cmd, capture_output=True, text=True)
-                        if ssh_list_proc.returncode == 0:
-                            remote_utils_files = ssh_list_proc.stdout.split()
-                        else:
-                            st.warning(f"Remote utils directory does not exist or is empty: {remote_utils_dir}")
-                            remote_utils_files = []
-                    except Exception as e:
-                        st.error(f"Error listing remote utils directory: {e}")
-                        remote_utils_files = []
-
-                    # 3. Find and Copy Missing Files
-                    missing_utils_files = [f for f in local_utils_files if f not in remote_utils_files]
-
-                    if missing_utils_files:
-                        st.info(f"Copying {len(missing_utils_files)} missing utils files to cluster...")
-                        for filename in missing_utils_files:
-                            local_path = local_utils_dir / filename
-                            remote_path = f"{remote_utils_dir}/{filename}"
-
-                            # Run SCP
-                            scp_utils_cmd = ["scp", str(local_path), f"{remote_host}:{remote_path}"]
-                            try:
-                                scp_utils_proc = subprocess.run(scp_utils_cmd, capture_output=True, text=True)
-                                if scp_utils_proc.returncode == 0:
-                                    st.success(f"Copied :grey-background[{filename}] to cluster.")
-                                else:
-                                    error_msg = scp_utils_proc.stderr.lower()
-                                    st.error(f"Failed to copy {filename}: {scp_utils_proc.stderr}")
-                            except Exception as e:
-                                st.error(f"Error copying {filename} to cluster: {e}")
-                    else:
-                        st.success("All required utils files are already present on the cluster.")
-
-  
-                    # --- Run the batch script on the cluster --- #
-                    # Create the sbatch command
-                    if copy_files:
-                        script_filename = "cluster_processing.sh"
-                    else:
-                        script_filename = "om_batch_mcorr_cnmf.sh"
-                    cluster_cmd = (
-                        f"cd {remote_scripts_dir} && sbatch {script_filename} "
-                        f"{remote_paths_dir}/{path_json_name}"
+                # Step 1: Ensure Remote Directories Exist (Single SSH Call)
+                try:
+                    subprocess.run(
+                        ["ssh", remote_host, f"mkdir -p {remote_paths_dir} {remote_params_dir} {remote_scripts_dir} {remote_utils_dir}"],
+                        check=True, capture_output=True, text=True
                     )
-                    ssh_cmd = ["ssh", remote_host, cluster_cmd]
-                    # cluster_cmd = (
-                    #     f"cd {remote_scripts_dir} && export EMAIL=$USER@mit.edu && sbatch --mail-user=$EMAIL {script_filename} "
-                    #     f"{remote_paths_dir}/{path_json_name}"
-                    # )
-                    # ssh_cmd = ["ssh", remote_host, "bash", "-c", f"'{cluster_cmd}'"]
+                    st.info("✅ Remote directories verified or created.")
+                except subprocess.CalledProcessError as e:
+                    st.error(f"⚠️ Failed to create remote directories: {e.stderr}")
+                    st.stop()
 
-                    st.write(f"Running: :grey-background[{' '.join(ssh_cmd)}]")
-                    try:
-                        ssh_proc = subprocess.run(ssh_cmd, capture_output=True, text=True)
-                        if ssh_proc.returncode == 0:
-                            st.success("Submitted job to cluster via sbatch!")
-                            st.text_area("Cluster Output", ssh_proc.stdout, height=200)
-                            job_id_match = re.search(r"Submitted batch job (\d+)", ssh_proc.stdout)
-                            if job_id_match:
-                                st.session_state["last_job_id"] = job_id_match.group(1)
-                        else:
-                            st.error(f"⚠️ Cluster sbatch command failed with code {ssh_proc.returncode}")
-                            st.text_area("Cluster Error", ssh_proc.stderr, height=200)
-                            st.session_state["last_job_id"] = None            
-                    except Exception as e:
-                        st.error(f"⚠️ Error running sbatch on cluster: {e}")
+                # Step 2: Collect Files to Transfer via SCP
+                files_to_copy = {
+                    str(local_path_json): f"{remote_paths_dir}/{path_json_name}",
+                }
+
+                # Add parameter files if they exist
+                if st.session_state.get("caiman_param_file_path"):
+                    local_param = Path(st.session_state["caiman_param_file_path"])
+                    if local_param.exists():
+                        files_to_copy[str(local_param)] = f"{remote_params_dir}/{local_param.name}"
+
+                if st.session_state.get("zshift_file_path"):
+                    local_zparam = Path(st.session_state["zshift_file_path"])
+                    if local_zparam.exists():
+                        files_to_copy[str(local_zparam)] = f"{remote_params_dir}/{local_zparam.name}"
+
+                # Add batch scripts
+                batch_script_path = scripts_dir / batch_script_filename
+                convert_to_unix(batch_script_path)  # Ensure Unix line endings
+                files_to_copy[str(batch_script_path)] = f"{remote_scripts_dir}/{batch_script_filename}"
+
+                if copy_files:
+                    cluster_processing_path = scripts_dir / "cluster_processing.sh"
+                    convert_to_unix(cluster_processing_path)
+                    files_to_copy[str(cluster_processing_path)] = f"{remote_scripts_dir}/cluster_processing.sh"
+
+                # **Execute SCP Transfers in Batches**
+                try:
+                    for local_file, remote_path in files_to_copy.items():
+                        scp_command = ["scp", local_file, f"{remote_host}:{remote_path}"]
+                        subprocess.run(scp_command, check=True, capture_output=True, text=True)
+                        st.success(f"✅ Successfully copied {Path(local_file).name} to {remote_host}:{remote_path}")
+                except subprocess.CalledProcessError as e:
+                    st.error(f"⚠️ SCP failed: {e.stderr}")
+                    st.stop()
+
+                # Step 3: Copy all missing utils/ scripts
+                local_utils_dir = scripts_dir / "utils"
+                try:
+                    local_utils_files = [str(f) for f in local_utils_dir.glob("*") if f.is_file() and f.name != ".env"]
+                    if local_utils_files:
+                        scp_utils_cmd = ["scp"] + local_utils_files + [f"{remote_host}:{remote_utils_dir}/"]
+                        subprocess.run(scp_utils_cmd, check=True, capture_output=True, text=True)
+                        st.success(f"✅ Copied {len(local_utils_files)} utils scripts to cluster.")
+                    else:
+                        st.info("No missing utils scripts found.")
+                except subprocess.CalledProcessError as e:
+                    st.error(f"⚠️ SCP for utils scripts failed: {e.stderr}")
+                    st.stop()
+
+                # Step 4: Submit Cluster Job
+                script_filename = "cluster_processing.sh" if copy_files else "om_batch_mcorr_cnmf.sh"
+                cluster_cmd = f"cd {remote_scripts_dir} && sbatch {script_filename} {remote_paths_dir}/{path_json_name}"
+
+                try:
+                    ssh_proc = subprocess.run(["ssh", remote_host, cluster_cmd], capture_output=True, text=True)
+                    if ssh_proc.returncode == 0:
+                        st.success("✅ Submitted job to cluster via sbatch!")
+                        job_id_match = re.search(r"Submitted batch job (\d+)", ssh_proc.stdout)
+                        if job_id_match:
+                            st.session_state["last_job_id"] = job_id_match.group(1)
+                        st.text_area("Cluster Output", ssh_proc.stdout, height=200)
+                    else:
+                        st.error(f"⚠️ Cluster sbatch command failed: {ssh_proc.stderr}")
+                        st.session_state["last_job_id"] = None
+                except Exception as e:
+                    st.error(f"⚠️ Error running sbatch on cluster: {e}")
+
 
         # Check if a job ID was submitted
         if "last_job_id" in st.session_state:
