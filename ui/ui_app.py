@@ -54,11 +54,11 @@ st.markdown(
 # -------------------------------------------------------------------------
 # Setup: directories
 # -------------------------------------------------------------------------
-root_dir = Path(__file__).resolve().parents[1]
-caiman_pipeline_dir = root_dir / "Mesmerize"
+code_dir = Path(__file__).resolve().parents[1]
+caiman_pipeline_dir = code_dir / "Mesmerize"
 params_dir = caiman_pipeline_dir / "parameters"
 paths_dir = caiman_pipeline_dir / "paths"
-scripts_dir = root_dir / "scripts"
+scripts_dir = code_dir / "scripts"
 
 # -------------------------------------------------------------------------
 # Load default templates
@@ -132,10 +132,10 @@ def init_session_state():
     if "show_settings_modal" not in st.session_state:
         st.session_state["show_settings_modal"] = True
     # Load the .env file from ui/.env
-    env_path = root_dir / "ui" / ".env"
+    env_path = code_dir / "ui" / ".env"
     # If it doesn't exist, create it base on template.env
     if not env_path.exists():
-        template_path = root_dir / "ui" / "template.env"
+        template_path = code_dir / "ui" / "template.env"
         with open(template_path, "r") as template_file:
             template_content = template_file.read()
         with open(env_path, "w") as env_file:
@@ -144,7 +144,7 @@ def init_session_state():
     # Save individual environment variables in session state so they can be updated
     st.session_state["remote_host"] = os.getenv("SSH_LOGIN_NODE")
     st.session_state["nese_user_dir"] = os.getenv("NESE_USER_DIR")
-    st.session_state["remote_pipeline_dir"] = os.getenv("OM_CODE_DIR")
+    st.session_state["remote_code_dir"] = os.getenv("OM_CODE_DIR")
     st.session_state["remote_scratch"] = os.getenv("OM_SCRATCH_DIR")
     
 # -------------------------------------------------------------------------
@@ -195,7 +195,7 @@ def main():
         experimenter = st.text_input("Experimenter", os.getenv("EXPERIMENTER"))
         if experimenter:
             os.environ["EXPERIMENTER"] = experimenter
-            set_key(str(root_dir / "ui" / ".env"), "EXPERIMENTER", experimenter)
+            set_key(str(code_dir / "ui" / ".env"), "EXPERIMENTER", experimenter)
         
     # st.write("1. and 2. Create or re-use the parameter file(s).")
     # st.write("3. Create a paths JSON file.")
@@ -219,12 +219,12 @@ def main():
             if run_method == "Run on Openmind cluster":
                 with st.popover("Edit Openmind Settings", use_container_width=True):
                     # Read the current .env values (from ui/.env)
-                    env_path = root_dir / "ui" / ".env"
+                    env_path = code_dir / "ui" / ".env"
                     env_values = dotenv_values(env_path)
                     
                     # Create input fields for each variable
                     new_remote_host = st.text_input("The SSH login alias (e.g., :grey-background[om7])", value=env_values.get("SSH_LOGIN_NODE", ""))
-                    new_remote_pipeline_dir = st.text_input("The remote code directory (e.g., :grey-background[<om_user_dir>/code/Analysis_2P], or :grey-background[/home/$USER/scripts])", value=env_values.get("OM_CODE_DIR", ""))
+                    new_remote_code_dir = st.text_input("The remote code directory (e.g., :grey-background[<om_user_dir>/code/Analysis_2P], or :grey-background[/home/$USER/scripts])", value=env_values.get("OM_CODE_DIR", ""))
                     new_remote_scratch = st.text_input("[currently unused] The root data processing directory (e.g., :grey-background[<scratch space>/MyName])", value=env_values.get("OM_SCRATCH_DIR", ""))
                     new_nese_user_dir = st.text_input("[currently unused] Your data directory on NESE (e.g., :grey-background[<nese_lab_dir>/MyName])", value=env_values.get("NESE_USER_DIR", ""))
                     
@@ -232,18 +232,18 @@ def main():
                     if st.button("Save Settings"):
                         set_key(str(env_path), "SSH_LOGIN_NODE", new_remote_host)
                         set_key(str(env_path), "NESE_USER_DIR", new_nese_user_dir)
-                        set_key(str(env_path), "OM_CODE_DIR", new_remote_pipeline_dir)
+                        set_key(str(env_path), "OM_CODE_DIR", new_remote_code_dir)
                         set_key(str(env_path), "OM_SCRATCH_DIR", new_remote_scratch)
                         # Update session state variables for immediate access
                         st.session_state["remote_host"] = new_remote_host
-                        st.session_state["remote_pipeline_dir"] = new_remote_pipeline_dir
+                        st.session_state["remote_code_dir"] = new_remote_code_dir
                         st.session_state["remote_scratch"] = new_remote_scratch
                         st.session_state["nese_user_dir"] = new_nese_user_dir
                         st.success("Settings updated!")
  
                     # Set the environment variables remote_paths_dir and remote_params_dir
-                    remote_params_dir = f"{new_remote_pipeline_dir}/parameters"
-                    remote_paths_dir = f"{new_remote_pipeline_dir}/paths"
+                    remote_params_dir = f"{new_remote_code_dir}/Mesmerize/parameters"
+                    remote_paths_dir = f"{new_remote_code_dir}/Mesmerize/paths"
 
             # else:
                 # When "Run locally" is selected, show a disabled settings button
@@ -673,16 +673,15 @@ def main():
             # env_path = root_dir / "ui" / ".env"
             # env_values = dotenv_values(env_path)
             # remote_host = os.getenv("SSH_LOGIN_NODE")
-            # remote_pipeline_dir = os.getenv("OM_CODE_DIR", "")
+            # remote_code_dir = os.getenv("OM_CODE_DIR", "")
             remote_host = st.session_state.get("remote_host", os.getenv("SSH_LOGIN_NODE"))
-            remote_pipeline_dir = st.session_state.get("remote_pipeline_dir", os.getenv("OM_CODE_DIR", ""))
-    
+            remote_pipeline_dir = f"{st.session_state.get('remote_code_dir', os.getenv('OM_CODE_DIR', ''))}/Mesmerize"
+            remote_scripts_dir = f"{st.session_state.get('remote_code_dir', os.getenv('OM_CODE_DIR', ''))}/scripts"
             if not remote_pipeline_dir:
-                st.error("Please set the remote pipeline directory in the settings.")
+                st.error("Please set the remote code directory in the settings.")
                 st.stop()
             else:
                 # Copy or create the batch script file 
-                remote_scripts_dir = f"{remote_pipeline_dir}/scripts"
                 batch_script_filename = "om_batch_mcorr_cnmf.sh"
                 
                 # Check if it exists remotely, and if so download it
@@ -759,7 +758,7 @@ def main():
         # 1) Button to run locally    
         if run_method == "Run locally":
             if st.button(f"Run Pipeline Locally ({platform.node()})"):
-                cmd = ["python", f"{caiman_pipeline_dir}/batch_mcorr_cnmf.py", path_json_name]
+                cmd = ["python", f"{scripts_dir}/batch_mcorr_cnmf.py", path_json_name]
                 st.write(f"Running command locally: {' '.join(cmd)}")
                 try:
                     completed_proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -779,21 +778,22 @@ def main():
                 # 2.3 SSH and run sbatch
                 
                 # Load environment variables from .env file
-                load_dotenv(dotenv_path=root_dir / "ui" / ".env")
+                load_dotenv(dotenv_path=code_dir / "ui" / ".env")
                 # Get the SSH_LOGIN_NODE value
                 remote_host = os.getenv("SSH_LOGIN_NODE")
                 # remote_user = get_remote_user(remote_host) 
-                remote_pipeline_dir = os.getenv("OM_CODE_DIR")
-                remote_paths_dir = f"{remote_pipeline_dir}/Mesmerize/paths/openmind"
-                remote_params_dir = f"{remote_pipeline_dir}/Mesmerize/parameters"
+                remote_code_dir = os.getenv("OM_CODE_DIR")
+                remote_pipeline_dir = f"{remote_code_dir}/Mesmerize"
+                remote_paths_dir = f"{remote_pipeline_dir}/paths/openmind"
+                remote_params_dir = f"{remote_pipeline_dir}/parameters"
                 
                 # We should have a local path to the paths JSON at this point, but check anyway:
                 local_path_json = paths_dir / path_json_name
                 if not local_path_json.exists():
                     st.error(f"Path JSON does not exist locally: {local_path_json}")
                 else:
-                    # First check that remote_pipeline_dir
-                    ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_pipeline_dir}"]
+                    # First check that remote_code_dir exists
+                    ssh_ls_cmd = ["ssh", remote_host, f"ls {remote_code_dir}"]
                     try:
                         ssh_ls_proc = subprocess.run(ssh_ls_cmd, capture_output=True, text=True)
                         if ssh_ls_proc.returncode != 0:
@@ -925,7 +925,7 @@ def main():
                     # --- Check that the utils scripts are in the remote scripts/utils folder --- #
                     # Define local and remote utils directories
                     local_utils_dir = scripts_dir / "utils"
-                    remote_utils_dir = f"{remote_pipeline_dir}/scripts/utils"
+                    remote_utils_dir = f"{remote_code_dir}/scripts/utils"
 
                     # 1. Ensure the remote utils/ directory exists
                     ssh_mkdir_utils_cmd = ["ssh", remote_host, f"mkdir -p {remote_utils_dir}"]
@@ -941,7 +941,7 @@ def main():
                         st.stop()
 
                     # 2. List local and remote utils files
-                    local_utils_files = [f.name for f in local_utils_dir.iterdir() if f.is_file()]
+                    local_utils_files = [f.name for f in local_utils_dir.iterdir() if f.is_file() and f.name != ".env"]
 
                     # Get list of remote utils files via SSH
                     ssh_list_cmd = ["ssh", remote_host, f"ls {remote_utils_dir}"]
@@ -1037,7 +1037,7 @@ def main():
                 # Determine which script was used
                 script_type = st.session_state.get("last_script", "cluster_processing.sh")  # Default to cluster_processing.sh
                 log_filename = f"cluster_processing-{job_id}.ans" if "cluster_processing" in script_type else f"batch_mcorr_cnmf-{job_id}.ans"
-                remote_log_path = f"{st.session_state.get('remote_pipeline_dir')}/scripts/slurm_logs/{log_filename}"
+                remote_log_path = f"{st.session_state.get('remote_code_dir')}/scripts/slurm_logs/{log_filename}"
 
                 # Download log button
                 if st.button("Show Logs", key="show_logs_button", help="Fetch job log file from cluster"):
