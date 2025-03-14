@@ -861,7 +861,7 @@ def main():
                 # Step 3: Copy all missing utils/ scripts
                 local_utils_dir = scripts_dir / "utils"
                 try:
-                    local_utils_files = [str(f) for f in local_utils_dir.glob("*") if f.is_file() and f.name != ".env"]
+                    local_utils_files = [str(f) for f in local_utils_dir.glob("*") if f.is_file() and f.name not in [".env", "template.env"]]
                     if local_utils_files:
                         scp_utils_cmd = ["scp"] + local_utils_files + [f"{remote_host}:{remote_utils_dir}/"]
                         subprocess.run(scp_utils_cmd, check=True, capture_output=True, text=True)
