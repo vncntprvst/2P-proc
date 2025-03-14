@@ -811,16 +811,23 @@ def main():
                     st.error(f"Path JSON does not exist locally: {local_path_json}")
                     st.stop()
 
-                # Step 1: Ensure Remote Directories Exist (Single SSH Call)
+                # Step 1: Create Directories & List `utils/` in a Single SSH Command
                 try:
-                    subprocess.run(
-                        ["ssh", remote_host, f"mkdir -p {remote_paths_dir} {remote_params_dir} {remote_scripts_dir} {remote_utils_dir}"],
+                    ssh_command = f"""
+                        mkdir -p {remote_paths_dir} {remote_params_dir} {remote_scripts_dir} {remote_utils_dir} && 
+                        ls {remote_utils_dir} 2>/dev/null
+                    """
+                    ssh_proc = subprocess.run(
+                        ["ssh", remote_host, ssh_command],
                         check=True, capture_output=True, text=True
                     )
+
+                    remote_utils_files = set(ssh_proc.stdout.split()) if ssh_proc.stdout else set()
                     st.info("✅ Remote directories verified or created.")
+
                 except subprocess.CalledProcessError as e:
-                    st.error(f"⚠️ Failed to create remote directories: {e.stderr}")
-                    st.stop()
+                    st.error(f"⚠️ Failed to create remote directories or list `utils/`: {e.stderr}")
+                    remote_utils_files = set()  # Assume empty if listing fails
 
                 # Step 2: Collect Files to Transfer via SCP
                 files_to_copy = {
@@ -860,17 +867,20 @@ def main():
 
                 # Step 3: Copy all missing utils/ scripts
                 local_utils_dir = scripts_dir / "utils"
-                try:
-                    local_utils_files = [str(f) for f in local_utils_dir.glob("*") if f.is_file() and f.name not in [".env", "template.env"]]
-                    if local_utils_files:
-                        scp_utils_cmd = ["scp"] + local_utils_files + [f"{remote_host}:{remote_utils_dir}/"]
+                local_utils_files = {f.name for f in local_utils_dir.iterdir() if f.is_file() and f.name != ".env"}
+                missing_utils_files = local_utils_files - remote_utils_files  # Files in local but not remote
+
+                if missing_utils_files:
+                    st.info(f"Copying {len(missing_utils_files)} missing utils scripts to cluster...")
+                    try:
+                        scp_utils_cmd = ["scp"] + [str(local_utils_dir / f) for f in missing_utils_files] + [f"{remote_host}:{remote_utils_dir}/"]
                         subprocess.run(scp_utils_cmd, check=True, capture_output=True, text=True)
-                        st.success(f"✅ Copied {len(local_utils_files)} utils scripts to cluster.")
-                    else:
-                        st.info("No missing utils scripts found.")
-                except subprocess.CalledProcessError as e:
-                    st.error(f"⚠️ SCP for utils scripts failed: {e.stderr}")
-                    st.stop()
+                        st.success(f"✅ Copied {len(missing_utils_files)} missing utils scripts.")
+                    except subprocess.CalledProcessError as e:
+                        st.error(f"⚠️ SCP for utils scripts failed: {e.stderr}")
+                        st.stop()
+                else:
+                    st.success("✅ All required utils scripts are already present on the cluster.")
 
                 # Step 4: Submit Cluster Job
                 script_filename = "cluster_processing.sh" if copy_files else "om_batch_mcorr_cnmf.sh"
