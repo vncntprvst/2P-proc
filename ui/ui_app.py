@@ -987,10 +987,15 @@ def main():
                     else:
                         script_filename = "om_batch_mcorr_cnmf.sh"
                     cluster_cmd = (
-                        f"cd {remote_scripts_dir} && EMAIL=$USER@mit.edu && sbatch --mail-user=$EMAIL {script_filename} "
+                        f"cd {remote_scripts_dir} && sbatch {script_filename} "
                         f"{remote_paths_dir}/{path_json_name}"
                     )
                     ssh_cmd = ["ssh", remote_host, cluster_cmd]
+                    # cluster_cmd = (
+                    #     f"cd {remote_scripts_dir} && export EMAIL=$USER@mit.edu && sbatch --mail-user=$EMAIL {script_filename} "
+                    #     f"{remote_paths_dir}/{path_json_name}"
+                    # )
+                    # ssh_cmd = ["ssh", remote_host, "bash", "-c", f"'{cluster_cmd}'"]
 
                     st.write(f"Running: :grey-background[{' '.join(ssh_cmd)}]")
                     try:
