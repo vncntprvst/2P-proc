@@ -1,24 +1,22 @@
 User Interface
 ==============
+### Quickstart
+Navigate to the `ui` folder and double-click the file `run_A2P_ui.bat` (windows) or `run_A2P_ui.sh` (Linux - MacOS. Make sure the file is executable with `chmod +x run_A2P_ui.sh`).  
+ 
+The terminal window will open and the UI will be launched in your default browser. If the app's environment is not installed, the script will prompt you to select the method, and install it.   
 
-### Installation
+### Manual installation
 ```bash
-pip install streamlit python-dotenv
+pip install streamlit python-dotenv ansi2html
 ```
 If you want to create a dedicated environment for the UI, you can use the following command:
 ```bash
 conda create -n analysis2p_ui python=3.9
 ```
 
-If running the pipeline on the cluster, make sure you have the `.env` file in the `/scripts/utils` directory, with the following content:
-```
-SSH_LOGIN_NODE=your_login_node
-OM_USER_DIR_ALIAS=your_user_dir_alias
-```
-The `SSH_LOGIN_NODE` is the `.ssh/config` alias for the node you use to the cluster. 
-The `OM_USER_DIR_ALIAS` is the alias for the user directory on the cluster.
+If running the pipeline on the cluster, make sure you have the `.env` file in the `<remote_code_directory>/scripts/utils` folder. See instructions in the main README.md file.
 
-### Run the UI
+### Other ways to run the UI
 Use one of the following methods to run the UI: 
 * Run the Python script:
 ```bash
@@ -27,10 +25,10 @@ conda activate analysis2p_ui
 streamlit run ui_app.py
 ```
 * Run the Batch/Script File:
-Adjdust the name of the environment in `run_ui.bat` as needed, then: 
+Adjdust the name of the environment in `ui\run_A2P_ui.bat` as needed, then: 
 ```bash
 cd ui
-run_ui.bat
+run_A2P_ui.bat
 ```
 * Build an executable script:  
 ```bash
