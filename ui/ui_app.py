@@ -860,7 +860,7 @@ def main():
                     for local_file, remote_path in files_to_copy.items():
                         scp_command = ["scp", local_file, f"{remote_host}:{remote_path}"]
                         subprocess.run(scp_command, check=True, capture_output=True, text=True)
-                        st.success(f"✅ Successfully copied {Path(local_file).name} to {remote_host}:{remote_path}")
+                        st.success(f"✅ Successfully copied :grey-background[{Path(local_file).name}] to :grey-background[{remote_host}:{remote_path}]")
                 except subprocess.CalledProcessError as e:
                     st.error(f"⚠️ SCP failed: {e.stderr}")
                     st.stop()
