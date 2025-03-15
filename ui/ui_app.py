@@ -744,14 +744,18 @@ def main():
 
                 # Parse the SBATCH directives using regular expressions with safety checks
                 if len(sbatch_lines) >= 4:
-                    walltime_match = re.search(r"-t\s+(\S+)", sbatch_lines[0])
-                    nodes_match    = re.search(r"-N\s+(\S+)", sbatch_lines[1])
-                    cores_match    = re.search(r"-n\s+(\S+)", sbatch_lines[2])
-                    mem_match      = re.search(r"--mem=(\S+)", sbatch_lines[3])
-                    batch_mcorr_cnmf_walltime = walltime_match.group(1) if walltime_match else "00:00:00"
-                    batch_mcorr_cnmf_nodes    = nodes_match.group(1)    if nodes_match    else "1"
-                    batch_mcorr_cnmf_cores    = cores_match.group(1)    if cores_match    else "5"
-                    batch_mcorr_cnmf_mem      = mem_match.group(1)      if mem_match      else "120G"
+                    def extract_value(pattern, text, default):
+                        match = re.search(pattern, text)
+                        return match.group(1) if match else default
+
+                    batch_mcorr_cnmf_walltime = extract_value(r"-t\s+(\S+)", sbatch_lines[0], "00:00:00")
+                    batch_mcorr_cnmf_nodes    = extract_value(r"-N\s+(\S+)", sbatch_lines[1], "1")
+                    batch_mcorr_cnmf_cores    = extract_value(r"-n\s+(\d+)", sbatch_lines[2], "5")
+                    batch_mcorr_cnmf_mem      = extract_value(r"--mem=(\S+)", sbatch_lines[3], "120G")
+
+                    if not batch_mcorr_cnmf_cores.isdigit():
+                        st.error("⚠️ SBATCH parsing failed: Number of cores is not a valid number.")
+                        st.stop()
                 else:
                     st.error("Not enough SBATCH directives found in the template.")
                     
@@ -762,6 +766,11 @@ def main():
                 batch_mcorr_cnmf_cores    = st.text_input("Number of cores", value=batch_mcorr_cnmf_cores)
                 batch_mcorr_cnmf_mem      = st.text_input("Memory per node (e.g., 120G)", value=batch_mcorr_cnmf_mem)
                 
+                # Ensure it's a valid integer before passing to script
+                if not batch_mcorr_cnmf_cores.isdigit():
+                    st.error("⚠️ Number of cores must be a valid integer.")
+                    st.stop()
+                    
             # Always create a cluster_processing.sh file if it doesn't exist 
             if not (scripts_dir / "cluster_processing.sh").exists():
                 # Create the script file locally
