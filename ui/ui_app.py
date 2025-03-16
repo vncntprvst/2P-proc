@@ -130,6 +130,10 @@ def init_session_state():
         st.session_state["caiman_param_file_path"] = None
     if "zshift_file_path" not in st.session_state:
         st.session_state["zshift_file_path"] = None
+    if "path_file_data" not in st.session_state:
+        st.session_state["path_file_data"] = {} 
+    if "path_file_path" not in st.session_state:
+        st.session_state["path_file_path"] = None
     if "show_settings_modal" not in st.session_state:
         st.session_state["show_settings_modal"] = True
     # Load the .env file from ui/.env
@@ -157,6 +161,32 @@ def list_existing_path_files(paths_dir: Path):
         return []
     return list(paths_dir.glob("*.json"))
     
+def build_path_file_dict(run_method: str, use_zshift: bool = False, remote_params_dir: str = ""):
+    """
+    Build the path file dictionary based on the current session state.
+    """
+    # Build final path file dictionary
+    path_file_dict = st.session_state["path_file_data"].copy()
+
+    # Update the main parameter file field:
+    if st.session_state.get("caiman_param_file_path"):
+        if run_method == "Run on Openmind cluster":
+            file_name = Path(st.session_state["caiman_param_file_path"]).name
+            remote_param_file_path = Path(remote_params_dir) / file_name
+            path_file_dict["params_files"] = [str(remote_param_file_path).replace("\\", "/")]
+        else:
+            path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
+
+    if use_zshift and st.session_state.get("zshift_file_path"):
+        if run_method == "Run on Openmind cluster":
+            file_name = Path(st.session_state["zshift_file_path"]).name
+            remote_zparam_file_path = Path(remote_params_dir) / file_name
+            path_file_dict["z_params_files"] = [str(remote_zparam_file_path).replace("\\", "/")]
+        else:
+            path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
+            
+    return path_file_dict
+                
 # -------------------------------------------------------------------------
 # Get remote user
 # -------------------------------------------------------------------------
@@ -311,16 +341,14 @@ def main():
             chosen_main_fname = st.selectbox(
                 "Select an existing CaImAn parameter file:",
                 main_fnames,
-                index=default_index
+                index=default_index,
+                key="caiman_selectbox"
             )
-            
-            chosen_idx = main_fnames.index(chosen_main_fname)
-            chosen_fullpath = existing_main[chosen_idx]
-            st.session_state["caiman_param_file_path"] = chosen_fullpath
+            st.session_state["caiman_param_file_path"] = existing_main[main_fnames.index(chosen_main_fname)]
             
             # Load the chosen file’s contents for editing
             try:
-                with open(chosen_fullpath, "r") as f:
+                with open(st.session_state["caiman_param_file_path"], "r") as f:
                     chosen_file_content = json.load(f)
                     
                 # Ensure there's a "notes" section
@@ -345,7 +373,7 @@ def main():
             # Let the user specify a new filename
             main_param_filename = st.text_input(
                 "Save the file parameter file (name must start with :blue-background[params_]):",
-                f"{chosen_fullpath.name}"
+                f"{st.session_state['caiman_param_file_path'].name}"
             )
             
             # Validate the filename
@@ -429,16 +457,14 @@ def main():
                 chosen_zshift_fname = st.selectbox(
                     "Select an existing Z-shift parameter file",
                     zshift_fnames,
-                    index=default_z_index
+                    index=default_z_index,
+                    key="zshift_selectbox"
                 )
-                
-                chosen_idx = zshift_fnames.index(chosen_zshift_fname)
-                chosen_fullpath = existing_zshift[chosen_idx]
-                st.session_state["zshift_file_path"] = chosen_fullpath
+                st.session_state["zshift_file_path"] = existing_zshift[zshift_fnames.index(chosen_zshift_fname)]
                 
                 # Load the chosen file contents
                 try:
-                    with open(chosen_fullpath, "r") as f:
+                    with open(st.session_state["zshift_file_path"], "r") as f:
                         chosen_file_content = json.load(f)
                     default_text = json.dumps(chosen_file_content, indent=4)
                 except Exception as e:
@@ -453,7 +479,7 @@ def main():
                 # Let the user specify a new filename
                 zshift_filename = st.text_input(
                     "Save as new file z-shift parameter file (name must start with params_zshift):",
-                    f"{chosen_fullpath.name}"
+                    f"{st.session_state['zshift_file_path'].name}"
                 )
                 # Validate the filename
                 if not zshift_filename.startswith("params_zshift"):
@@ -493,8 +519,6 @@ def main():
                             st.session_state.pending_zshift_overwrite = False  # Reset the flag
                         except Exception as e:
                             st.error(f"⚠️ Error overwriting file: {e}")
-
-
         else:
             # If the user unchecks "Use Z-motion correction?" 
             # clear any previously selected zshift path
@@ -523,43 +547,54 @@ def main():
             path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
         else:
             path_fnames = [p.name for p in existing_paths_files]
-            chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames, index=path_fnames.index("paths_template.json") if "paths_template.json" in path_fnames else 0)
+            selected_path_file = (
+                "paths_template.json"
+                if st.session_state.get("path_file_path") is None
+                else st.session_state["path_file_path"].name
+            )
+            default_index = path_fnames.index(selected_path_file) if selected_path_file in path_fnames else 0
+            chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames, index=default_index)
             
             chosen_idx = path_fnames.index(chosen_path_fname)
-            chosen_fullpath = existing_paths_files[chosen_idx]
+            chosen_fullpath_pathfile = existing_paths_files[chosen_idx]
             
-            # Load the chosen path file into a dict
-            try:
-                with open(chosen_fullpath, "r") as f:
-                    loaded_paths = json.load(f)
-                st.info(f"Loaded existing path file: {chosen_fullpath}")
-                path_data = loaded_paths
-            except Exception as e:
-                st.error(f"⚠️ Error loading {chosen_fullpath}: {e}")
-                path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+            # Load the chosen path file into a dictionary
+            if (not st.session_state.get("path_file_data")) or (str(st.session_state["path_file_path"]) != str(chosen_fullpath_pathfile)):
+                try:
+                    with open(chosen_fullpath_pathfile, "r") as f:
+                        st.session_state["path_file_data"] = json.load(f)
+                    st.session_state["path_file_path"] = chosen_fullpath_pathfile
+                except Exception as e:
+                    st.error(f"⚠️ Error loading {chosen_fullpath_pathfile}: {e}")
+                    st.session_state["path_file_data"] = DEFAULT_PATH_FILE_TEMPLATE.copy()
+                    st.session_state["path_file_path"] = paths_dir / "paths_template.json"
 
-            # --- Automatically select parameter files if they exist locally ---
-            # Check for CaImAn parameter file(s)
-            if "params_files" in path_data and path_data["params_files"]:
-                param_candidates = [Path(p).name for p in path_data["params_files"]]
-                existing_main_params = list_existing_param_files(params_dir)["main"]
-                for candidate in param_candidates:
-                    for p in existing_main_params:
-                        if candidate == p.name:
-                            st.session_state["caiman_param_file_path"] = p
-                            st.info(f"Automatically selected CaImAn parameter file: :grey-background[{p.name}]")
-                            break  # Select the first match
+                path_data = st.session_state["path_file_data"]
 
-            # Check for z-shift parameter file(s)
-            if "z_params_files" in path_data and path_data["z_params_files"]:
-                zparam_candidates = [Path(p).name for p in path_data["z_params_files"]]
-                existing_zshift_params = list_existing_param_files(params_dir)["zshift"]
-                for candidate in zparam_candidates:
-                    for p in existing_zshift_params:
-                        if candidate == p.name:
-                            st.session_state["zshift_file_path"] = p
-                            st.info(f"Automatically selected Z-shift parameter file: :grey-background[{p.name}]")
-                            break  # Select the first match
+                # --- Automatically select parameter files if they exist locally ---
+                # Check for CaImAn parameter file(s)
+                if ("params_files" in path_data and path_data["params_files"] and not st.session_state.get("caiman_param_file_path")):
+                    param_candidates = [Path(p).name for p in path_data["params_files"]]
+                    existing_main_params = list_existing_param_files(params_dir)["main"]
+                    for candidate in param_candidates:
+                        for p in existing_main_params:
+                            if candidate == p.name:
+                                st.session_state["caiman_param_file_path"] = p
+                                st.info(f"Automatically selected CaImAn parameter file: :grey-background[{p.name}]")
+                                break  # Select the first match
+
+                # Check for z-shift parameter file(s)
+                if ("z_params_files" in path_data and path_data["z_params_files"] and not st.session_state.get("zshift_file_path")):
+                    zparam_candidates = [Path(p).name for p in path_data["z_params_files"]]
+                    existing_zshift_params = list_existing_param_files(params_dir)["zshift"]
+                    for candidate in zparam_candidates:
+                        for p in existing_zshift_params:
+                            if candidate == p.name:
+                                st.session_state["zshift_file_path"] = p
+                                st.info(f"Automatically selected Z-shift parameter file: :grey-background[{p.name}]")
+                                break  # Select the first match
+            else:
+                path_data = st.session_state["path_file_data"]
 
         # --- Now let the user edit each field in the usual text inputs:
         subject = st.text_input("Subject Name", value=path_data.get("subject", ""))
@@ -611,44 +646,19 @@ def main():
             index=possible_log_levels.index(default_level)
         )
 
-        # Build final path file dictionary
-        path_file_dict = {
-            "subject": subject,
-            "date": date_,
-            "experiment_type": exp_type,
-            "concatenation_groups": concat_groups,
-            "data_paths": data_paths,
-            "export_paths": export_paths,
-            "params_files": [],
-            "zstack_paths": zstack_paths,
-            "z_params_files": [],
-            "logging": {
-                "log_path": log_path,
-                "log_level": log_level
-            }
-        }
+        # Update st.session_state["path_file_data"] with the new values
+        st.session_state["path_file_data"]["subject"] = subject
+        st.session_state["path_file_data"]["date"] = date_
+        st.session_state["path_file_data"]["experiment_type"] = exp_type
+        st.session_state["path_file_data"]["concatenation_groups"] = concat_groups
+        st.session_state["path_file_data"]["data_paths"] = data_paths
+        st.session_state["path_file_data"]["export_paths"] = export_paths
+        st.session_state["path_file_data"]["zstack_paths"] = zstack_paths
+        st.session_state["path_file_data"]["logging"] = {"log_path": log_path, "log_level": log_level}       
 
-        # Fill references to param files from session_state if available     
-        if st.session_state.get("caiman_param_file_path"):
-            if run_method == "Run on Openmind cluster":
-                file_name = Path(st.session_state["caiman_param_file_path"]).name
-                remote_file_path = Path(remote_params_dir) / file_name
-                remote_file_path_str = str(remote_file_path).replace("\\", "/")
-                path_file_dict["params_files"] = [remote_file_path_str]
-            else:
-                path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
-
-        if use_zshift and st.session_state.get("zshift_file_path"):
-            if run_method == "Run on Openmind cluster":
-                file_name = Path(st.session_state["zshift_file_path"]).name
-                remote_file_path = Path(remote_params_dir) / file_name
-                remote_file_path_str = str(remote_file_path).replace("\\", "/")
-                path_file_dict["z_params_files"] = [remote_file_path_str]
-            else:
-                path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
-        
-        
+    # ---------------------------------------------------------------------
     # --- Display the current state of the path file
+    path_file_dict = build_path_file_dict(run_method, use_zshift, remote_params_dir)
     # Preview JSON
     st.sidebar.subheader("Path File Preview") #divider=True)
     st.sidebar.write('''Filling the forms to the right will automatically update the fields below.  
@@ -687,7 +697,7 @@ def main():
             file_name=path_json_name,
             mime="application/json"
         )  
-          
+                          
     # ---------------------------------------------------------------------
     # STEP 4: Run the pipeline
     # ---------------------------------------------------------------------
@@ -748,10 +758,10 @@ def main():
                         match = re.search(pattern, text)
                         return match.group(1) if match else default
 
-                    batch_mcorr_cnmf_walltime = extract_value(r"-t\s+(\S+)", sbatch_lines[0], "00:00:00")
-                    batch_mcorr_cnmf_nodes    = extract_value(r"-N\s+(\S+)", sbatch_lines[1], "1")
-                    batch_mcorr_cnmf_cores    = extract_value(r"-n\s+(\d+)", sbatch_lines[2], "5")
-                    batch_mcorr_cnmf_mem      = extract_value(r"--mem=(\S+)", sbatch_lines[3], "120G")
+                    batch_mcorr_cnmf_walltime = extract_value(r"SBATCH -t\s+(\S+)", sbatch_lines[0], "00:00:00")
+                    batch_mcorr_cnmf_nodes    = extract_value(r"SBATCH -N\s+(\S+)", sbatch_lines[1], "1")
+                    batch_mcorr_cnmf_cores    = extract_value(r"SBATCH -n\s+(\d+)", sbatch_lines[2], "5")
+                    batch_mcorr_cnmf_mem      = extract_value(r"SBATCH --mem=(\S+)", sbatch_lines[3], "120G")
 
                     if not batch_mcorr_cnmf_cores.isdigit():
                         st.error("⚠️ SBATCH parsing failed: Number of cores is not a valid number.")
@@ -769,8 +779,8 @@ def main():
                 # Ensure it's a valid integer before passing to script
                 if not batch_mcorr_cnmf_cores.isdigit():
                     st.error("⚠️ Number of cores must be a valid integer.")
-                    st.stop()
-                    
+                    st.stop()             
+                                   
             # Always create a cluster_processing.sh file if it doesn't exist 
             if not (scripts_dir / "cluster_processing.sh").exists():
                 # Create the script file locally
@@ -814,6 +824,29 @@ def main():
                 remote_params_dir = f"{remote_pipeline_dir}/parameters"
                 remote_scripts_dir = f"{remote_code_dir}/scripts"
                 remote_utils_dir = f"{remote_code_dir}/scripts/utils"
+                
+                # Save the updated SBATCH directives to the script file
+                batch_script_path = scripts_dir / "om_batch_mcorr_cnmf.sh"
+                try:
+                    with open(batch_script_path, "r") as f:
+                        lines = f.readlines()
+                    new_lines = []
+                    for line in lines:
+                        if line.startswith("#SBATCH -t"):
+                            new_lines.append(f"#SBATCH -t {batch_mcorr_cnmf_walltime}\n")
+                        elif line.startswith("#SBATCH -N"):
+                            new_lines.append(f"#SBATCH -N {batch_mcorr_cnmf_nodes}\n")
+                        elif line.startswith("#SBATCH -n"):
+                            new_lines.append(f"#SBATCH -n {batch_mcorr_cnmf_cores}\n")
+                        elif line.startswith("#SBATCH --mem="):
+                            new_lines.append(f"#SBATCH --mem={batch_mcorr_cnmf_mem}\n")
+                        else:
+                            new_lines.append(line)
+                    with open(batch_script_path, "w") as f:
+                        f.writelines(new_lines)
+                    st.info(f"Updated SBATCH directives in :grey-background[{batch_script_path.name}]")
+                except Exception as e:
+                    st.error(f"⚠️ Error updating SBATCH directives: :red-background[{e}]")                
 
                 local_path_json = paths_dir / path_json_name
                 if not local_path_json.exists():
@@ -962,8 +995,7 @@ def main():
                         )
                     else:
                         st.error(f"Failed to retrieve log file {log_filename}: {scp_proc.stderr}")
-
-
+        
     # ---------------------------------------------------------------------
     "---"
     endcol1, endcol2 = st.columns([3, 1])
