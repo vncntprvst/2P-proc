@@ -13,6 +13,7 @@ on:
     types: [published]
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -29,7 +30,7 @@ jobs:
       #     docker builder prune -af
           
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
 
       - name: Cache Docker layers
         uses: actions/cache@v4
