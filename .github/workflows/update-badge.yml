@@ -51,5 +51,5 @@ jobs:
           echo "No changes to commit"
         else
           git commit -m "Update release badge to version ${{ steps.get_release.outputs.version }}"
-          git push
+          git push origin HEAD:main
         fi
