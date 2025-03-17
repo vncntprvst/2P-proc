@@ -61,7 +61,7 @@ if "%choice%"=="1" (
     )
     
     SET ARCHIVE_FILE=analysis2p_ui.tar.gz
-    SET GITHUB_RELEASE_URL=https://github.com/pseudomanu/Analysis_2P/releases/download/0.3.5/%ARCHIVE_FILE%
+    SET GITHUB_RELEASE_URL=https://github.com/pseudomanu/Analysis_2P/releases/download/0.3.6/%ARCHIVE_FILE%
     
     curl -L -o %ARCHIVE_FILE% %GITHUB_RELEASE_URL% >> %LOGFILE% 2>&1
     echo Extracting the portable environment... >> %LOGFILE%

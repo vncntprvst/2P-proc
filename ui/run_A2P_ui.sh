@@ -40,7 +40,7 @@ else
         
         TARGET_DIR="./portable_env"
         ARCHIVE_FILE="analysis2p_ui.tar.gz"
-        GITHUB_RELEASE_URL="https://github.com/pseudomanu/Analysis_2P/releases/download/0.3.5/$ARCHIVE_FILE"
+        GITHUB_RELEASE_URL="https://github.com/pseudomanu/Analysis_2P/releases/download/0.3.6/$ARCHIVE_FILE"
         
         # Create target directory if it doesn't exist
         mkdir -p "$TARGET_DIR"
