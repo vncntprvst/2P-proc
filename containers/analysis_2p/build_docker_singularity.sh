@@ -53,7 +53,7 @@ if [ -f "../../scripts/utils/.env" ]; then
             export "$key=$value"
         fi
     done < "../../scripts/utils/.env"
-    export SSH_HPCC_IMAGE_REPO="${SSH_NODE}:${HPCC_IMAGE_REPO}"
+    export SSH_HPCC_IMAGE_REPO="${SSH_TRANSFER_NODE}:${HPCC_IMAGE_REPO}"
 fi
 
 # check if hppc_image_repo variable exists
