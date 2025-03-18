@@ -243,7 +243,7 @@ def main():
     
     topcol1, topcol2 = st.columns([3, 1])
     with topcol1:
-        st.header("Analysis 2P: motion correction and CNMF") #, divider="green")
+        st.subheader("Analysis 2P: motion correction and CNMF") #, divider="green")
     with topcol2:        
         experimenter = st.text_input("Experimenter", os.getenv("EXPERIMENTER"))
         if experimenter:
@@ -529,15 +529,8 @@ def main():
     # ---------------------------------------------------------------------
     with tab1:
         # st.header("Path File Setup", divider=True)
-        st.write('''The Path JSON file contains the paths to the data, export directory, and parameter files.  
-                 Edit the fields below as needed, check the preview in the left sidebar, and save the JSON file.''')
-        # Radio to pick path file mode
-        # path_file_mode = st.radio(
-        #     "Fill the fields below, check the preview, and save the JSON file.",
-        #     ("Load Existing", "Create from Template"),
-        #     index=0  # default to "Load Existing"
-        # )
-        
+        st.write('''The :grey-background[Path file] is the only input required to run the pipeline.  
+                 It contains the paths to the data, export directory, and parameter files. Edit the fields below as needed, check the preview in the left sidebar, and save the JSON file.''')
 
         # We'll store the loaded or template dictionary here
         # if path_file_mode == "Load Existing":
@@ -573,7 +566,8 @@ def main():
 
                 # --- Automatically select parameter files if they exist locally ---
                 # Check for CaImAn parameter file(s)
-                if ("params_files" in path_data and path_data["params_files"] and not st.session_state.get("caiman_param_file_path")):
+                if ("params_files" in path_data and path_data["params_files"]):
+                    # and not st.session_state.get("caiman_param_file_path")
                     param_candidates = [Path(p).name for p in path_data["params_files"]]
                     existing_main_params = list_existing_param_files(params_dir)["main"]
                     for candidate in param_candidates:
@@ -584,7 +578,8 @@ def main():
                                 break  # Select the first match
 
                 # Check for z-shift parameter file(s)
-                if ("z_params_files" in path_data and path_data["z_params_files"] and not st.session_state.get("zshift_file_path")):
+                if ("z_params_files" in path_data and path_data["z_params_files"]):
+                    # and not st.session_state.get("zshift_file_path")
                     zparam_candidates = [Path(p).name for p in path_data["z_params_files"]]
                     existing_zshift_params = list_existing_param_files(params_dir)["zshift"]
                     for candidate in zparam_candidates:
