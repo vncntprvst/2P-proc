@@ -59,7 +59,7 @@ jobs:
             EXPORT_PATH=$(jq -r '.export_paths[0]' Mesmerize/paths/paths_test_data.json)
             # List the files in the export path
             echo "Files in export path:"
-            ls -l $EXPORT_PATH
+            tree $EXPORT_PATH
             # Check if the output files exist
             if [ -f "$EXPORT_PATH/results_caiman.mat" ]; then
                 echo "Output file results_caiman.mat exists"
