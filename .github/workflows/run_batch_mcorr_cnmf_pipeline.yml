@@ -23,6 +23,9 @@ jobs:
       - name: Create logs directory
         run: |
             mkdir -p Mesmerize/logs
+
+      - name: Copy test JSON file
+        run: cp ~/code/imaging_analysis/Analysis_2P/Mesmerize/paths/paths_test_data.json Mesmerize/paths/paths_test_data.json
             
       - name: Run batch mcorr cnmf pipeline
         run: |
