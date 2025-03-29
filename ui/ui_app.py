@@ -615,9 +615,11 @@ def main():
 
         # Export paths
         export_paths_input = st.text_area(
-            "Export paths (one per line)",
-            value="\n".join(path_data.get("export_paths", []))
+            "Export paths (one per line). See :grey-background[help] for details.",
+            value="\n".join(path_data.get("export_paths", [])),
+            help="If using the script to transfer data, the export path will be: :grey-background[<scratch_space>/<subject>/<session_date>/<run_name>/<method>]. The last four parts of the export path provided will define <subject>, <session_date>, <run_name>, and <method>."
         )
+
         export_paths = [line.strip() for line in export_paths_input.split("\n") if line.strip()]
 
         # If user wants z-stack
