@@ -31,7 +31,12 @@ jobs:
             # Activate the conda environment
             conda activate mescore
             # Resolve the absolute path of the JSON file
-            PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
+            # PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
+            # List the directory to verify the file exists
+            ls -l Mesmerize/paths
+            # Use GITHUB_WORKSPACE to build the absolute path
+            PATHS_FILE=$(realpath "$GITHUB_WORKSPACE/Mesmerize/paths/paths_test_data.json")
+            echo "Using JSON file: $PATHS_FILE"
             # Run the pipeline
             python Mesmerize/batch_mcorr_cnmf.py $PATHS_FILE
 
