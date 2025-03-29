@@ -23,19 +23,13 @@ jobs:
       - name: Create logs directory
         run: |
             mkdir -p Mesmerize/logs
-
-      - name: Activate conda environment
-        run: |
-            # Source the conda.sh script to enable conda commands
-            source ~/mambaforge/etc/profile.d/conda.sh
-            # Activate the conda environment
-            conda activate mescore
-            # Check python version
-            which python
-            python --version
             
       - name: Run batch mcorr cnmf pipeline
         run: |
+            # Source conda to enable the commands
+            source ~/mambaforge/etc/profile.d/conda.sh
+            # Activate the conda environment
+            conda activate mescore
             # Resolve the absolute path of the JSON file
             PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
             # Run the pipeline
