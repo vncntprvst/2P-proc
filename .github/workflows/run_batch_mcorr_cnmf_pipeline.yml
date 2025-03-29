@@ -24,17 +24,22 @@ jobs:
         run: |
             mkdir -p Mesmerize/logs
 
-      - name: Activate conda environment
-        run: |
-            # Source the conda.sh script to enable conda commands
-            # source ~/mambaforge/etc/profile.d/conda.sh
-            # Activate the conda environment
-            conda activate mescore
-
+      - name: Copy test JSON file
+        run: cp ~/code/imaging_analysis/Analysis_2P/Mesmerize/paths/paths_test_data.json Mesmerize/paths/paths_test_data.json
+            
       - name: Run batch mcorr cnmf pipeline
         run: |
+            # Source conda to enable the commands
+            source ~/mambaforge/etc/profile.d/conda.sh
+            # Activate the conda environment
+            conda activate mescore
             # Resolve the absolute path of the JSON file
-            PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
+            # PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
+            # List the directory to verify the file exists
+            ls -l Mesmerize/paths
+            # Use GITHUB_WORKSPACE to build the absolute path
+            PATHS_FILE=$(realpath "$GITHUB_WORKSPACE/Mesmerize/paths/paths_test_data.json")
+            echo "Using JSON file: $PATHS_FILE"
             # Run the pipeline
             python Mesmerize/batch_mcorr_cnmf.py $PATHS_FILE
 
@@ -54,7 +59,7 @@ jobs:
             EXPORT_PATH=$(jq -r '.export_paths[0]' Mesmerize/paths/paths_test_data.json)
             # List the files in the export path
             echo "Files in export path:"
-            ls -l $EXPORT_PATH
+            tree $EXPORT_PATH
             # Check if the output files exist
             if [ -f "$EXPORT_PATH/results_caiman.mat" ]; then
                 echo "Output file results_caiman.mat exists"
