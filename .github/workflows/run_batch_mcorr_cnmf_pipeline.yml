@@ -30,7 +30,10 @@ jobs:
             source ~/mambaforge/etc/profile.d/conda.sh
             # Activate the conda environment
             conda activate mescore
-
+            # Check python version
+            which python
+            python --version
+            
       - name: Run batch mcorr cnmf pipeline
         run: |
             # Resolve the absolute path of the JSON file
