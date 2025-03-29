@@ -27,7 +27,7 @@ jobs:
       - name: Activate conda environment
         run: |
             # Source the conda.sh script to enable conda commands
-            # source ~/mambaforge/etc/profile.d/conda.sh
+            source ~/mambaforge/etc/profile.d/conda.sh
             # Activate the conda environment
             conda activate mescore
 
