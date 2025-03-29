@@ -1,0 +1,77 @@
+# Run the mcorr cnmf pipeline on test data on the local runner
+
+# To update the `yml` file without triggering the job, use the `[skip ci]` or `[ci skip]` keyword in your commit message. 
+# e.g.:
+# ```
+# Update run_batch_mcorr_cnmf_pipeline.yml [skip ci]
+# ```
+
+name: Test MCorr CNMF Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+            
+      - name: Create logs directory
+        run: |
+            mkdir -p Mesmerize/logs
+
+      - name: Activate conda environment
+        run: |
+            # Source the conda.sh script to enable conda commands
+            # source ~/mambaforge/etc/profile.d/conda.sh
+            # Activate the conda environment
+            conda activate mescore
+
+      - name: Run batch mcorr cnmf pipeline
+        run: |
+            # Resolve the absolute path of the JSON file
+            PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
+            # Run the pipeline
+            python Mesmerize/batch_mcorr_cnmf.py $PATHS_FILE
+
+      - name: Check logs
+        run: |
+            # Check the logs for errors
+            if grep -q "ERROR" Mesmerize/logs/*.log; then
+                echo "Errors found in logs"
+                exit 1
+            else
+                echo "No errors found in logs"
+            fi
+
+      - name: Check output
+        run: |
+            # Check the export path (in export_paths field in paths_test_data.json)
+            EXPORT_PATH=$(jq -r '.export_paths[0]' Mesmerize/paths/paths_test_data.json)
+            # List the files in the export path
+            echo "Files in export path:"
+            ls -l $EXPORT_PATH
+            # Check if the output files exist
+            if [ -f "$EXPORT_PATH/results_caiman.mat" ]; then
+                echo "Output file results_caiman.mat exists"
+            else
+                echo "Output file results_caiman.mat does not exist"
+                exit 1
+            fi
+
+      - name: Deactivate conda environment
+        run: |
+              conda deactivate
+
+      - name: Delete logs directory
+        run: |
+              rm -rf Mesmerize/logs              
+
+      - name: Delete output directory
+        if: always()
+        run: |
+              rm -rf $EXPORT_PATH
