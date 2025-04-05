@@ -9,7 +9,8 @@ docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.3.
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
 
-# Versions:
+# New versions are created with each release though GitHub Actions. 
+# Previous versions are kept for reference. 
 # v0.3.0: Getting close to v1.0. Matlab pipeline (with intregated DLC and rastermap calls) working locally and on remote server.    
 # v0.2.6: Solving out-of-memory errors. 
         # Adds Context manager to close files and free memory in pipeline, for mcorr and cnmf steps.
