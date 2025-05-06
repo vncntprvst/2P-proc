@@ -70,7 +70,7 @@ jobs:
 
       - name: Deactivate conda environment
         run: |
-              conda deactivate
+              conda deactivate || echo "Environment not active or failed to deactivate"
 
       - name: Delete logs directory
         run: |
