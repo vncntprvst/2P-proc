@@ -9,14 +9,18 @@
 name: Build and Push Docker and Singularity
 
 on:
-  release:
-    types: [published]
-    branches:
-      - main
+  # release:
+  #   types: [published]
+  #   branches:
+  #     - main
+  workflow_run:
+    workflows: ["Update Release Badge"]
+    types:
+      - completed
   workflow_dispatch:
 
 jobs:
-  build:
+  build-docker-singularity:
     # runs-on: ubuntu-latest
     runs-on: self-hosted
 
