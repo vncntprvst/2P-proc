@@ -1,26 +1,26 @@
 #!/bin/bash
-set -e
+
+set -e  # Exit on any error
 
 echo "Setting up CaImAn environment with mamba/conda..."
 
-# Check if mamba is available, install if needed
-if ! command -v mamba &> /dev/null; then
+# Install micromamba non-interactively
+if ! command -v micromamba &> /dev/null; then
     echo "Installing micromamba..."
-    "${SHELL}" <(curl -L micro.mamba.pm/install.sh)
-    # Initialize micromamba in the current shell
-    eval "$(~/micromamba/bin/micromamba shell hook -s posix)"
-    # Set up alias for mamba to use micromamba
-    alias mamba='micromamba'
+    # Use the direct binary installation method for containers
+    mkdir -p ~/.local/bin
+    curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba -O > ~/.local/bin/micromamba
+    chmod +x ~/.local/bin/micromamba
+    export PATH="$HOME/.local/bin:$PATH"
+    
+    # Initialize micromamba
+    ~/.local/bin/micromamba shell init --shell bash --root-prefix=~/micromamba
+    source ~/.bashrc || true
+    export MAMBA_ROOT_PREFIX=~/micromamba
 fi
 
-# Create the CaImAn environment with caiman and mesmerize-core
-echo "Creating CaImAn environment with caiman and mesmerize-core..."
-mamba create -n CaImAn -c conda-forge python=3.11 caiman mesmerize-core -y
-
-# Activate the environment
-echo "Activating CaImAn environment..."
-eval "$(conda shell.bash hook)"
-conda activate CaImAn
+# Create alias for convenience
+alias mamba='micromamba'
 
 # Install uv if not available
 if ! command -v uv &> /dev/null; then
@@ -29,36 +29,27 @@ if ! command -v uv &> /dev/null; then
     source $HOME/.cargo/env
 fi
 
-# Install caiman manager
+echo "Creating CaImAn environment with micromamba..."
+micromamba create -n CaImAn -c conda-forge python=3.9 mesmerize-core caiman -y
+
+echo "Activating CaImAn environment..."
+eval "$(micromamba shell hook --shell bash)"
+micromamba activate CaImAn
+
 echo "Running caimanmanager install..."
 caimanmanager install
 
-# Install additional packages with uv
-echo "Installing fastplotlib with notebook support..."
+echo "Installing additional conda packages..."
+micromamba install -n CaImAn -c conda-forge mkl mkl_fft -y || echo "Warning: MKL packages not available"
+
+echo "Installing pip packages with uv..."
 uv pip install "fastplotlib[notebook]"
-
-echo "Installing pylibtiff..."
 uv pip install pylibtiff
-
-echo "Installing mesmerize-viz from GitHub..."
 uv pip install git+https://github.com/kushalkolar/mesmerize-viz.git
-
-echo "Installing PyQt6..."
 uv pip install PyQt6
-
-# Install suite2p and MKL packages
-echo "Installing mkl packages with mamba and suite2p with uv..."
-mamba install -y -c conda-forge mkl mkl_fft
 uv pip install suite2p
-
-# Install additional packages
-echo "Installing additional packages..."
 uv pip install pyarrow
 uv pip install plotly
 
-echo "Setup complete!"
-echo ""
-echo "To activate the environment in the future, run:"
-echo "conda activate CaImAn"
-echo ""
-echo "Environment location: $(conda info --envs | grep CaImAn | awk '{print $2}')"
+echo "Setup complete! To activate the environment, run:"
+echo "micromamba activate CaImAn"
