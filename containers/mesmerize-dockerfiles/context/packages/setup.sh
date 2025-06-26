@@ -30,7 +30,7 @@ if ! command -v uv &> /dev/null; then
 fi
 
 echo "Creating CaImAn environment with micromamba..."
-micromamba create -n CaImAn -c conda-forge python=3.9 mesmerize-core caiman -y
+micromamba create -n CaImAn -c conda-forge python=3.11 mesmerize-core caiman -y
 
 echo "Activating CaImAn environment..."
 eval "$(micromamba shell hook --shell bash)"
