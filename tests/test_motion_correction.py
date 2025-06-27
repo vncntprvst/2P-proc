@@ -324,18 +324,18 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
             group_export_dir = export_path / group_export_paths[group - 1].split('/')[-1]  # Get the last part of the path
             group_export_dir.mkdir(parents=True, exist_ok=True)
             # Run the motion correction
-            mc_output_file, index, movie_path = run_mcorr(group_data_paths, group_export_dir, parameters_mcorr, regex_pattern, recompute)
+            mc_batch_file, index, movie_path = run_mcorr(group_data_paths, group_export_dir, parameters_mcorr, regex_pattern, recompute)
 
             print("\nValidating motion correction results...")
             # Validate results
-            if not mc_output_file.exists():
-                print(f"ERROR: Motion corrected movie not found at: {mc_output_file}")
+            if not mc_batch_file.exists():
+                print(f"ERROR: Motion corrected movie not found at: {mc_batch_file}")
                 raise FileNotFoundError("Motion corrected movie not created")
                 
             print("Loading motion corrected movie to check integrity...")
             try:
                 # Try to load the motion corrected movie
-                mcorr_movie, dims, T = load_memmap(mc_output_file)
+                mcorr_movie, dims, T = load_memmap(movie_path)
                 print(f"Motion corrected movie loaded. Dimensions: {dims}, Frames: {T}")
                 
                 # Reshape to proper dimensions
@@ -350,11 +350,11 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
                     
                 print(f"Motion corrected movie shape: {mcorr_movie.shape}")
                 
-                print("\nDirect motion correction test passed!")
+                print("\Motion correction test passed!")
                 print(f"Motion corrected movie saved at: {mc_output_file}")
                 
                 return {
-                    'motion_corrected_path': mc_output_file,
+                    'motion_corrected_path': movie_path,
                     'test_data_dir': test_data_dir,
                     'export_path': export_path,
                     'group': group,
