@@ -4,6 +4,10 @@ from tifffile import TiffWriter
 
 from Mesmerize.compute_zcorr import save_mmap_movie, subtract_z_motion_patches
 
+def download_test_data():
+    # This function is a placeholder for downloading test data.
+    # In practice, you would implement the logic to download or prepare the test data.
+    raise NotImplementedError("Test data download not implemented.")
 
 def create_test_data(tmp_path: Path):
     Ny, Nx, Nz = 8, 8, 4
