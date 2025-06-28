@@ -54,5 +54,16 @@ uv pip install suite2p
 uv pip install pyarrow
 uv pip install plotly
 
+# Set CaImAn as the default environment and available in the shell
+echo "Setting CaImAn as the default environment..."
+echo "export MAMBA_ROOT_PREFIX=~/micromamba" >> ~/.bashrc
+echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
+echo "export PATH=\"\$HOME/.cargo/bin:\$PATH\"" >> ~/.bashrc
+echo "alias mamba='micromamba'" >> ~/.bashrc
+echo "export UV_PIP_INSTALL=1" >> ~/.bashrc
+# Add this conditional to avoid automatic activation in non-interactive shells
+echo '[ -z "$PS1" ] && return' >> ~/.bashrc
+echo "micromamba activate CaImAn" >> ~/.bashrc
+
 echo "Setup complete! To activate the environment, run:"
 echo "micromamba activate CaImAn"
