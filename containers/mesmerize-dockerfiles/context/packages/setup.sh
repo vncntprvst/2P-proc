@@ -30,7 +30,7 @@ if ! command -v uv &> /dev/null; then
 fi
 
 echo "Creating CaImAn environment with micromamba..."
-micromamba create -n CaImAn -c conda-forge python=3.11 mesmerize-core caiman -y
+micromamba create -n CaImAn -c conda-forge python=3.11 mesmerize-core caiman numpy -y
 
 echo "Activating CaImAn environment..."
 eval "$(micromamba shell hook --shell bash)"
@@ -41,6 +41,9 @@ caimanmanager install
 
 echo "Installing additional conda packages..."
 micromamba install -n CaImAn -c conda-forge mkl mkl_fft -y || echo "Warning: MKL packages not available"
+micromamba install -n CaImAn -c conda-forge ipykernel pip tslearn bottleneck graphviz bokeh jupyterlab jupyterlab-git nb_conda_kernels -y
+micromamba install -n CaImAn -c defaults ffmpeg -y
+micromamba install -n CaImAn -c conda-forge "tifffile>=2023.8.12" -y
 
 echo "Installing pip packages with uv..."
 uv pip install "fastplotlib[notebook]"
@@ -50,6 +53,17 @@ uv pip install PyQt6
 uv pip install suite2p
 uv pip install pyarrow
 uv pip install plotly
+
+# Set CaImAn as the default environment and available in the shell
+echo "Setting CaImAn as the default environment..."
+echo "export MAMBA_ROOT_PREFIX=~/micromamba" >> ~/.bashrc
+echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
+echo "export PATH=\"\$HOME/.cargo/bin:\$PATH\"" >> ~/.bashrc
+echo "alias mamba='micromamba'" >> ~/.bashrc
+echo "export UV_PIP_INSTALL=1" >> ~/.bashrc
+# Add this conditional to avoid automatic activation in non-interactive shells
+echo '[ -z "$PS1" ] && return' >> ~/.bashrc
+echo "micromamba activate CaImAn" >> ~/.bashrc
 
 echo "Setup complete! To activate the environment, run:"
 echo "micromamba activate CaImAn"
