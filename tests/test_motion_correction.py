@@ -350,8 +350,19 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
                     
                 print(f"Motion corrected movie shape: {mcorr_movie.shape}")
                 
-                print("\Motion correction test passed!")
-                print(f"Motion corrected movie saved at: {mc_output_file}")
+                # Apply bit depth optimization (clip to uint16 range but keep as float32 for CaImAn compatibility)
+                print("Optimizing bit depth for motion corrected movie...")
+                try:
+                    from pipeline_mcorr_cnmf import overwrite_movie_memmap
+                    # Apply clipping to uint16 range
+                    overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
+                    print("Motion corrected movie optimized to uint16 range")
+                except Exception as e:
+                    print(f"Warning: Could not optimize bit depth: {e}")
+                    print("Proceeding without optimization...")
+                
+                print("\nMotion correction test passed!")
+                print(f"Motion corrected movie saved at: {movie_path}")
                 
                 return {
                     'motion_corrected_path': movie_path,
