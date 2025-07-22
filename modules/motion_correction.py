@@ -22,6 +22,7 @@ import contextlib
 import gc
 import psutil
 import logging
+import h5py
 
 # Import CaImAn and Mesmerize components
 import mesmerize_core as mc
@@ -330,8 +331,15 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         raise RuntimeError("No motion correction results found")
 
 
-def run_motion_correction_workflow(data_path, export_path, parameters, regex_pattern='*_Ch2_*.ome.tif', 
-                                 recompute=True, create_movies=True):
+def run_motion_correction_workflow(
+    data_path,
+    export_path,
+    parameters,
+    regex_pattern='*_Ch2_*.ome.tif',
+    recompute=True,
+    create_movies=True,
+    output_format='memmap',
+):
     """
     Complete motion correction workflow including z-motion correction.
     
@@ -342,6 +350,7 @@ def run_motion_correction_workflow(data_path, export_path, parameters, regex_pat
         regex_pattern: Pattern to match input files
         recompute: Whether to recompute existing results
         create_movies: Whether to create output movies
+        output_format: 'memmap' (default) or 'h5' for final movie storage
     
     Returns:
         dict: Results dictionary with paths and metadata
@@ -379,7 +388,9 @@ def run_motion_correction_workflow(data_path, export_path, parameters, regex_pat
                 log_and_print("Starting z-motion correction...")
                 time_z0 = time.time()
                 
-                zcorr_movie_path, _, _ = cz.z_motion(movie_path, parameters)
+                zcorr_movie_path, _, _ = cz.z_motion(
+                    movie_path, parameters, output_format=output_format
+                )
                 
                 # Save corrected movie, overwriting the original
                 if zcorr_movie_path is not None:
@@ -416,6 +427,15 @@ def run_motion_correction_workflow(data_path, export_path, parameters, regex_pat
                                           batch=batch_path, index=index, excerpt=240)
             
             results['success'] = True
+
+            if output_format == 'h5':
+                h5_path = movie_path.with_suffix('.h5')
+                log_and_print(f"Saving final movie to {h5_path}")
+                memmap_array = load_mmap_movie(movie_path)
+                with h5py.File(h5_path, 'w') as f:
+                    f.create_dataset('data', data=memmap_array, compression='gzip', chunks=(1, memmap_array.shape[1], memmap_array.shape[2]))
+                results['movie_path'] = h5_path
+
             log_and_print("Motion correction workflow completed successfully.")
             
         except Exception as e:
@@ -456,6 +476,7 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
     parser.add_argument('--recompute', action='store_true', help='Recompute existing results')
     parser.add_argument('--no-movies', action='store_true', help='Skip movie creation')
+    parser.add_argument('--save-h5', action='store_true', help='Save final movie as HDF5')
     
     args = parser.parse_args()
     
@@ -471,7 +492,8 @@ if __name__ == "__main__":
         parameters=parameters,
         regex_pattern=args.pattern,
         recompute=args.recompute,
-        create_movies=not args.no_movies
+        create_movies=not args.no_movies,
+        output_format='h5' if args.save_h5 else 'memmap'
     )
     
     print(f"Motion correction completed: {results['success']}")

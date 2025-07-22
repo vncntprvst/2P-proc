@@ -26,6 +26,7 @@ import pandas as pd
 import gc
 
 from caiman.mmapping import load_memmap
+import h5py
 
 from PIL import Image
 from matplotlib.colors import ListedColormap
@@ -599,30 +600,29 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
 
     return z_correlation
 
-def save_mmap_movie(movie, movie_path):
-    """
-    Save an array as a memmaped numpy array.
-    Original array must have dimensions T, y, x
-    """
-    # Save the movie as a memmaped numpy array
+def save_movie(movie, movie_path, format="memmap"):
+    """Save movie array to disk in the desired format."""
     movie_path = Path(movie_path)
-    # Transpose the array to (y, x, T)
+
+    if format == "h5":
+        # Save array to HDF5 file
+        with h5py.File(movie_path, "w") as f:
+            f.create_dataset("data", data=movie, compression="gzip", chunks=(1, movie.shape[1], movie.shape[2]))
+        return movie_path
+
+    # Default: save as memmap
     transposed_array = movie.transpose(1, 2, 0)
-    # Flatten the transposed array in 'F' order (to align with the loading code)
-    flattened_array = transposed_array.flatten(order='F')
-    # Create a new memmap file with write access
-    movie_ = np.memmap(movie_path, dtype='float32', mode='w+', shape=flattened_array.shape)
+    flattened_array = transposed_array.flatten(order="F")
+    movie_ = np.memmap(movie_path, dtype="float32", mode="w+", shape=flattened_array.shape)
     movie_[:] = flattened_array[:]
-    # Flush changes to disk and close the memmap
     del movie_
-    del flattened_array    
+    del flattened_array
     gc.collect()
-    
-    # Add the path to the memmap file to the memmap_paths.json file
-    memmap_paths = {'zcorr_movie_path': str(movie_path)}
-    with open(movie_path.parent / 'memmap_paths.json', 'w') as f:
+
+    memmap_paths = {"zcorr_movie_path": str(movie_path)}
+    with open(movie_path.parent / "memmap_paths.json", "w") as f:
         json.dump(memmap_paths, f)
-        
+
     return movie_path
 
 
@@ -1770,7 +1770,7 @@ def subtract_z_motion_pixels(movie_mmap_path, zpos, zstack_filepath, n_jobs=-1):
     # Return the corrected F matrix and the scaling factor
     return Fcorrected_reshaped, z_motion_scaling_factors
 
-def z_motion(mcorr_movie_path, parameters, recompute=True):
+def z_motion(mcorr_movie_path, parameters, recompute=True, output_format="memmap"):
     """
     Shifts the z-stack and performs z-motion correlation.
 
@@ -1890,11 +1890,13 @@ def z_motion(mcorr_movie_path, parameters, recompute=True):
                 print("No z-motion subtraction method specified.")
 
             # --- Save Corrected Movie ---
-            # If a corrected movie has been generated, save it to a memmap file.
+            # If a corrected movie has been generated, save it to disk.
             if zcorr_movie is not None:
-                movie_path = save_mmap_movie(
-                    zcorr_movie, 
-                    mcorr_movie_path.parent / f"zcorr_movie_{mcorr_movie_path.name}"
+                movie_ext = "h5" if output_format == "h5" else mcorr_movie_path.suffix
+                movie_path = save_movie(
+                    zcorr_movie,
+                    mcorr_movie_path.parent / f"zcorr_movie_{mcorr_movie_path.stem}.{movie_ext}",
+                    format=output_format,
                 )
                     
             return movie_path, z_motion_scaling_factors, z_correlation
