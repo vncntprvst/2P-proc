@@ -24,7 +24,13 @@ from scipy import io
 
 from .motion_correction import log_and_print
 
-__all__ = ["run_cnmf"]
+__all__ = [
+    "run_cnmf", 
+    "save_processing_parameters", 
+    "prepare_cnmf_object",
+    "copy_mean_intensity_template",
+    "export_cnmf_results"
+]
 
 
 def countdown(n: int) -> None:
@@ -125,7 +131,35 @@ def run_cnmf(
     # Reload to ensure we have the latest results
     df = df.caiman.reload_from_disk()
 
-    # Save parameters used for processing
+    # Save parameters and export results
+    save_processing_parameters(df, export_path, data_path, params_cnmf)
+    
+    # Get CNMF object and prepare it for export
+    cnmf_obj = prepare_cnmf_object(df)
+    
+    # Copy the mean intensity template if available
+    copy_mean_intensity_template(df, batch, export_path)
+    
+    # Export results to MATLAB format
+    export_cnmf_results(df, cnmf_obj, export_path, z_correlation)
+
+    return cnmf_obj
+
+
+def save_processing_parameters(df, export_path, data_path, params_cnmf):
+    """Save the parameters used for motion correction and CNMF processing.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Mesmerize batch dataframe containing processing information.
+    export_path : Path
+        Directory where parameter file should be saved.
+    data_path : str, Path, or list
+        Original data location.
+    params_cnmf : dict
+        CNMF parameters used for processing.
+    """
     params_path = export_path / "caiman_params.json"
 
     if isinstance(data_path, list):
@@ -147,19 +181,50 @@ def run_cnmf(
 
     log_and_print(f"Saved parameters to {params_path}.")
 
-    # Export results to MATLAB format
+
+def prepare_cnmf_object(df):
+    """Prepare the CNMF object for export by selecting components and calculating dF/F.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Mesmerize batch dataframe containing processing information.
+        
+    Returns
+    -------
+    cnmf_obj : caiman.source_extraction.cnmf.cnmf.CNMF
+        Prepared CNMF object with selected components and calculated F_dff.
+    """
     cnmf_obj = df.iloc[-1].cnmf.get_output()
-
+    
+    # Select components
     cnmf_obj.estimates.select_components(use_object=True)
-
+    
+    # Calculate dF/F if not already calculated
     if cnmf_obj.estimates.F_dff is None:
         log_and_print("Calculating estimates.F_dff")
         cnmf_obj.estimates.detrend_df_f(
             quantileMin=8, frames_window=400, use_residuals=False
         )
+    
+    return cnmf_obj
 
+
+def copy_mean_intensity_template(df, batch, export_path):
+    """Copy the mean intensity template file to the export directory.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Mesmerize batch dataframe containing processing information.
+    batch : Path
+        Path to the Mesmerize batch file.
+    export_path : Path
+        Directory where template file should be copied.
+    """
     cnmf_uuid = df[df["algo"] == "cnmf"]["uuid"].values[0]
     mean_intensity_template_path = batch.parent / cnmf_uuid / f"{cnmf_uuid}_cn.npy"
+    
     if mean_intensity_template_path.exists():
         shutil.copy(mean_intensity_template_path, export_path / "mean_intensity_template.npy")
         log_and_print(f"Saved mean_intensity_template.npy to {export_path}.")
@@ -167,6 +232,22 @@ def run_cnmf(
         log_and_print(
             f"Could not find cn.npy file at {mean_intensity_template_path}.")
 
+
+def export_cnmf_results(df, cnmf_obj, export_path, z_correlation=None):
+    """Export CNMF results to MATLAB format.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Mesmerize batch dataframe containing processing information.
+    cnmf_obj : caiman.source_extraction.cnmf.cnmf.CNMF
+        CNMF object containing processing results.
+    export_path : Path
+        Directory where results should be saved.
+    z_correlation : np.ndarray, optional
+        Z correlation data if available.
+    """
+    # Get Z position information if available
     if z_correlation is None:
         zcorr_file = export_path / "z_correlation.npz"
         if zcorr_file.exists():
@@ -174,7 +255,11 @@ def run_cnmf(
             zpos = z_correlation["zpos"]
         else:
             zpos = np.array([np.nan])
+    else:
+        # Assume z_correlation is a dict-like object with "zpos" key
+        zpos = z_correlation.get("zpos", np.array([np.nan]))
 
+    # Export to MATLAB format
     io.savemat(
         export_path / "results_caiman.mat",
         mdict={
@@ -192,8 +277,6 @@ def run_cnmf(
             "zpos": zpos,
         },
     )
-
+    
     log_and_print(f"Saved results to {export_path}/results_caiman.mat.")
-
-    return cnmf_obj
 
