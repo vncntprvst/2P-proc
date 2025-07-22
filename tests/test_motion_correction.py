@@ -19,12 +19,15 @@ from pathlib import Path
 # Set up proper import paths
 repo_root = Path(__file__).parent.parent
 mesmerize_dir = repo_root / "Mesmerize"
+modules_dir = repo_root / "modules"
 
 # Add directories to Python path
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 if str(mesmerize_dir) not in sys.path:
     sys.path.insert(0, str(mesmerize_dir))
+if str(modules_dir) not in sys.path:
+    sys.path.insert(0, str(modules_dir))
 
 # Import required modules - these imports need to come after path setup
 try:
@@ -181,7 +184,7 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
     
     # Import the bruker_concat_tif module to handle file concatenation
     try:
-        from Mesmerize.bruker_concat_tif import concatenate_files
+        from modules.bruker_concat_tif import concatenate_files
         print("Successfully imported bruker_concat_tif module")
     except ImportError:
         print("Error: Failed to import bruker_concat_tif module")

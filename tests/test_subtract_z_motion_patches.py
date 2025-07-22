@@ -2,7 +2,7 @@ import numpy as np
 from pathlib import Path
 from tifffile import TiffWriter
 
-from Mesmerize.compute_zcorr import save_mmap_movie, subtract_z_motion_patches
+from modules.compute_zcorr import save_mmap_movie, subtract_z_motion_patches
 
 def download_test_data():
     # This function is a placeholder for downloading test data.
