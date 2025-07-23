@@ -902,8 +902,13 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                 zone_data.append(zone_info)
                 # reshape Zpatch to 2D and insert into composite_f_anat_frame               
                 if 'Z_patch' in averages and zone_id in averages['Z_patch']:
-                    # zone_2D = averages['Z_patch'][zone_id].reshape((y_max - y_min, x_max - x_min))
-                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = averages['Z_patch'][zone_id]
+                    zone_patch = averages['Z_patch'][zone_id]
+                    desired_shape = (y_max - y_min, x_max - x_min)
+                    # If the averaged patch does not match the expected zone size,
+                    # resize it to avoid broadcasting errors.
+                    if zone_patch.shape != desired_shape:
+                        zone_patch = cv2.resize(zone_patch, (desired_shape[1], desired_shape[0]), interpolation=cv2.INTER_LINEAR)
+                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = zone_patch
         
         F_anat_non_rigid[frame_idx, :, :] = composite_f_anat_frame
     
