@@ -285,9 +285,14 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         log_and_print(f"Using existing batch: {batch_path}")
         df = mc.load_batch(batch_path)
     else:
+        # Create new batch file path
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        batch_file_path = Path(export_path) / f"batch_{timestamp}.pickle"
+        
         # Create new batch
-        df = mc.create_batch(export_path)
-        batch_path = df.path
+        df = mc.create_batch(batch_file_path)
+        batch_path = batch_file_path
         log_and_print(f"Created new batch: {batch_path}")
         
         # Add motion correction item to batch
