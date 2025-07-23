@@ -324,13 +324,15 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
     
     # Get the motion corrected movie path
     if mcorr_index is not None:
-        mcorr_movie_path = df.iloc[mcorr_index].caiman.get_output_path()
+        # Reload batch from disk to get updated results
+        df = df.caiman.reload_from_disk()
+        mcorr_movie_path = Path(df.iloc[mcorr_index].mcorr.get_output_path())
         return batch_path, mcorr_index, mcorr_movie_path
     else:
         # Find existing motion correction result
         for idx, row in df.iterrows():
             if row.algo == 'mcorr' and row["outputs"] is not None:
-                mcorr_movie_path = row.caiman.get_output_path()
+                mcorr_movie_path = Path(row.mcorr.get_output_path())
                 return batch_path, idx, mcorr_movie_path
                 
         raise RuntimeError("No motion correction results found")
