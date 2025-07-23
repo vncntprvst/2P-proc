@@ -848,8 +848,21 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
             x_start, x_end = row['patch_x_lims']
             y_start, y_end = row['patch_y_lims']
             
-            # Extract the patch area from the labeled_zones
-            patch_2D = row['Z_patch'].reshape(y_end - y_start, x_end - x_start)
+            # Get the expected patch dimensions
+            expected_height = y_end - y_start
+            expected_width = x_end - x_start
+            
+            # Get the actual patch
+            patch = row['Z_patch']
+            
+            # Check if patch dimensions match expected dimensions
+            if patch.shape != (expected_height, expected_width):
+                # Resize the patch to match expected dimensions using cv2
+                import cv2
+                patch_2D = cv2.resize(patch, (expected_width, expected_height), interpolation=cv2.INTER_LINEAR)
+            else:
+                # If dimensions match, just reshape as before
+                patch_2D = patch.reshape(expected_height, expected_width)
             
             patch_zone_labels = labeled_zones[y_start:y_end, x_start:x_end]
             zone_ids = np.unique(patch_zone_labels)
@@ -907,6 +920,7 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                     # If the averaged patch does not match the expected zone size,
                     # resize it to avoid broadcasting errors.
                     if zone_patch.shape != desired_shape:
+                        import cv2
                         zone_patch = cv2.resize(zone_patch, (desired_shape[1], desired_shape[0]), interpolation=cv2.INTER_LINEAR)
                     composite_f_anat_frame[y_min:y_max, x_min:x_max] = zone_patch
         
@@ -938,7 +952,7 @@ def format_patch_correl_for_mat(zone_df):
     
     return mat_data
 
-def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
+def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_df):
     """
     Loop over each zones' pixel region and get the average fluorescence value for each zone from the FOV image
     """
@@ -947,10 +961,15 @@ def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
 
     for zone_id in range(np.max(labeled_zones) + 1):
         zone_indices = np.where(labeled_zones == zone_id)
-        # Get the mean fluorescence value for that zone
-        zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
-        # Get the R2 value for that zone
-        zone_rsquare.append(zone_data[zone_data['zone_id'] == zone_id]['r_squared'].values[0])
+        if len(zone_indices[0]) > 0:  # Check if zone exists
+            # Get the mean fluorescence value for that zone
+            zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
+            # Get the R2 value for that zone
+            zone_r2_data = zone_df[zone_df['zone_id'] == zone_id]['r_squared']
+            if len(zone_r2_data) > 0:
+                zone_rsquare.append(zone_r2_data.values[0])
+            else:
+                zone_rsquare.append(0.0)  # Default R2 if zone not found
         
     return zone_mean_fluorescence, zone_rsquare
 
@@ -972,17 +991,29 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     ax[0, 0].set_title('Patch overlap zone pattern')
     
     # Plot the R^2 heatmap
-    # plot zone_data's average r_squared values as a heatmap
-    dim_num_zones = int(np.sqrt(np.max(labeled_zones) + 1))
-
-    # Get zone_df data corresponding to the first frame
-    frame_num = zone_df['frame_num'].min()
-    zone_data = zone_df[zone_df['frame_num'] == frame_num]
-
-    r_squared_values = zone_data['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
-    im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
-    fig.colorbar(im, ax=ax[1, 0])
-    ax[1, 0].set_title(f"Average $R^2$ values per zone for frame {frame_num}")
+    # plot zone_df's average r_squared values as a heatmap
+    max_zone_id = np.max(labeled_zones)
+    num_zones = len(zone_df)
+    
+    # Check if zones can form a perfect square grid based on actual number of zones
+    dim_num_zones = int(np.sqrt(num_zones))
+    expected_size = dim_num_zones * dim_num_zones
+    
+    # Only create heatmap if we have the expected number of zones for a perfect square
+    if num_zones == expected_size:
+        r_squared_values = zone_df['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
+        im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
+        fig.colorbar(im, ax=ax[1, 0])
+        ax[1, 0].set_title(f"Average $R^2$ values per zone")
+    else:
+        # If zones don't form a perfect square, create a 1D plot instead
+        zone_ids = zone_df['zone_id'].values
+        r_squared_values = zone_df['r_squared'].values
+        ax[1, 0].scatter(zone_ids, r_squared_values, alpha=0.7)
+        ax[1, 0].set_xlabel('Zone ID')
+        ax[1, 0].set_ylabel('R² Value')
+        ax[1, 0].set_title(f"$R^2$ values per zone ({num_zones} zones)")
+        print(f"Info: Using scatter plot - {num_zones} zones don't fit into {dim_num_zones}x{dim_num_zones} grid (would need {expected_size})")
 
     # Plot distribution of correlation for all patches across depth
     patch_z_idx = patch_correlations_df['patch_z_idx']
