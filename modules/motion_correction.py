@@ -285,9 +285,14 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         log_and_print(f"Using existing batch: {batch_path}")
         df = mc.load_batch(batch_path)
     else:
+        # Create new batch file path
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        batch_file_path = Path(export_path) / f"batch_{timestamp}.pickle"
+        
         # Create new batch
-        df = mc.create_batch(export_path)
-        batch_path = df.path
+        df = mc.create_batch(batch_file_path)
+        batch_path = batch_file_path
         log_and_print(f"Created new batch: {batch_path}")
         
         # Add motion correction item to batch
@@ -319,13 +324,15 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
     
     # Get the motion corrected movie path
     if mcorr_index is not None:
-        mcorr_movie_path = df.iloc[mcorr_index].caiman.get_output_path()
+        # Reload batch from disk to get updated results
+        df = df.caiman.reload_from_disk()
+        mcorr_movie_path = Path(df.iloc[mcorr_index].mcorr.get_output_path())
         return batch_path, mcorr_index, mcorr_movie_path
     else:
         # Find existing motion correction result
         for idx, row in df.iterrows():
             if row.algo == 'mcorr' and row["outputs"] is not None:
-                mcorr_movie_path = row.caiman.get_output_path()
+                mcorr_movie_path = Path(row.mcorr.get_output_path())
                 return batch_path, idx, mcorr_movie_path
                 
         raise RuntimeError("No motion correction results found")
