@@ -1017,28 +1017,23 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     
     # Plot the R^2 heatmap
     # plot zone_df's average r_squared values as a heatmap
-    max_zone_id = np.max(labeled_zones)
-    num_zones = len(zone_df)
-    
-    # Check if zones can form a perfect square grid based on actual number of zones
+    # Get number of unique zones
+    num_zones = np.max(labeled_zones) + 1
     dim_num_zones = int(np.sqrt(num_zones))
-    expected_size = dim_num_zones * dim_num_zones
-    
-    # Only create heatmap if we have the expected number of zones for a perfect square
-    if num_zones == expected_size:
-        r_squared_values = zone_df['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
-        im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
-        fig.colorbar(im, ax=ax[1, 0])
-        ax[1, 0].set_title(f"Average $R^2$ values per zone")
-    else:
-        # If zones don't form a perfect square, create a 1D plot instead
-        zone_ids = zone_df['zone_id'].values
-        r_squared_values = zone_df['r_squared'].values
-        ax[1, 0].scatter(zone_ids, r_squared_values, alpha=0.7)
-        ax[1, 0].set_xlabel('Zone ID')
-        ax[1, 0].set_ylabel('R² Value')
-        ax[1, 0].set_title(f"$R^2$ values per zone ({num_zones} zones)")
-        print(f"Info: Using scatter plot - {num_zones} zones don't fit into {dim_num_zones}x{dim_num_zones} grid (would need {expected_size})")
+
+    # Validate square shape
+    if dim_num_zones**2 != num_zones:
+        raise ValueError(f"Zone layout is not a square: got {num_zones} zones, expected {dim_num_zones}²")
+
+    # Extract first-frame R² values
+    frame_num = zone_df['frame_num'].min()
+    zone_data = zone_df[zone_df['frame_num'] == frame_num]
+
+    # Reshape and plot heatmap
+    r_squared_values = zone_data['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
+    im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
+    fig.colorbar(im, ax=ax[1, 0])
+    ax[1, 0].set_title(f"Average $R^2$ values per zone for frame {frame_num}")
 
     # Plot distribution of correlation for all patches across depth
     patch_z_idx = patch_correlations_df['patch_z_idx']
