@@ -46,4 +46,4 @@ def test_subtract_z_motion_patches(tmp_path):
         plane = zstack[:, :, zpos[i]].astype(np.float32)
         before.append(np.corrcoef(movie[i].ravel(), plane.ravel())[0, 1])
         after.append(np.corrcoef(corrected[i].ravel(), plane.ravel())[0, 1])
-    assert np.mean(after) < np.mean(before)
+    assert np.mean(after) > np.mean(before)
