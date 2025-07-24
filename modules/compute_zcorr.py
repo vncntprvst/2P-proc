@@ -667,9 +667,7 @@ def patch_regress(frame_data, shift_patches=False):
             patch_size_y = patch_size[0] if j + patch_size[0] <= Ny else Ny - j
 
             # Allow for a last partial patch on the right and bottom borders, but not more
-            if i + patch_size[1] > Nx and patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
-                continue
-            if j + patch_size[0] > Ny and patch_size_y < patch_size[0]:
+            if patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
                 continue
 
             # Get the patch from the frame data
@@ -742,7 +740,6 @@ def patch_regress(frame_data, shift_patches=False):
 def calculate_zones(patch_correlations, Ny, Nx):
     """
     Find zones (i.e., how patches overlap) in the patch_correlations table.
-    Also handles areas not covered by patches by creating grid-based zones.
     
     Inputs:
     - patch_correlations: DataFrame containing the patch correlations.
@@ -765,35 +762,38 @@ def calculate_zones(patch_correlations, Ny, Nx):
         y_start, y_end = row['patch_y_lims']
         mask[y_start:y_end, x_start:x_end] += 1
     
-    # Handle areas with no patches (including bottom rows)
-    if np.any(mask == 0):
-        zero_count = np.sum(mask == 0)
-        print(f"Found {zero_count} pixels ({zero_count/mask.size:.1%} of image) with no patch coverage")
-        
-        # Create grid zones for uncovered areas (bottom rows, etc.)
-        grid_size = np.diff(patch_correlations[0]['patch_x_lims'])[0]  # Use the width of the first patch
-        if grid_size == 0:
-            grid_size = 60  # Default grid size
-        zero_mask = (mask == 0).astype(int)
-        
-        # Create grid pattern in zeros
-        for i in range(0, Nx, grid_size):
-            for j in range(0, Ny, grid_size):
-                if np.any(zero_mask[j:j+grid_size, i:i+grid_size]):
-                    # Use alternating pattern (1, 2) to ensure distinct zones
-                    zone_value = (i//grid_size + j//grid_size) % 2 + 1
-                    mask[j:j+grid_size, i:i+grid_size] = np.where(
-                        zero_mask[j:j+grid_size, i:i+grid_size] == 1,
-                        zone_value,
-                        mask[j:j+grid_size, i:i+grid_size]
-                    )
     
+    # # Handle areas with no patches (including bottom rows)
+    # if np.any(mask == 0):
+    #     zero_count = np.sum(mask == 0)
+    #     print(f"Found {zero_count} pixels ({zero_count/mask.size:.1%} of image) with no patch coverage")
+        
+    #     # Create grid zones for uncovered areas (bottom rows, etc.)
+    #     grid_size = np.diff(patch_correlations[0]['patch_x_lims'])[0]  # Use the width of the first patch
+    #     if grid_size == 0:
+    #         grid_size = 60  # Default grid size
+    #     zero_mask = (mask == 0).astype(int)
+        
+    #     # Create grid pattern in zeros
+    #     for i in range(0, Nx, grid_size):
+    #         for j in range(0, Ny, grid_size):
+    #             if np.any(zero_mask[j:j+grid_size, i:i+grid_size]):
+    #                 # Use alternating pattern (1, 2) to ensure distinct zones
+    #                 zone_value = (i//grid_size + j//grid_size) % 2 + 1
+    #                 mask[j:j+grid_size, i:i+grid_size] = np.where(
+    #                     zero_mask[j:j+grid_size, i:i+grid_size] == 1,
+    #                     zone_value,
+    #                     mask[j:j+grid_size, i:i+grid_size]
+    #                 )
+
+    # Label zones based on overlapping patches. Assign a unique number to each zone
+
     # Initialize the zone_pattern array to store zone identifiers
     zone_pattern = np.zeros((Ny, Nx), dtype=int)
 
     # Change the mask values from 4 to 3 (even to odd)
     mask = np.where(mask == 4, 3, mask)
-    
+
     # Process for odd values (mask values that are odd become 1, others 0)
     binary_mask_odd = (mask % 2 == 1).astype(int)
     labeled_zones_odd, num_zones_odd = label(binary_mask_odd)
