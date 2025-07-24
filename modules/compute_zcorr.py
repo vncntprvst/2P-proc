@@ -667,8 +667,12 @@ def patch_regress(frame_data, shift_patches=False):
             patch_size_y = patch_size[0] if j + patch_size[0] <= Ny else Ny - j
 
             # Allow for a last partial patch on the right and bottom borders, but not more
+            is_at_right_edge = (i + patch_size_x == Nx)
+            is_at_bottom_edge = (j + patch_size_y == Ny)
+
             if patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
-                continue
+                if not (is_at_right_edge and is_at_bottom_edge):
+                    continue
 
             # Get the patch from the frame data
             T_patch = frame_F_func[j:j+patch_size_y, i:i+patch_size_x, ].ravel()
