@@ -47,7 +47,7 @@ def run_cnmf(
     batch: Path,
     index: int,
     export_path: Path,
-    params_cnmf: dict,
+    params_extraction: dict,
     data_path,
     z_correlation=None,
     z_motion_scaling_factors=None,
@@ -62,7 +62,7 @@ def run_cnmf(
         Index of the motion correction item within the batch.
     export_path : Path
         Directory where outputs should be written.
-    params_cnmf : dict
+    params_extraction : dict
         Parameters for the CNMF algorithm.
     data_path : str or Path or list
         Original data location (used only for metadata in the saved parameters).
@@ -80,7 +80,7 @@ def run_cnmf(
     df.caiman.add_item(
         algo="cnmf",
         input_movie_path=df.iloc[index],
-        params=params_cnmf,
+        params=params_extraction,
         item_name=df.iloc[index]["item_name"],
     )
 
@@ -132,7 +132,7 @@ def run_cnmf(
     df = df.caiman.reload_from_disk()
 
     # Save parameters and export results
-    save_processing_parameters(df, export_path, data_path, params_cnmf)
+    save_processing_parameters(df, export_path, data_path, params_extraction)
     
     # Get CNMF object and prepare it for export
     cnmf_obj = prepare_cnmf_object(df)
@@ -146,7 +146,7 @@ def run_cnmf(
     return cnmf_obj
 
 
-def save_processing_parameters(df, export_path, data_path, params_cnmf):
+def save_processing_parameters(df, export_path, data_path, params_extraction):
     """Save the parameters used for motion correction and CNMF processing.
     
     Parameters
@@ -157,7 +157,7 @@ def save_processing_parameters(df, export_path, data_path, params_cnmf):
         Directory where parameter file should be saved.
     data_path : str, Path, or list
         Original data location.
-    params_cnmf : dict
+    params_extraction : dict
         CNMF parameters used for processing.
     """
     params_path = export_path / "caiman_params.json"
@@ -172,7 +172,7 @@ def save_processing_parameters(df, export_path, data_path, params_cnmf):
     }
     caiman_mcorr_params = df.iloc[0]["params"]["main"]
     caiman_mcorr_params["timestamp_mcorr"] = df.iloc[0]["ran_time"]
-    caiman_cnmf_params = params_cnmf["main"] | df.iloc[-1]["params"]["main"]
+    caiman_cnmf_params = params_extraction["main"] | df.iloc[-1]["params"]["main"]
     caiman_cnmf_params["timestamp_cnmf"] = df.iloc[-1]["ran_time"]
     caiman_params = caiman_params | caiman_mcorr_params | caiman_cnmf_params
 
