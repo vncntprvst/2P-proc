@@ -441,10 +441,11 @@ def run_motion_correction_workflow(
                 memmap_array = load_mmap_movie(movie_path)
                 # Suite2p expects uint16 data when reading from an h5 file.
                 # The memmap is float32, so clip and convert before export.
-                memmap_array = np.clip(memmap_array, 0, 2**16 - 1).astype(np.uint16)
+                memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
+                # Save the memmap array to HDF5 with gzip compression
                 with h5py.File(h5_path, 'w') as f:
                     f.create_dataset(
-                        'data',
+                        'data',             # Default dataset field name in Suite2p
                         data=memmap_array,
                         compression='gzip',
                         chunks=(1, memmap_array.shape[1], memmap_array.shape[2])
