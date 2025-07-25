@@ -156,7 +156,7 @@ def load_mmap_movie(movie_path):
     return movie
 
 
-def save_movie_as_h5(memmap_path, h5_path, parameters, pixel_size_um=1.0):
+def save_movie_as_h5(memmap_path, h5_path, parameters):
     """
     Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.
     
@@ -179,8 +179,9 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, pixel_size_um=1.0):
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
     
     # Get frame rate from parameters
-    frame_rate = parameters.get('params_extraction', {}).get('main', {}).get('fr', 30.0)
-    
+    frame_rate = parameters.get('params_extraction', {}).get('main', {}).get('fr', 30.0) or parameters.get('params_extraction', {}).get('main', {}).get('fs', 30.0)
+    pixel_size_um = parameters.get('params_extraction', {}).get('main', {}).get('microns_per_pixel', 1.0)
+
     # Get image dimensions
     T, Ly, Lx = memmap_array.shape
     
@@ -534,20 +535,12 @@ def run_motion_correction_workflow(
 
             if output_format == 'h5':
                 h5_path = export_path / 'mcorr_movie.h5'
-                
-                # Get pixel size from parameters, default to 1.0 for pixel units
-                pixel_size_um = 1.0  # Default to pixel units
-                if 'params_extraction' in parameters:
-                    extraction_params = parameters['params_extraction']['main']
-                    if 'microns_per_pixel' in extraction_params:
-                        pixel_size_um = extraction_params['microns_per_pixel']
-                
+                                
                 # Save movie with proper metadata
                 results['movie_path'] = save_movie_as_h5(
                     memmap_path=movie_path,
-                    h5_path=h5_path, 
-                    parameters=parameters,
-                    pixel_size_um=pixel_size_um
+                    h5_path=h5_path,
+                    parameters=parameters
                 )
 
             log_and_print("Motion correction workflow completed successfully.")
