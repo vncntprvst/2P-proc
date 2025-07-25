@@ -14,7 +14,7 @@ python bruker_concat_tif.py /path/to/folder1 /path/to/output
 
 import os, sys, glob, argparse, time
 # from tifftools import tiff_concat
-from tifffile import imread, imsave, imwrite, TiffWriter, TiffFile
+from tifffile import imread, imwrite, TiffWriter, TiffFile
 from libtiff import TIFF, libtiff_ctypes
 import numpy as np
 import warnings, contextlib
@@ -241,9 +241,7 @@ def convert_to_bigtiff(input_file, output_file, compression='lzw', scale_range=F
         os.remove(input_file)
         print(f"Removed {input_file}")
     
-    # Save the movie as a bigtiff
-    
-    # imsave(output_file, loaded_movie, imagej=False, bigtiff=True)       
+    # Save the movie as a bigtiff      
     imwrite(output_file, loaded_movie, imagej=False, bigtiff=True, metadata=None, dtype=np.uint16, compressionargs={'compression': compression})
 
     # print(f"BigTIFF file saved as {output_file}")

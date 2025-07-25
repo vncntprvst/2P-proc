@@ -667,10 +667,12 @@ def patch_regress(frame_data, shift_patches=False):
             patch_size_y = patch_size[0] if j + patch_size[0] <= Ny else Ny - j
 
             # Allow for a last partial patch on the right and bottom borders, but not more
-            if i + patch_size[1] > Nx and patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
-                continue
-            if j + patch_size[0] > Ny and patch_size_y < patch_size[0]:
-                continue
+            is_at_right_edge = (i + patch_size_x == Nx)
+            is_at_bottom_edge = (j + patch_size_y == Ny)
+
+            if patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
+                if not (is_at_right_edge and is_at_bottom_edge):
+                    continue
 
             # Get the patch from the frame data
             T_patch = frame_F_func[j:j+patch_size_y, i:i+patch_size_x, ].ravel()
@@ -745,12 +747,12 @@ def calculate_zones(patch_correlations, Ny, Nx):
     
     Inputs:
     - patch_correlations: DataFrame containing the patch correlations.
-    - Ny: int, the number of columns in the movie.
-    - Nx: int, the number of rows in the movie.
+    - Ny: int, the height of the movie in pixels.
+    - Nx: int, the width of the movie in pixels.
     
     Outputs:
-    - zone_pattern_contig: 2D numpy array containing the zone pattern with continuous zone IDs.
-    - zone_pattern: 2D numpy array containing the zone pattern with non-contiguous unique zone IDs, for display purposes.   
+    - zone_pattern_contig: 2D numpy array with continuous zone IDs (0-indexed).
+    - zone_pattern: 2D numpy array with original non-contiguous zone IDs.
     """
     start_time = time.time()
     
@@ -764,6 +766,30 @@ def calculate_zones(patch_correlations, Ny, Nx):
         y_start, y_end = row['patch_y_lims']
         mask[y_start:y_end, x_start:x_end] += 1
     
+    
+    # # Handle areas with no patches (including bottom rows)
+    # if np.any(mask == 0):
+    #     zero_count = np.sum(mask == 0)
+    #     print(f"Found {zero_count} pixels ({zero_count/mask.size:.1%} of image) with no patch coverage")
+        
+    #     # Create grid zones for uncovered areas (bottom rows, etc.)
+    #     grid_size = np.diff(patch_correlations[0]['patch_x_lims'])[0]  # Use the width of the first patch
+    #     if grid_size == 0:
+    #         grid_size = 60  # Default grid size
+    #     zero_mask = (mask == 0).astype(int)
+        
+    #     # Create grid pattern in zeros
+    #     for i in range(0, Nx, grid_size):
+    #         for j in range(0, Ny, grid_size):
+    #             if np.any(zero_mask[j:j+grid_size, i:i+grid_size]):
+    #                 # Use alternating pattern (1, 2) to ensure distinct zones
+    #                 zone_value = (i//grid_size + j//grid_size) % 2 + 1
+    #                 mask[j:j+grid_size, i:i+grid_size] = np.where(
+    #                     zero_mask[j:j+grid_size, i:i+grid_size] == 1,
+    #                     zone_value,
+    #                     mask[j:j+grid_size, i:i+grid_size]
+    #                 )
+
     # Label zones based on overlapping patches. Assign a unique number to each zone
 
     # Initialize the zone_pattern array to store zone identifiers
@@ -771,6 +797,7 @@ def calculate_zones(patch_correlations, Ny, Nx):
 
     # Change the mask values from 4 to 3 (even to odd)
     mask = np.where(mask == 4, 3, mask)
+
     # Process for odd values (mask values that are odd become 1, others 0)
     binary_mask_odd = (mask % 2 == 1).astype(int)
     labeled_zones_odd, num_zones_odd = label(binary_mask_odd)
@@ -804,6 +831,8 @@ def calculate_zones(patch_correlations, Ny, Nx):
         zone_pattern_contig[zone_pattern == zone_id] = new_id
 
     print(f"Patches divided into zones in {time.time() - start_time:.2f} seconds")
+    print(f"Created {len(np.unique(zone_pattern_contig))} unique zones")
+    print(f"Zone distribution: min={zone_pattern_contig.min()}, max={zone_pattern_contig.max()}")
         
     return zone_pattern_contig, zone_pattern
 
@@ -848,8 +877,21 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
             x_start, x_end = row['patch_x_lims']
             y_start, y_end = row['patch_y_lims']
             
-            # Extract the patch area from the labeled_zones
-            patch_2D = row['Z_patch'].reshape(y_end - y_start, x_end - x_start)
+            # Get the expected patch dimensions
+            expected_height = y_end - y_start
+            expected_width = x_end - x_start
+            
+            # Get the actual patch
+            patch = row['Z_patch']
+            
+            # Check if patch dimensions match expected dimensions
+            if patch.shape != (expected_height, expected_width):
+                # Resize the patch to match expected dimensions using cv2
+                import cv2
+                patch_2D = cv2.resize(patch, (expected_width, expected_height), interpolation=cv2.INTER_LINEAR)
+            else:
+                # If dimensions match, just reshape as before
+                patch_2D = patch.reshape(expected_height, expected_width)
             
             patch_zone_labels = labeled_zones[y_start:y_end, x_start:x_end]
             zone_ids = np.unique(patch_zone_labels)
@@ -902,8 +944,14 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                 zone_data.append(zone_info)
                 # reshape Zpatch to 2D and insert into composite_f_anat_frame               
                 if 'Z_patch' in averages and zone_id in averages['Z_patch']:
-                    # zone_2D = averages['Z_patch'][zone_id].reshape((y_max - y_min, x_max - x_min))
-                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = averages['Z_patch'][zone_id]
+                    zone_patch = averages['Z_patch'][zone_id]
+                    desired_shape = (y_max - y_min, x_max - x_min)
+                    # If the averaged patch does not match the expected zone size,
+                    # resize it to avoid broadcasting errors.
+                    if zone_patch.shape != desired_shape:
+                        import cv2
+                        zone_patch = cv2.resize(zone_patch, (desired_shape[1], desired_shape[0]), interpolation=cv2.INTER_LINEAR)
+                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = zone_patch
         
         F_anat_non_rigid[frame_idx, :, :] = composite_f_anat_frame
     
@@ -933,7 +981,7 @@ def format_patch_correl_for_mat(zone_df):
     
     return mat_data
 
-def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
+def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_df):
     """
     Loop over each zones' pixel region and get the average fluorescence value for each zone from the FOV image
     """
@@ -942,10 +990,15 @@ def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
 
     for zone_id in range(np.max(labeled_zones) + 1):
         zone_indices = np.where(labeled_zones == zone_id)
-        # Get the mean fluorescence value for that zone
-        zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
-        # Get the R2 value for that zone
-        zone_rsquare.append(zone_data[zone_data['zone_id'] == zone_id]['r_squared'].values[0])
+        if len(zone_indices[0]) > 0:  # Check if zone exists
+            # Get the mean fluorescence value for that zone
+            zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
+            # Get the R2 value for that zone
+            zone_r2_data = zone_df[zone_df['zone_id'] == zone_id]['r_squared']
+            if len(zone_r2_data) > 0:
+                zone_rsquare.append(zone_r2_data.values[0])
+            else:
+                zone_rsquare.append(0.0)  # Default R2 if zone not found
         
     return zone_mean_fluorescence, zone_rsquare
 
@@ -967,13 +1020,20 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     ax[0, 0].set_title('Patch overlap zone pattern')
     
     # Plot the R^2 heatmap
-    # plot zone_data's average r_squared values as a heatmap
-    dim_num_zones = int(np.sqrt(np.max(labeled_zones) + 1))
+    # plot zone_df's average r_squared values as a heatmap
+    # Get number of unique zones
+    num_zones = np.max(labeled_zones) + 1
+    dim_num_zones = int(np.sqrt(num_zones))
 
-    # Get zone_df data corresponding to the first frame
+    # Validate square shape
+    if dim_num_zones**2 != num_zones:
+        raise ValueError(f"Zone layout is not a square: got {num_zones} zones, expected {dim_num_zones}²")
+
+    # Extract first-frame R² values
     frame_num = zone_df['frame_num'].min()
     zone_data = zone_df[zone_df['frame_num'] == frame_num]
 
+    # Reshape and plot heatmap
     r_squared_values = zone_data['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
     im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
     fig.colorbar(im, ax=ax[1, 0])
