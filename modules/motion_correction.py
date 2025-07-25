@@ -156,6 +156,89 @@ def load_mmap_movie(movie_path):
     return movie
 
 
+def save_movie_as_h5(memmap_path, h5_path, parameters, pixel_size_um=1.0):
+    """
+    Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.
+    
+    Args:
+        memmap_path: Path to the memmap movie file
+        h5_path: Output path for HDF5 file
+        parameters: Parameter dictionary containing extraction settings
+        pixel_size_um: Pixel size in micrometers (default: 1.0 for pixel units)
+    
+    Returns:
+        Path: Path to saved HDF5 file
+    """
+    log_and_print(f"Saving final movie to {h5_path}")
+    
+    # Load the memmap movie
+    memmap_array = load_mmap_movie(memmap_path)
+    
+    # Suite2p expects uint16 data when reading from an h5 file
+    # The memmap is float32, so clip and convert before export
+    memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
+    
+    # Get frame rate from parameters
+    frame_rate = parameters.get('params_extraction', {}).get('main', {}).get('fr', 30.0)
+    
+    # Get image dimensions
+    T, Ly, Lx = memmap_array.shape
+    
+    # Save the memmap array to HDF5 with proper metadata
+    with h5py.File(h5_path, 'w') as f:
+        # Create the main dataset
+        dset = f.create_dataset(
+            'data',  # Default dataset field name expected by Suite2p
+            data=memmap_array,
+            compression='gzip',
+            chunks=(1, Ly, Lx),  # Chunk by frame for efficient access
+            shuffle=True  # Improve compression
+        )
+        
+        # Add spatial calibration attributes for ImageJ/Fiji
+        dset.attrs['element_size_um'] = [pixel_size_um, pixel_size_um, 1.0]  # [x, y, z] in micrometers
+        
+        # Add dimension labels for clarity
+        dset.dims[0].label = 't'  # time
+        dset.dims[1].label = 'y'  # height 
+        dset.dims[2].label = 'x'  # width
+        
+        # Add acquisition metadata
+        dset.attrs['frame_rate_hz'] = frame_rate
+        dset.attrs['pixel_size_um'] = pixel_size_um
+        dset.attrs['n_frames'] = T
+        dset.attrs['height_pixels'] = Ly
+        dset.attrs['width_pixels'] = Lx
+        
+        # Add ImageJ-specific metadata for proper import
+        dset.attrs['spacing'] = pixel_size_um  # ImageJ spacing attribute
+        dset.attrs['unit'] = 'um'  # Spatial unit
+        
+        # Add Suite2p-specific metadata if available
+        if 'params_extraction' in parameters:
+            extraction_params = parameters['params_extraction']['main']
+            dset.attrs['fs'] = frame_rate  # Suite2p frame rate field
+            if 'microns_per_pixel' in extraction_params:
+                actual_pixel_size = extraction_params['microns_per_pixel']
+                dset.attrs['microns_per_pixel'] = actual_pixel_size
+                # Update element_size_um with actual calibration
+                dset.attrs['element_size_um'] = [actual_pixel_size, actual_pixel_size, 1.0]
+                dset.attrs['pixel_size_um'] = actual_pixel_size
+                dset.attrs['spacing'] = actual_pixel_size
+        
+        # Add processing metadata
+        dset.attrs['processing_pipeline'] = 'Analysis_2P'
+        dset.attrs['motion_corrected'] = True
+        dset.attrs['data_type'] = 'calcium_imaging'
+        
+        log_and_print(f"HDF5 metadata:")
+        log_and_print(f"  - Frame rate: {frame_rate} Hz")
+        log_and_print(f"  - Pixel size: {pixel_size_um} μm")
+        log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
+        
+    return Path(h5_path)
+
+
 def overwrite_movie_memmap(movie, original_mmap_path, clip=True, movie_type='mcorr', 
                           save_original=False, remove_input=False):
     """
@@ -437,20 +520,21 @@ def run_motion_correction_workflow(
 
             if output_format == 'h5':
                 h5_path = export_path / 'mcorr_movie.h5'
-                log_and_print(f"Saving final movie to {h5_path}")
-                memmap_array = load_mmap_movie(movie_path)
-                # Suite2p expects uint16 data when reading from an h5 file.
-                # The memmap is float32, so clip and convert before export.
-                memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
-                # Save the memmap array to HDF5 with gzip compression
-                with h5py.File(h5_path, 'w') as f:
-                    f.create_dataset(
-                        'data',             # Default dataset field name in Suite2p
-                        data=memmap_array,
-                        compression='gzip',
-                        chunks=(1, memmap_array.shape[1], memmap_array.shape[2])
-                    )
-                results['movie_path'] = h5_path
+                
+                # Get pixel size from parameters, default to 1.0 for pixel units
+                pixel_size_um = 1.0  # Default to pixel units
+                if 'params_extraction' in parameters:
+                    extraction_params = parameters['params_extraction']['main']
+                    if 'microns_per_pixel' in extraction_params:
+                        pixel_size_um = extraction_params['microns_per_pixel']
+                
+                # Save movie with proper metadata
+                results['movie_path'] = save_movie_as_h5(
+                    memmap_path=movie_path,
+                    h5_path=h5_path, 
+                    parameters=parameters,
+                    pixel_size_um=pixel_size_um
+                )
 
             log_and_print("Motion correction workflow completed successfully.")
             
