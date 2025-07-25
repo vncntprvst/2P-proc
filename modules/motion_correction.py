@@ -436,7 +436,7 @@ def run_motion_correction_workflow(
             results['success'] = True
 
             if output_format == 'h5':
-                h5_path = movie_path.with_suffix('.h5')
+                h5_path = export_path / 'mcorr_movie.h5'
                 log_and_print(f"Saving final movie to {h5_path}")
                 memmap_array = load_mmap_movie(movie_path)
                 # Suite2p expects uint16 data when reading from an h5 file.
