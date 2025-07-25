@@ -225,6 +225,15 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, pixel_size_um=1.0):
                 dset.attrs['element_size_um'] = [actual_pixel_size, actual_pixel_size, 1.0]
                 dset.attrs['pixel_size_um'] = actual_pixel_size
                 dset.attrs['spacing'] = actual_pixel_size
+                
+                # Add explicit voxel size for ImageJ
+                dset.attrs['voxel_size'] = [actual_pixel_size, actual_pixel_size, 1.0]
+                
+                # Calculate physical dimensions for reference
+                physical_width_um = Lx * actual_pixel_size
+                physical_height_um = Ly * actual_pixel_size
+                dset.attrs['physical_width_um'] = physical_width_um
+                dset.attrs['physical_height_um'] = physical_height_um
         
         # Add processing metadata
         dset.attrs['processing_pipeline'] = 'Analysis_2P'
@@ -235,6 +244,11 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, pixel_size_um=1.0):
         log_and_print(f"  - Frame rate: {frame_rate} Hz")
         log_and_print(f"  - Pixel size: {pixel_size_um} μm")
         log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
+        if 'params_extraction' in parameters and 'microns_per_pixel' in parameters['params_extraction']['main']:
+            actual_pixel_size = parameters['params_extraction']['main']['microns_per_pixel']
+            physical_width = Lx * actual_pixel_size
+            physical_height = Ly * actual_pixel_size
+            log_and_print(f"  - Physical size: {physical_height:.1f} × {physical_width:.1f} μm")
         
     return Path(h5_path)
 
