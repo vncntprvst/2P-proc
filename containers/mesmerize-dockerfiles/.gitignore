@@ -1,5 +1,8 @@
 /tests
-/context
+/context/*
+!/context/packages/
+/context/packages/*
+!/context/packages/setup.sh
 /images
 
 to-do.md
