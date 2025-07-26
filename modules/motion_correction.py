@@ -22,6 +22,7 @@ import contextlib
 import gc
 import psutil
 import logging
+import h5py
 
 # Import CaImAn and Mesmerize components
 import mesmerize_core as mc
@@ -155,6 +156,107 @@ def load_mmap_movie(movie_path):
     return movie
 
 
+def save_movie_as_h5(memmap_path, h5_path, parameters):
+    """
+    Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.
+    
+    Args:
+        memmap_path: Path to the memmap movie file
+        h5_path: Output path for HDF5 file
+        parameters: Parameter dictionary containing extraction settings
+    
+    Returns:
+        Path: Path to saved HDF5 file
+    """
+    log_and_print(f"Saving final movie to {h5_path}")
+    
+    # Load the memmap movie
+    memmap_array = load_mmap_movie(memmap_path)
+    
+    # Suite2p expects uint16 data when reading from an h5 file
+    # The memmap is float32, so clip and convert before export
+    memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
+    
+    # Extract parameters
+    frame_rate = parameters.get('params_extraction', {}).get('main', {}).get('fr', 30.0) or parameters.get('params_extraction', {}).get('main', {}).get('fs', 30.0)
+    pixel_size_um = parameters.get('params_extraction', {}).get('main', {}).get('microns_per_pixel', 1.0)
+
+    # Get image dimensions
+    T, Ly, Lx = memmap_array.shape
+    
+    # Create HDF5 file with data - following bergamo_stitcher pattern
+    with h5py.File(h5_path, 'w') as f:
+        # Create main dataset with chunking and compression
+        dset = f.create_dataset(
+            'data',
+            data=memmap_array,
+            chunks=True,  # Enable chunking like bergamo_stitcher
+            compression='gzip',
+            shuffle=True,
+            dtype='uint16'
+        )
+        
+        # Add spatial calibration metadata
+        dset.attrs['element_size_um'] = [0, pixel_size_um, pixel_size_um]
+        dset.attrs['pixel_size_um'] = pixel_size_um
+        dset.attrs['spacing'] = pixel_size_um
+        dset.attrs['unit'] = 'pixel'
+        
+        # Add acquisition metadata
+        dset.attrs['time_unit'] = 'seconds'
+        dset.attrs['frame_rate_hz'] = frame_rate
+        dset.attrs['frame_interval'] = 1.0 / frame_rate
+        dset.attrs['n_channels'] = 1  # Assuming single channel for calcium imaging
+        dset.attrs['n_timepoints'] = T
+        dset.attrs['fs'] = frame_rate  # Suite2p field
+        dset.attrs['n_frames'] = T
+        dset.attrs['height_pixels'] = Ly
+        dset.attrs['width_pixels'] = Lx
+        
+        # Add physical dimensions
+        physical_width_um = Lx * pixel_size_um
+        physical_height_um = Ly * pixel_size_um
+        dset.attrs['physical_width_um'] = physical_width_um
+        dset.attrs['physical_height_um'] = physical_height_um
+        
+        # Add processing metadata as separate datasets (like bergamo_stitcher)
+        f.create_dataset(
+            'processing_pipeline',
+            data='Analysis_2P',
+            dtype=h5py.special_dtype(vlen=str)
+        )
+        
+        f.create_dataset(
+            'motion_corrected',
+            data='true',
+            dtype=h5py.special_dtype(vlen=str)
+        )
+        
+        f.create_dataset(
+            'data_type',
+            data='calcium_imaging',
+            dtype=h5py.special_dtype(vlen=str)
+        )
+        
+        # Add extraction parameters as metadata string
+        if 'params_extraction' in parameters:
+            import json
+            extraction_metadata = json.dumps(parameters['params_extraction'])
+            f.create_dataset(
+                'extraction_parameters',
+                data=extraction_metadata,
+                dtype=h5py.special_dtype(vlen=str)
+            )
+        
+        log_and_print(f"HDF5 metadata:")
+        log_and_print(f"  - Frame rate: {frame_rate} Hz")
+        log_and_print(f"  - Pixel size: {pixel_size_um} μm")
+        log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
+        log_and_print(f"  - Physical size: {physical_height_um:.1f} × {physical_width_um:.1f} μm")
+        
+    return Path(h5_path)
+
+
 def overwrite_movie_memmap(movie, original_mmap_path, clip=True, movie_type='mcorr', 
                           save_original=False, remove_input=False):
     """
@@ -284,9 +386,14 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         log_and_print(f"Using existing batch: {batch_path}")
         df = mc.load_batch(batch_path)
     else:
+        # Create new batch file path
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        batch_file_path = Path(export_path) / f"batch_{timestamp}.pickle"
+        
         # Create new batch
-        df = mc.create_batch(export_path)
-        batch_path = df.path
+        df = mc.create_batch(batch_file_path)
+        batch_path = batch_file_path
         log_and_print(f"Created new batch: {batch_path}")
         
         # Add motion correction item to batch
@@ -318,20 +425,29 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
     
     # Get the motion corrected movie path
     if mcorr_index is not None:
-        mcorr_movie_path = df.iloc[mcorr_index].caiman.get_output_path()
+        # Reload batch from disk to get updated results
+        df = df.caiman.reload_from_disk()
+        mcorr_movie_path = Path(df.iloc[mcorr_index].mcorr.get_output_path())
         return batch_path, mcorr_index, mcorr_movie_path
     else:
         # Find existing motion correction result
         for idx, row in df.iterrows():
             if row.algo == 'mcorr' and row["outputs"] is not None:
-                mcorr_movie_path = row.caiman.get_output_path()
+                mcorr_movie_path = Path(row.mcorr.get_output_path())
                 return batch_path, idx, mcorr_movie_path
                 
         raise RuntimeError("No motion correction results found")
 
 
-def run_motion_correction_workflow(data_path, export_path, parameters, regex_pattern='*_Ch2_*.ome.tif', 
-                                 recompute=True, create_movies=True):
+def run_motion_correction_workflow(
+    data_path,
+    export_path,
+    parameters,
+    regex_pattern='*_Ch2_*.ome.tif',
+    recompute=True,
+    create_movies=True,
+    output_format='memmap',
+):
     """
     Complete motion correction workflow including z-motion correction.
     
@@ -342,6 +458,7 @@ def run_motion_correction_workflow(data_path, export_path, parameters, regex_pat
         regex_pattern: Pattern to match input files
         recompute: Whether to recompute existing results
         create_movies: Whether to create output movies
+        output_format: 'memmap' (default) or 'h5' for final movie storage
     
     Returns:
         dict: Results dictionary with paths and metadata
@@ -379,7 +496,9 @@ def run_motion_correction_workflow(data_path, export_path, parameters, regex_pat
                 log_and_print("Starting z-motion correction...")
                 time_z0 = time.time()
                 
-                zcorr_movie_path, _, _ = cz.z_motion(movie_path, parameters)
+                zcorr_movie_path, _, _ = cz.z_motion(
+                    movie_path, parameters, output_format=output_format
+                )
                 
                 # Save corrected movie, overwriting the original
                 if zcorr_movie_path is not None:
@@ -416,6 +535,17 @@ def run_motion_correction_workflow(data_path, export_path, parameters, regex_pat
                                           batch=batch_path, index=index, excerpt=240)
             
             results['success'] = True
+
+            if output_format == 'h5':
+                h5_path = export_path / 'mcorr_movie.h5'
+                                
+                # Save movie with proper metadata
+                results['movie_path'] = save_movie_as_h5(
+                    memmap_path=movie_path,
+                    h5_path=h5_path,
+                    parameters=parameters
+                )
+
             log_and_print("Motion correction workflow completed successfully.")
             
         except Exception as e:
@@ -456,6 +586,7 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
     parser.add_argument('--recompute', action='store_true', help='Recompute existing results')
     parser.add_argument('--no-movies', action='store_true', help='Skip movie creation')
+    parser.add_argument('--save-h5', action='store_true', help='Save final movie as HDF5')
     
     args = parser.parse_args()
     
@@ -471,7 +602,8 @@ if __name__ == "__main__":
         parameters=parameters,
         regex_pattern=args.pattern,
         recompute=args.recompute,
-        create_movies=not args.no_movies
+        create_movies=not args.no_movies,
+        output_format='h5' if args.save_h5 else 'memmap'
     )
     
     print(f"Motion correction completed: {results['success']}")
