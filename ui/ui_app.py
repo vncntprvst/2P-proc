@@ -321,7 +321,7 @@ def main():
         # ---------------------------------------------------------------------
         # STEP 2: Create or reuse the CaImAn param file
         # ---------------------------------------------------------------------
-        st.write("Enter the parameters for x/y motion correction (:blue-background[params_mcorr]) and CNMF (:blue-background[params_cnmf]).")
+        st.write("Enter the parameters for x/y motion correction (:blue-background[params_mcorr]) and CNMF (:blue-background[params_extraction]).")
         
         if not existing_main:
             st.warning("No existing parameter files found. Please create one first.")
