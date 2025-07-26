@@ -178,8 +178,8 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
     
     # Extract parameters
-    frame_rate = parameters.get('params_extraction', {}).get('main', {}).get('fr', 30.0) or parameters.get('params_extraction', {}).get('main', {}).get('fs', 30.0)
-    pixel_size_um = parameters.get('params_extraction', {}).get('main', {}).get('microns_per_pixel', 1.0)
+    frame_rate = parameters.get('imaging', {}).get('fr', 30.0) or parameters.get('imaging', {}).get('fs', 30.0)
+    pixel_size_um = parameters.get('imaging', {}).get('microns_per_pixel', 1.0)
 
     # Get image dimensions
     T, Ly, Lx = memmap_array.shape
