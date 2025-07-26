@@ -164,7 +164,6 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
         memmap_path: Path to the memmap movie file
         h5_path: Output path for HDF5 file
         parameters: Parameter dictionary containing extraction settings
-        pixel_size_um: Pixel size in micrometers (default: 1.0 for pixel units)
     
     Returns:
         Path: Path to saved HDF5 file
@@ -178,78 +177,82 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     # The memmap is float32, so clip and convert before export
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
     
-    # Get frame rate from parameters
+    # Extract parameters
     frame_rate = parameters.get('params_extraction', {}).get('main', {}).get('fr', 30.0) or parameters.get('params_extraction', {}).get('main', {}).get('fs', 30.0)
     pixel_size_um = parameters.get('params_extraction', {}).get('main', {}).get('microns_per_pixel', 1.0)
 
     # Get image dimensions
     T, Ly, Lx = memmap_array.shape
     
-    # Save the memmap array to HDF5 with proper metadata
+    # Create HDF5 file with data - following bergamo_stitcher pattern
     with h5py.File(h5_path, 'w') as f:
-        # Create the main dataset
+        # Create main dataset with chunking and compression
         dset = f.create_dataset(
-            'data',  # Default dataset field name expected by Suite2p
+            'data',
             data=memmap_array,
+            chunks=True,  # Enable chunking like bergamo_stitcher
             compression='gzip',
-            chunks=(1, Ly, Lx),  # Chunk by frame for efficient access
-            shuffle=True  # Improve compression
+            shuffle=True,
+            dtype='uint16'
         )
         
-        # Add spatial calibration attributes for ImageJ/Fiji
-        dset.attrs['element_size_um'] = [pixel_size_um, pixel_size_um, 1.0]  # [x, y, z] in micrometers
-        
-        # Add dimension labels for clarity
-        dset.dims[0].label = 't'  # time
-        dset.dims[1].label = 'y'  # height 
-        dset.dims[2].label = 'x'  # width
+        # Add spatial calibration metadata
+        dset.attrs['element_size_um'] = [0, pixel_size_um, pixel_size_um]
+        dset.attrs['pixel_size_um'] = pixel_size_um
+        dset.attrs['spacing'] = pixel_size_um
+        dset.attrs['unit'] = 'pixel'
         
         # Add acquisition metadata
+        dset.attrs['time_unit'] = 'seconds'
         dset.attrs['frame_rate_hz'] = frame_rate
-        dset.attrs['pixel_size_um'] = pixel_size_um
+        dset.attrs['frame_interval'] = 1.0 / frame_rate
+        dset.attrs['n_channels'] = 1  # Assuming single channel for calcium imaging
+        dset.attrs['n_timepoints'] = T
+        dset.attrs['fs'] = frame_rate  # Suite2p field
         dset.attrs['n_frames'] = T
         dset.attrs['height_pixels'] = Ly
         dset.attrs['width_pixels'] = Lx
         
-        # Add ImageJ-specific metadata for proper import
-        dset.attrs['spacing'] = pixel_size_um  # ImageJ spacing attribute
-        dset.attrs['unit'] = 'um'  # Spatial unit
+        # Add physical dimensions
+        physical_width_um = Lx * pixel_size_um
+        physical_height_um = Ly * pixel_size_um
+        dset.attrs['physical_width_um'] = physical_width_um
+        dset.attrs['physical_height_um'] = physical_height_um
         
-        # Add Suite2p-specific metadata if available
+        # Add processing metadata as separate datasets (like bergamo_stitcher)
+        f.create_dataset(
+            'processing_pipeline',
+            data='Analysis_2P',
+            dtype=h5py.special_dtype(vlen=str)
+        )
+        
+        f.create_dataset(
+            'motion_corrected',
+            data='true',
+            dtype=h5py.special_dtype(vlen=str)
+        )
+        
+        f.create_dataset(
+            'data_type',
+            data='calcium_imaging',
+            dtype=h5py.special_dtype(vlen=str)
+        )
+        
+        # Add extraction parameters as metadata string
         if 'params_extraction' in parameters:
-            extraction_params = parameters['params_extraction']['main']
-            dset.attrs['fs'] = frame_rate  # Suite2p frame rate field
-            if 'microns_per_pixel' in extraction_params:
-                actual_pixel_size = extraction_params['microns_per_pixel']
-                dset.attrs['microns_per_pixel'] = actual_pixel_size
-                # Update element_size_um with actual calibration
-                dset.attrs['element_size_um'] = [actual_pixel_size, actual_pixel_size, 1.0]
-                dset.attrs['pixel_size_um'] = actual_pixel_size
-                dset.attrs['spacing'] = actual_pixel_size
-                
-                # Add explicit voxel size for ImageJ
-                dset.attrs['voxel_size'] = [actual_pixel_size, actual_pixel_size, 1.0]
-                
-                # Calculate physical dimensions for reference
-                physical_width_um = Lx * actual_pixel_size
-                physical_height_um = Ly * actual_pixel_size
-                dset.attrs['physical_width_um'] = physical_width_um
-                dset.attrs['physical_height_um'] = physical_height_um
-        
-        # Add processing metadata
-        dset.attrs['processing_pipeline'] = 'Analysis_2P'
-        dset.attrs['motion_corrected'] = True
-        dset.attrs['data_type'] = 'calcium_imaging'
+            import json
+            extraction_metadata = json.dumps(parameters['params_extraction'])
+            f.create_dataset(
+                'extraction_parameters',
+                data=extraction_metadata,
+                dtype=h5py.special_dtype(vlen=str)
+            )
         
         log_and_print(f"HDF5 metadata:")
         log_and_print(f"  - Frame rate: {frame_rate} Hz")
         log_and_print(f"  - Pixel size: {pixel_size_um} μm")
         log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
-        if 'params_extraction' in parameters and 'microns_per_pixel' in parameters['params_extraction']['main']:
-            actual_pixel_size = parameters['params_extraction']['main']['microns_per_pixel']
-            physical_width = Lx * actual_pixel_size
-            physical_height = Ly * actual_pixel_size
-            log_and_print(f"  - Physical size: {physical_height:.1f} × {physical_width:.1f} μm")
+        log_and_print(f"  - Physical size: {physical_height_um:.1f} × {physical_width_um:.1f} μm")
         
     return Path(h5_path)
 
