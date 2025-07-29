@@ -15,7 +15,7 @@ import random
 random.seed(random_seed)
 
 import time
-import os
+import os, sys
 import glob
 import warnings
 from pathlib import Path
@@ -32,7 +32,13 @@ from matplotlib.colors import ListedColormap
 from matplotlib import cm, patches
 import matplotlib.pyplot as plt
 from tifffile import TiffFile, TiffWriter, imread
-import bruker_concat_tif as ct
+
+# Add parent directory to sys.path for local imports
+parent_dir = Path(__file__).parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
+import modules.bruker_concat_tif as ct
 
 from scipy.ndimage import gaussian_filter, map_coordinates, shift, affine_transform, label, find_objects
 from scipy.stats import mode, linregress
