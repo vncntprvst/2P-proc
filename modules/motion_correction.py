@@ -13,15 +13,20 @@ Date: 2024-07-22
 License: CC-BY-SA 4.0
 """
 
-import os
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Add project root to path (standardized approach)
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import sys
 import time
 from pathlib import Path
 import numpy as np
-import contextlib
-import gc
-import psutil
-import logging
 import h5py
 from tifffile import TiffWriter, TiffFile
 
@@ -29,14 +34,20 @@ from tifffile import TiffWriter, TiffFile
 import mesmerize_core as mc
 from caiman.mmapping import load_memmap
 
-# Add parent directory to sys.path for local imports
-parent_dir = Path(__file__).parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
+from modules import bruker_concat_tif as ct
+from modules import compute_zcorr as cz
+from Mesmerize import pipeline_mcorr_cnmf as pl
 
-import modules.bruker_concat_tif as ct
-import modules.compute_zcorr as cz
-import Mesmerize.pipeline_mcorr_cnmf as pl
+from Mesmerize.utils.pipeline_utils import (
+    log_and_print, 
+    create_mp4_movie,
+    overwrite_movie_memmap, 
+    load_mmap_movie, 
+    clip_range, 
+    cat_movies_to_mp4
+)
+
+# log_and_print, cat_movies_to_mp4, create_mp4_movie, load_mmap_movie, clip_range, overwrite_movie_memmap
 
 def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
     """
@@ -77,15 +88,15 @@ def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', di
             # Set the path of the mp4 movie
             movie_path = Path.joinpath(export_path, f"compare_og_mcorr.mp4")
             # Concatenate the two movies horizontally
-            pl.cat_movies_to_mp4(original_movie_, mcorr_movie_, movie_path)
-            pl.log_and_print(f"Saved original vs motion corrected movie to {movie_path}.")
+            cat_movies_to_mp4(original_movie_, mcorr_movie_, movie_path)
+            log_and_print(f"Saved original vs motion corrected movie to {movie_path}.")
 
             return movie_path
         else:
             # Save the motion corrected movie as a mp4 movie
             # movie_path = Path.joinpath(export_path, f"mcorr.mp4")
-            pl.create_mp4_movie(mcorr_movie_16bit, export_path, 'mcorr.mp4')
-            pl.log_and_print(f"Saved motion corrected movie to {export_path}/mcorr.mp4")
+            create_mp4_movie(mcorr_movie_16bit, export_path, 'mcorr.mp4')
+            log_and_print(f"Saved motion corrected movie to {export_path}/mcorr.mp4")
             
             return Path.joinpath(export_path, 'mcorr.mp4')
     else:
@@ -97,9 +108,9 @@ def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', di
         with TiffWriter(mcorr_tif_path, bigtiff=True) as tif:
             tif.write(mcorr_movie_, photometric='minisblack')  
         if to_uint8:
-            pl.log_and_print(f"Saved 8 bit motion corrected movie to {mcorr_tif_path}.")
+            log_and_print(f"Saved 8 bit motion corrected movie to {mcorr_tif_path}.")
         else:
-            pl.log_and_print(f"Saved 16 bit motion corrected movie to {mcorr_tif_path}.")
+            log_and_print(f"Saved 16 bit motion corrected movie to {mcorr_tif_path}.")
             
         return mcorr_tif_path
 
@@ -115,14 +126,14 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     Returns:
         Path: Path to saved HDF5 file
     """
-    pl.log_and_print(f"Saving final movie to {h5_path}")
+    log_and_print(f"Saving final movie to {h5_path}")
     
     # Load the memmap movie
-    memmap_array = pl.load_mmap_movie(memmap_path)
+    memmap_array = load_mmap_movie(memmap_path)
     
     # Suite2p expects uint16 data when reading from an h5 file
     # The memmap is float32, so clip and convert before export
-    memmap_array = pl.clip_range(memmap_array, 'uint16').astype(np.uint16)
+    memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
     
     # Extract parameters
     frame_rate = parameters.get('imaging', {}).get('fr', 30.0) or parameters.get('imaging', {}).get('fs', 30.0)
@@ -195,11 +206,11 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
                 dtype=h5py.special_dtype(vlen=str)
             )
         
-        pl.log_and_print(f"HDF5 metadata:")
-        pl.log_and_print(f"  - Frame rate: {frame_rate} Hz")
-        pl.log_and_print(f"  - Pixel size: {pixel_size_um} μm")
-        pl.log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
-        pl.log_and_print(f"  - Physical size: {physical_height_um:.1f} × {physical_width_um:.1f} μm")
+        log_and_print(f"HDF5 metadata:")
+        log_and_print(f"  - Frame rate: {frame_rate} Hz")
+        log_and_print(f"  - Pixel size: {pixel_size_um} μm")
+        log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
+        log_and_print(f"  - Physical size: {physical_height_um:.1f} × {physical_width_um:.1f} μm")
         
     return Path(h5_path)
 
@@ -215,11 +226,11 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
     movie_path = Path(export_path).joinpath('cat_tiff_bt.tiff')
     
     if not recompute and movie_path.exists():
-        pl.log_and_print(f"Concatenated movie already exists at {export_path}. Using existing file.")
+        log_and_print(f"Concatenated movie already exists at {export_path}. Using existing file.")
     else:
         # Concatenate the ome.tif files into a single multi-page tiff file
         # Using the concat_tif.py script to concatenate the tif files. If needed, install libtiff with: pip install pylibtiff
-        pl.log_and_print(f"Loading and concatenating data from {data_path}.")
+        log_and_print(f"Loading and concatenating data from {data_path}.")
         try:
             time0 = time.time()
             ##################
@@ -241,9 +252,9 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
                 )
 
         except Exception as e:
-            pl.log_and_print(f"An error occurred while concatenating files: {e}")
+            log_and_print(f"An error occurred while concatenating files: {e}")
 
-    pl.log_and_print(f"Concatenated movie path: {movie_path}.")    
+    log_and_print(f"Concatenated movie path: {movie_path}.")    
 
     if not recompute:
         #  Check if a batch_*_pickle file exists in the export path
@@ -251,7 +262,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         if len(batch_files) > 0:
             #  take the most recent batch file
             batch_path = batch_files[-1]
-            pl.log_and_print(f"Using existing batch file {batch_path}.")
+            log_and_print(f"Using existing batch file {batch_path}.")
             # load the batch
             df = mc.load_batch(batch_path)
             
@@ -264,7 +275,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
     if 'batch_path' not in locals():
         # create a new batch path, appendind timestamp to avoid overwriting
         batch_path = Path.joinpath(export_path, f'batch_{time.strftime("%Y%m%d-%H%M%S")}.pickle')
-        pl.log_and_print(f"Creating batch {batch_path}.") 
+        log_and_print(f"Creating batch {batch_path}.") 
         df = mc.create_batch(batch_path)
 
         # Add the input movie path to the batch
@@ -286,18 +297,18 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         
         # If already processed, skip
         if row["outputs"] is not None:
-            pl.log_and_print(f"Skipping batch item {row_index}, id {row.uuid}, algo {row.algo}. Already run.", level='warning')
+            log_and_print(f"Skipping batch item {row_index}, id {row.uuid}, algo {row.algo}. Already run.", level='warning')
             mcorr_index = row_index
             continue
         
-        pl.log_and_print(f"Running batch item {row_index}, id {row.uuid}, algo {row.algo}.")
+        log_and_print(f"Running batch item {row_index}, id {row.uuid}, algo {row.algo}.")
         try:
             ##########################
             process = row.caiman.run()
             mcorr_index = row_index
             ##########################
         except Exception as e:
-            pl.log_and_print(f"An error occurred while running caiman for batch item {row_index}: {e}")
+            log_and_print(f"An error occurred while running caiman for batch item {row_index}: {e}")
         
         # on Windows you MUST reload the batch dataframe after every iteration because it uses the `local` backend.
         # this is unnecessary on Linux & Mac
@@ -305,7 +316,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         if process.__class__.__name__ == "DummyProcess":
             df = df.caiman.reload_from_disk()
             
-    pl.log_and_print(f"Batch completed for motion correction. Results saved to {batch_path}.")
+    log_and_print(f"Batch completed for motion correction. Results saved to {batch_path}.")
     formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
     print(f"mcorr completed in {formatted_time}.")
     
@@ -365,14 +376,14 @@ def run_motion_correction_workflow(
             
             # Clip the motion corrected movie to uint16 range
             if not recompute and movie_path.exists():
-                pl.log_and_print(f"Clipped motion corrected movie already exists at {movie_path}.")
+                log_and_print(f"Clipped motion corrected movie already exists at {movie_path}.")
             else:
-                pl.log_and_print("Optimizing motion corrected movie bit depth...")
-                pl.overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
+                log_and_print("Optimizing motion corrected movie bit depth...")
+                overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
             
             # Z-motion correction (optional)
             if 'zstack_path' in parameters and 'z_params' in parameters:
-                pl.log_and_print("Starting z-motion correction...")
+                log_and_print("Starting z-motion correction...")
                 time_z0 = time.time()
                 
                 zcorr_movie_path, _, _ = cz.z_motion(
@@ -381,7 +392,7 @@ def run_motion_correction_workflow(
                 
                 # Save corrected movie, overwriting the original
                 if zcorr_movie_path is not None:
-                    pl.overwrite_movie_memmap(zcorr_movie_path, movie_path, clip=True, 
+                    overwrite_movie_memmap(zcorr_movie_path, movie_path, clip=True, 
                                          movie_type='zcorr', save_original=False, remove_input=True)
                     results['z_corrected'] = True
                 else:
@@ -389,13 +400,13 @@ def run_motion_correction_workflow(
                 
                 formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time_z0))
                 if zcorr_movie_path is not None:
-                    pl.log_and_print(f"Z-motion correction completed in {formatted_time}.")
+                    log_and_print(f"Z-motion correction completed in {formatted_time}.")
                 else:
-                    pl.log_and_print(f"Z-motion computation completed in {formatted_time}.")
+                    log_and_print(f"Z-motion computation completed in {formatted_time}.")
             
             # Create output movies (optional)
             if create_movies:
-                pl.log_and_print("Creating output movies...")
+                log_and_print("Creating output movies...")
                                 
                 # Save as BigTIFF file  
                 create_mcorr_movie(movie_path, export_path, None, None, 
@@ -411,16 +422,16 @@ def run_motion_correction_workflow(
                 h5_path = export_path / 'mcorr_movie.h5'
                                 
                 # Save movie with proper metadata
-                results['movie_path'] = pl.save_movie_as_h5(
+                results['movie_path'] = save_movie_as_h5(
                     memmap_path=movie_path,
                     h5_path=h5_path,
                     parameters=parameters
                 )
 
-            pl.log_and_print("Motion correction workflow completed successfully.")
+            log_and_print("Motion correction workflow completed successfully.")
             
         except Exception as e:
-            pl.log_and_print(f"Motion correction workflow failed: {e}", level='error')
+            log_and_print(f"Motion correction workflow failed: {e}", level='error')
             results['error'] = str(e)
             raise
     

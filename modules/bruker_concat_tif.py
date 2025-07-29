@@ -12,7 +12,17 @@ python bruker_concat_tif.py /path/to/folder1 /path/to/output
 # Written by Vincent Prevosto <prevosto at mit dot edu>
 # CC BY-SA 4.0
 
-import os, sys, glob, argparse, time
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Add project root to path (standardized approach)
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import os, glob, argparse, time
 # from tifftools import tiff_concat
 from tifffile import imread, imsave, imwrite, TiffWriter, TiffFile
 from libtiff import TIFF, libtiff_ctypes

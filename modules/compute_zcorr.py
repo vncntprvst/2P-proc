@@ -7,6 +7,17 @@ Date: 2024-02-21
 License: CC-BY-SA 4.0
 """
 
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+import sys
+from pathlib import Path
+
+# Add project root to path (standardized approach)
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # Set a consistent seed
 random_seed = 42
 import numpy as np
@@ -15,10 +26,9 @@ import random
 random.seed(random_seed)
 
 import time
-import os, sys
+import os
 import glob
 import warnings
-from pathlib import Path
 
 import numpy as np
 import json
@@ -33,12 +43,7 @@ from matplotlib import cm, patches
 import matplotlib.pyplot as plt
 from tifffile import TiffFile, TiffWriter, imread
 
-# Add parent directory to sys.path for local imports
-parent_dir = Path(__file__).parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
-import modules.bruker_concat_tif as ct
+from modules import bruker_concat_tif as ct
 
 from scipy.ndimage import gaussian_filter, map_coordinates, shift, affine_transform, label, find_objects
 from scipy.stats import mode, linregress
@@ -56,8 +61,9 @@ from skimage.registration import phase_cross_correlation
 import cv2
 import argparse
 
-# Uncomment the following line to use the Suite2P registration function compute_zcorrel_suite2p (deprecated). Requires Suite2P to be installed.
-# from suite2p.registration import rigid
+# Type checking imports (not loaded at runtime)
+if TYPE_CHECKING:
+    from suite2p.registration import rigid
 
 def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Initialize storage for the aligned images
@@ -454,6 +460,17 @@ def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=
     
     return z_correlation
 
+def _get_suite2p_rigid():
+    """Lazy import of Suite2p registration functions"""
+    try:
+        from suite2p.registration import rigid
+        return rigid
+    except ImportError:
+        raise ImportError(
+            "Suite2p required for this function. "
+            "Install with: pip install suite2p"
+        )
+
 def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, smoothing=False, smooth_sigma=1, return_shifts=False):
     """
     Computes correlation and x/y shifts in z for each frame in the movie, using the anatomical z-stack as reference.
@@ -463,6 +480,8 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
     https://github.com/MouseLand/suite2p/blob/193e7f1f656bfbd1c100eb51411737c80f54ac3c/suite2p/registration/zalign.py#L125
     Copyright © 2023 Howard Hughes Medical Institute, Authored by Carsen Stringer and Marius Pachitariu.
     """
+    rigid = _get_suite2p_rigid()
+    
     # Load the z-stack and stack frames into a 3D array
     zstack_tiff_file = TiffFile(zstack_file)
     Z_stack = []
