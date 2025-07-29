@@ -7,6 +7,17 @@ Date: 2024-02-21
 License: CC-BY-SA 4.0
 """
 
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # Set a consistent seed
 random_seed = 42
 import numpy as np
@@ -18,7 +29,6 @@ import time
 import os
 import glob
 import warnings
-from pathlib import Path
 
 import numpy as np
 import json
@@ -34,17 +44,7 @@ from matplotlib import cm, patches
 import matplotlib.pyplot as plt
 from tifffile import TiffFile, TiffWriter, imread
 
-# Try different import approaches for bruker_concat_tif
-try:
-    # Try relative import first
-    from . import bruker_concat_tif as ct
-except ImportError:
-    try:
-        # Try absolute import
-        import modules.bruker_concat_tif as ct
-    except ImportError:
-        # Try direct import as last resort
-        import bruker_concat_tif as ct
+from modules import bruker_concat_tif as ct
 
 from scipy.ndimage import gaussian_filter, map_coordinates, shift, affine_transform, label, find_objects
 from scipy.stats import mode, linregress
@@ -62,8 +62,9 @@ from skimage.registration import phase_cross_correlation
 import cv2
 import argparse
 
-# Uncomment the following line to use the Suite2P registration function compute_zcorrel_suite2p (deprecated). Requires Suite2P to be installed.
-# from suite2p.registration import rigid
+# Type checking imports (not loaded at runtime)
+if TYPE_CHECKING:
+    from suite2p.registration import rigid
 
 def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Initialize storage for the aligned images
@@ -460,6 +461,17 @@ def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=
     
     return z_correlation
 
+def _get_suite2p_rigid():
+    """Lazy import of Suite2p registration functions"""
+    try:
+        from suite2p.registration import rigid
+        return rigid
+    except ImportError:
+        raise ImportError(
+            "Suite2p required for this function. "
+            "Install with: pip install suite2p"
+        )
+
 def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, smoothing=False, smooth_sigma=1, return_shifts=False):
     """
     Computes correlation and x/y shifts in z for each frame in the movie, using the anatomical z-stack as reference.
@@ -469,6 +481,8 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
     https://github.com/MouseLand/suite2p/blob/193e7f1f656bfbd1c100eb51411737c80f54ac3c/suite2p/registration/zalign.py#L125
     Copyright © 2023 Howard Hughes Medical Institute, Authored by Carsen Stringer and Marius Pachitariu.
     """
+    rigid = _get_suite2p_rigid()
+    
     # Load the z-stack and stack frames into a 3D array
     zstack_tiff_file = TiffFile(zstack_file)
     Z_stack = []
@@ -662,17 +676,14 @@ def patch_regress(frame_data, shift_patches=False):
     # Loop over patches, moving vertically (along columns) first, then horizontally (along rows)    
     for i in range(0, Nx, step_size[1]):
         for j in range(0, Ny, step_size[0]):
+            # Allow for a last partial patch on the right and bottom borders, but not more
+            if i + patch_size[1] > Nx and patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
+                continue 
+            if j + patch_size[0] > Ny and patch_size_y < patch_size[0]:
+                continue 
             # Adjust the patch size for patches on the bottom and right borders
             patch_size_x = patch_size[1] if i + patch_size[1] <= Nx else Nx - i
             patch_size_y = patch_size[0] if j + patch_size[0] <= Ny else Ny - j
-
-            # Allow for a last partial patch on the right and bottom borders, but not more
-            is_at_right_edge = (i + patch_size_x == Nx)
-            is_at_bottom_edge = (j + patch_size_y == Ny)
-
-            if patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
-                if not (is_at_right_edge and is_at_bottom_edge):
-                    continue
 
             # Get the patch from the frame data
             T_patch = frame_F_func[j:j+patch_size_y, i:i+patch_size_x, ].ravel()

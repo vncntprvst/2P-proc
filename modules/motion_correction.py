@@ -13,149 +13,133 @@ Date: 2024-07-22
 License: CC-BY-SA 4.0
 """
 
-import os
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import sys
 import time
 from pathlib import Path
 import numpy as np
-import contextlib
-import gc
-import psutil
-import logging
 import h5py
+from tifffile import TiffWriter, TiffFile
 
 # Import CaImAn and Mesmerize components
 import mesmerize_core as mc
 from caiman.mmapping import load_memmap
 
-# Import local modules
-try:
-    # Try absolute imports first
-    import modules.bruker_concat_tif as ct
-    import modules.compute_zcorr as cz
-except ImportError:
-    try:
-        # Try relative imports if absolute imports fail
-        from . import bruker_concat_tif as ct
-        from . import compute_zcorr as cz
-    except ImportError:
-        # Try importing from parent directory
-        import sys
-        from pathlib import Path
-        parent_dir = Path(__file__).parent
-        sys.path.insert(0, str(parent_dir))
-        import bruker_concat_tif as ct
-        import compute_zcorr as cz
+from modules import bruker_concat_tif as ct
+from modules import compute_zcorr as cz
+from Mesmerize import pipeline_mcorr_cnmf as pl
 
+from Mesmerize.utils.pipeline_utils import (
+    log_and_print, 
+    create_mp4_movie,
+    overwrite_movie_memmap, 
+    load_mmap_movie, 
+    clip_range, 
+    cat_movies_to_mp4
+)
 
-def is_logger_configured():
-    """Check if logging is configured."""
-    return len(logging.root.handlers) > 0
+# log_and_print, cat_movies_to_mp4, create_mp4_movie, load_mmap_movie, clip_range, overwrite_movie_memmap
 
-
-def log_and_print(message, level='info'):
-    """Log message and print to console."""
-    if is_logger_configured():
-        if level == 'info':
-            logging.info(message)
-        elif level == 'warning':
-            logging.warning(message)
-        elif level == 'error':
-            logging.error(message)
-        elif level == 'critical':
-            logging.critical(message)
-    print(message)
-
-
-@contextlib.contextmanager
-def memory_manager(stage="operation"):
-    """Context manager for memory tracking and cleanup."""
-    process = psutil.Process()
-    
-    def print_memory_usage(stage_message):
-        mem_info = process.memory_info()
-        num_threads = process.num_threads()
-        print(f"Memory Manager - {stage_message}")
-        print(f"Thread count: {num_threads}, Memory usage: {mem_info.rss / (1024 ** 2):.2f} MB")
-        
-    try:
-        print_memory_usage(f"Starting {stage}")
-        yield
-    finally:
-        # Force garbage collection
-        gc.collect()
-        print_memory_usage(f"Completed {stage}")
-
-
-def clip_range(array, clip_range='uint16'):
+def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
     """
-    Clip the values of an array to a specific range.
-    
-    Args:
-        array: Input numpy array
-        clip_range: Range to clip to ('uint16' or 'uint8')
-    
-    Returns:
-        Clipped array
-    """
-    if clip_range == 'uint16':
-        return np.clip(array, 0, 2**16-1)
-    elif clip_range == 'uint8':
-        return np.clip(array, 0, 2**8-1)
-    else:
-        return array
-
-
-def safe_rename(src, dst, max_attempts=5):
-    """
-    Attempt to rename a file with retries upon encountering access errors.
-    
-    Args:
-        src: Source path
-        dst: Destination path
-        max_attempts: Maximum number of retry attempts
-    
-    Returns:
-        bool: Success status
-    """
-    attempt = 0
-    rename_success = False
-    print(f"Renaming file {src} to {dst}.")
-    
-    while attempt < max_attempts:
-        try:
-            src.rename(dst)
-            rename_success = True
-            break
-        except PermissionError:
-            print(f"Attempt {attempt+1} failed, retrying in 5 seconds...")
-            time.sleep(5)
-            attempt += 1
-    
-    if attempt == max_attempts:
-        print(f"Failed to rename file {src} to {dst} after {max_attempts} attempts.")
-        
-    return rename_success
-
-
-def load_mmap_movie(movie_path):
-    """
-    Load a memmaped numpy array.
-    
-    Args:
-        movie_path: Path to the .mmap file
-    
-    Returns:
-        Loaded movie array with dimensions (T, y, x)
+    Save the motion corrected movie (memmaped array) as a BigTIFF file or a mp4 movie.
+    If diff_corr is true (default), concatenate the original movie and the motion corrected movie horizontally.
     """
     # Load the movie from the memmap file
-    movie, dims, T = load_memmap(movie_path)
+    mcorr_movie_16bit , dims, T = load_memmap(mcorr_path)
     # Reshape the array to the desired dimensions
-    movie = np.reshape(movie.T, [T] + list(dims), order='F')
+    mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
+    # At this point the images should already be transposed
+    # mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
+    # image = mcorr_movie_16bit[0,:,:]  
     
-    return movie
+    # If excerpt is not None, keep only the first x frames of the movie
+    if excerpt is not None:
+        mcorr_movie_16bit = mcorr_movie_16bit[:excerpt]
+        
+    # Convert values to uint8
+    if to_uint8:
+        mcorr_movie_ = (mcorr_movie_16bit / (2**16-1) * 255).astype('uint8')
+    else:
+        mcorr_movie_ = mcorr_movie_16bit
+    
+    if format == 'mp4':
+        if diff_corr:
+            # Load the data frame from the batch
+            df = mc.load_batch(batch)
+            # Get the original movie as a memmaped numpy array
+            original_movie = df.iloc[index].caiman.get_input_movie()
+            if excerpt is not None:
+                original_movie = original_movie[:excerpt]
+            # Convert values to uint8
+            if to_uint8:
+                original_movie_ = (original_movie / (2**16-1) * 255).astype('uint8')
+            else:
+                original_movie_ = original_movie
+            # Set the path of the mp4 movie
+            movie_path = Path.joinpath(export_path, f"compare_og_mcorr.mp4")
+            # Concatenate the two movies horizontally
+            cat_movies_to_mp4(original_movie_, mcorr_movie_, movie_path)
+            log_and_print(f"Saved original vs motion corrected movie to {movie_path}.")
 
+            return movie_path
+        else:
+            # Save the motion corrected movie as a mp4 movie
+            # movie_path = Path.joinpath(export_path, f"mcorr.mp4")
+            create_mp4_movie(mcorr_movie_16bit, export_path, 'mcorr.mp4')
+            log_and_print(f"Saved motion corrected movie to {export_path}/mcorr.mp4")
+            
+            return Path.joinpath(export_path, 'mcorr.mp4')
+    else:
+        # Save the motion corrected movie as a BigTIFF file (8 bit by default)
+        if to_uint8:
+            mcorr_tif_path = Path.joinpath(export_path, f"mcorr_u8.tiff")
+        else:
+            mcorr_tif_path = Path.joinpath(export_path, f"mcorr_u16.tiff")
+        with TiffWriter(mcorr_tif_path, bigtiff=True) as tif:
+            tif.write(mcorr_movie_, photometric='minisblack')  
+        if to_uint8:
+            log_and_print(f"Saved 8 bit motion corrected movie to {mcorr_tif_path}.")
+        else:
+            log_and_print(f"Saved 16 bit motion corrected movie to {mcorr_tif_path}.")
+            
+        return mcorr_tif_path
 
+def compute_movie_residuals(clipped_mcorr_path, zcorr_movie, export_path):
+    """
+    Compute the residuals between the motion corrected movie (x/y), and the z-motion corrected movie (z).
+    """
+    # Load the motion corrected movie
+    mcorr_movie_16bit , dims, T = load_memmap(clipped_mcorr_path)
+    mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
+    mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
+    
+    # Compute the difference between the motion corrected movie and the z-motion corrected movie (residuals for each frame)
+    residual_movie = np.zeros_like(mcorr_movie_16bit)
+    for i, frame in enumerate(mcorr_movie_16bit):
+        residual_movie[i] = zcorr_movie[i] - frame
+        
+    # Convert all three movies' values to uint8, then concatenate them horizontally and save as a mp4 movie
+    mcorr_movie_ = (mcorr_movie_16bit / (2**16-1) * 255).astype('uint8')
+    zcorr_movie_ = (zcorr_movie / (2**16-1) * 255).astype('uint8')
+    residual_movie_ = (residual_movie / (2**16-1) * 255).astype('uint8')
+    
+    # Set the path of the mp4 movie
+    movie_path = Path.joinpath(export_path, f"compare_mcorr_zcorr_residuals.mp4")
+    
+    # Concatenate the three movies horizontally
+    cat_movie = np.concatenate((mcorr_movie_, zcorr_movie_, residual_movie_), axis=2)
+    create_mp4_movie(cat_movie, export_path, 'compare_mcorr_zcorr_residuals.mp4')
+   
 def save_movie_as_h5(memmap_path, h5_path, parameters):
     """
     Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.
@@ -256,115 +240,13 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
         
     return Path(h5_path)
 
-
-def overwrite_movie_memmap(movie, original_mmap_path, clip=True, movie_type='mcorr', 
-                          save_original=False, remove_input=False):
-    """
-    Overwrite the original memmap file with the new movie.
-    
-    Args:
-        movie: Movie data (numpy array or Path to movie file)
-        original_mmap_path: Path to original mmap file
-        clip: Whether to clip values to uint16 range
-        movie_type: Type of movie for logging ('mcorr', 'zcorr', etc.)
-        save_original: Whether to keep a backup of the original file
-        remove_input: Whether to remove the input file (if movie is a Path)
-    
-    Returns:
-        tuple: (success_path, backup_path)
-    """
-    
-    # Check if movie is a Path object or a numpy array
-    if isinstance(movie, Path):
-        movie_array = load_mmap_movie(movie)
-    else:
-        movie_array = movie
-
-    if clip:
-        # Clip values but keep as float32 (CaImAn expects 32-bit float)
-        movie_array = clip_range(movie_array, 'uint16')
-    
-    # Original array with dimensions (T, y, x). Transpose to (y, x, T)
-    transposed_array = movie_array.transpose(1, 2, 0)
-    
-    # Flatten in 'F' order (to align with CaImAn's expectations)
-    flattened_array = transposed_array.flatten(order='F')
-    
-    # Create new memmap file
-    log_and_print(f"{movie_type} movie path: {original_mmap_path}")
-    flattened_movie_path = original_mmap_path.parent / f"flattened_{original_mmap_path.name}"
-    
-    # Save the flattened array as a memmap
-    flattened_movie = np.memmap(flattened_movie_path, dtype='float32', mode='w+', 
-                               shape=flattened_array.shape)
-    np.copyto(flattened_movie, flattened_array)
-    
-    # Flush changes to disk and close the memmap
-    flattened_movie.flush()
-    del flattened_movie, flattened_array, transposed_array
-    gc.collect()
-    
-    # Recompute the projections
-    proj_paths = {}
-    for proj_type in ["mean", "std", "max"]:
-        p_img = getattr(np, f"nan{proj_type}")(movie_array, axis=0)
-        proj_paths[proj_type] = original_mmap_path.parent.joinpath(
-            f"{str(original_mmap_path.parent.stem)}_{proj_type}_projection.npy"
-        )
-        np.save(str(proj_paths[proj_type]), p_img)
-        del p_img
-        
-    log_and_print(f"Projections recomputed and saved to {original_mmap_path.parent}.")
-    
-    del movie_array
-    
-    # Wait a moment for file system operations to complete
-    time.sleep(5)
-    
-    # Create backup and rename files
-    rename_success = safe_rename(original_mmap_path, 
-                                original_mmap_path.parent / f"original_{original_mmap_path.name}")
-    
-    if rename_success:
-        # Rename the clipped memmap file to the original name
-        flattened_movie_path.rename(original_mmap_path)
-        
-        # Optionally remove the backup
-        if not save_original:
-            backup_path = original_mmap_path.parent / f"original_{original_mmap_path.name}"
-            if backup_path.exists():
-                backup_path.unlink()
-            
-        # Remove input file if requested
-        if remove_input and isinstance(movie, Path):
-            if movie.exists():
-                movie.unlink()
-    
-        return original_mmap_path, None   
-    
-    else:
-        return flattened_movie_path, None
-
-
 def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True):
     """
     Run motion correction on a set of ome.tif files.
-    
-    This function:
-    1. Concatenates ome.tif files into a single multi-page TIFF
-    2. Creates a new Mesmerize batch
-    3. Adds motion correction item to the batch
-    4. Runs the batch processing
-    
-    Args:
-        data_path: List of paths containing ome.tif files
-        export_path: Path where results will be saved
-        parameters: Motion correction parameters
-        regex_pattern: Pattern to match input files
-        recompute: Whether to recompute if results exist
-    
-    Returns:
-        tuple: (batch_path, mcorr_index, movie_path)
+    Concatenate the ome.tif files into a single multi-page tiff file.
+    Create a new batch.
+    Add the motion correction item to the batch.
+    Run the batch.
     """
     # Set movie path
     movie_path = Path(export_path).joinpath('cat_tiff_bt.tiff')
@@ -373,72 +255,106 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         log_and_print(f"Concatenated movie already exists at {export_path}. Using existing file.")
     else:
         # Concatenate the ome.tif files into a single multi-page tiff file
-        ct.concatenate_files(data_path, export_path, regex_pattern, method='bigtiff')
+        # Using the concat_tif.py script to concatenate the tif files. If needed, install libtiff with: pip install pylibtiff
+        log_and_print(f"Loading and concatenating data from {data_path}.")
+        try:
+            time0 = time.time()
+            ##################
+            ct.concatenate_files(data_path, export_path, regex_pattern)
+            ##################
+            formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
+            print(f"Concatenation completed in {formatted_time}.")
+
+            # Verify that the concatenated movie is long enough for subsequent
+            # correlation computations. If the movie is too short, CaImAn's
+            # ``local_correlations_movie_parallel`` will fail silently.
+            with TiffFile(movie_path) as tif:
+                n_frames = len(tif.pages)
+            if n_frames < 1000:
+                raise ValueError(
+                    f"Concatenated movie has {n_frames} frames which is below the safe "
+                    "threshold (1000). Increase the '--max-frames' parameter when "
+                    "creating test datasets or rerun with more data."
+                )
+
+        except Exception as e:
+            log_and_print(f"An error occurred while concatenating files: {e}")
 
     log_and_print(f"Concatenated movie path: {movie_path}.")    
 
-    # Check for existing batch or create new one
-    batch_path = None
-    existing_batches = list(Path(export_path).glob("batch_*.pickle"))
-    
-    if not recompute and existing_batches:
-        batch_path = existing_batches[0]
-        log_and_print(f"Using existing batch: {batch_path}")
-        df = mc.load_batch(batch_path)
-    else:
-        # Create new batch file path
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        batch_file_path = Path(export_path) / f"batch_{timestamp}.pickle"
+    if not recompute:
+        #  Check if a batch_*_pickle file exists in the export path
+        batch_files = list(Path(export_path).glob(f"batch_*.pickle"))
+        if len(batch_files) > 0:
+            #  take the most recent batch file
+            batch_path = batch_files[-1]
+            log_and_print(f"Using existing batch file {batch_path}.")
+            # load the batch
+            df = mc.load_batch(batch_path)
+            
+            # rows_keep = [df.iloc[0].uuid]
+            # for i, row in df.iterrows():
+            #     if row.uuid not in rows_keep:
+            #         df.caiman.remove_item(row.uuid)
         
-        # Create new batch
-        df = mc.create_batch(batch_file_path)
-        batch_path = batch_file_path
-        log_and_print(f"Created new batch: {batch_path}")
-        
-        # Add motion correction item to batch
+    # if batch_path is not defined, create a new batch
+    if 'batch_path' not in locals():
+        # create a new batch path, appendind timestamp to avoid overwriting
+        batch_path = Path.joinpath(export_path, f'batch_{time.strftime("%Y%m%d-%H%M%S")}.pickle')
+        log_and_print(f"Creating batch {batch_path}.") 
+        df = mc.create_batch(batch_path)
+
+        # Add the input movie path to the batch
         df.caiman.add_item(
             algo='mcorr',
+            item_name=movie_path.stem,
             input_movie_path=movie_path,
-            params=parameters,
-            item_name=f"mcorr_{movie_path.stem}"
+            params=parameters
         )
-    
+        
     time0 = time.time()
     mcorr_index = None
-    
     # Run batch items that haven't been run yet
     for row_index, row in df.iterrows():
-        if row.algo == 'mcorr' and row["outputs"] is None:
-            log_and_print(f"Running motion correction for batch item {row.name}")
+        
+        # If algo is not mcorr, skip (this is a safety check, in case df was reloaded from disk)
+        if row.algo != 'mcorr':
+            continue
+        
+        # If already processed, skip
+        if row["outputs"] is not None:
+            log_and_print(f"Skipping batch item {row_index}, id {row.uuid}, algo {row.algo}. Already run.", level='warning')
+            mcorr_index = row_index
+            continue
+        
+        log_and_print(f"Running batch item {row_index}, id {row.uuid}, algo {row.algo}.")
+        try:
+            ##########################
             process = row.caiman.run()
             mcorr_index = row_index
-            
-            # Reload batch on Windows (required for local backend)
-            if process.__class__.__name__ == "DummyProcess":
-                df = df.caiman.reload_from_disk()
-            break
+            ##########################
+        except Exception as e:
+            log_and_print(f"An error occurred while running caiman for batch item {row_index}: {e}")
+        
+        # on Windows you MUST reload the batch dataframe after every iteration because it uses the `local` backend.
+        # this is unnecessary on Linux & Mac
+        # "DummyProcess" is used for local backend so this is automatic
+        if process.__class__.__name__ == "DummyProcess":
+            df = df.caiman.reload_from_disk()
             
     log_and_print(f"Batch completed for motion correction. Results saved to {batch_path}.")
     formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
-    print(f"Motion correction completed in {formatted_time}.")
+    print(f"mcorr completed in {formatted_time}.")
     
-    # Get the motion corrected movie path
     if mcorr_index is not None:
-        # Reload batch from disk to get updated results
         df = df.caiman.reload_from_disk()
-        mcorr_movie_path = Path(df.iloc[mcorr_index].mcorr.get_output_path())
-        return batch_path, mcorr_index, mcorr_movie_path
-    else:
-        # Find existing motion correction result
-        for idx, row in df.iterrows():
-            if row.algo == 'mcorr' and row["outputs"] is not None:
-                mcorr_movie_path = Path(row.mcorr.get_output_path())
-                return batch_path, idx, mcorr_movie_path
-                
-        raise RuntimeError("No motion correction results found")
+        # Get the path to the motion corrected movie
+        movie_path = Path(df.iloc[mcorr_index].mcorr.get_output_path())
+        # Get the motion corrected output as a memmaped numpy array
+        # mcorr_movie = df.iloc[mcorr_index].mcorr.get_output()
 
-
+    return batch_path, 0, movie_path
+  
 def run_motion_correction_workflow(
     data_path,
     export_path,
@@ -471,7 +387,7 @@ def run_motion_correction_workflow(
         'success': False
     }
     
-    with memory_manager("motion_correction"):
+    with pl.memory_manager("motion_correction"):
         try:
             # Get motion correction parameters
             parameters_mcorr = parameters['params_mcorr']
@@ -497,7 +413,7 @@ def run_motion_correction_workflow(
                 time_z0 = time.time()
                 
                 zcorr_movie_path, _, _ = cz.z_motion(
-                    movie_path, parameters, output_format=output_format
+                    movie_path, parameters
                 )
                 
                 # Save corrected movie, overwriting the original
@@ -517,21 +433,13 @@ def run_motion_correction_workflow(
             # Create output movies (optional)
             if create_movies:
                 log_and_print("Creating output movies...")
-                
-                # Import movie creation functions
-                try:
-                    from . import pipeline_mcorr_cnmf as pipeline
-                except ImportError:
-                    import sys
-                    sys.path.append(str(Path(__file__).parent.parent / "Mesmerize"))
-                    import pipeline_mcorr_cnmf as pipeline
-                
+                                
                 # Save as BigTIFF file  
-                pipeline.create_mcorr_movie(movie_path, export_path, None, None, 
+                create_mcorr_movie(movie_path, export_path, None, None, 
                                           format='tiff', diff_corr=False)
                 
                 # Create comparison movie (first 240 frames)
-                pipeline.create_mcorr_movie(mcorr_path=movie_path, export_path=export_path, 
+                create_mcorr_movie(mcorr_path=movie_path, export_path=export_path, 
                                           batch=batch_path, index=index, excerpt=240)
             
             results['success'] = True
@@ -555,58 +463,43 @@ def run_motion_correction_workflow(
     
     return results
 
-
-def get_default_mcorr_parameters():
-    """
-    Get default motion correction parameters.
-    
-    Returns:
-        dict: Default parameters for motion correction
-    """
-    return {
-        'main': {
-            'strides': [36, 36],
-            'overlaps': [24, 24],
-            'max_shifts': [12, 12],
-            'max_deviation_rigid': 6,
-            'border_nan': 'copy',
-            'pw_rigid': True,
-            'gSig_filt': None
-        }
-    }
-
-
 if __name__ == "__main__":
-    # Example usage
     import argparse
     
     parser = argparse.ArgumentParser(description="Motion Correction Module")
     parser.add_argument('input_paths', nargs='+', help='Input data paths')
     parser.add_argument('-o', '--output', required=True, help='Output directory')
-    parser.add_argument('-p', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
-    parser.add_argument('--recompute', action='store_true', help='Recompute existing results')
-    parser.add_argument('--no-movies', action='store_true', help='Skip movie creation')
-    parser.add_argument('--save-h5', action='store_true', help='Save final movie as HDF5')
-    
+    parser.add_argument('-p', '--params', type=str, help='Path to parameters JSON file')
+    parser.add_argument('-t', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
+    parser.add_argument('-r', '--recompute', action='store_true', help='Recompute existing results')
+    parser.add_argument('-c', '--create_movies', action='store_true', help='Create output movies')
+    parser.add_argument('-f', '--format', choices=['memmap', 'h5'], default='memmap', help='Output format for final movie')
     args = parser.parse_args()
     
-    # Set up basic parameters
-    parameters = {
-        'params_mcorr': get_default_mcorr_parameters()
-    }
+    # Convert input paths to Path objects
+    input_paths = [Path(p) for p in args.input_paths]
+    output_path = Path(args.output)
+    pattern = args.pattern
+    recompute = args.recompute
+    create_movies = args.create_movies
+    output_format = args.format
     
-    # Run workflow
+    # Load parameters from JSON file if provided
+    parameters = {}
+    if args.params:
+        import json
+        with open(args.params, 'r') as f:
+            parameters = json.load(f)
+    else:
+        raise ValueError("Parameters file must be provided with -p option.")
+
+    # Run the motion correction workflow
     results = run_motion_correction_workflow(
-        data_path=args.input_paths,
-        export_path=Path(args.output),
+        data_path=input_paths,
+        export_path=output_path,
         parameters=parameters,
-        regex_pattern=args.pattern,
-        recompute=args.recompute,
-        create_movies=not args.no_movies,
-        output_format='h5' if args.save_h5 else 'memmap'
+        regex_pattern=pattern,
+        recompute=recompute,
+        create_movies=create_movies,
+        output_format=output_format
     )
-    
-    print(f"Motion correction completed: {results['success']}")
-    if results['success']:
-        print(f"Results saved to: {results['export_path']}")
-        print(f"Movie path: {results['movie_path']}")
