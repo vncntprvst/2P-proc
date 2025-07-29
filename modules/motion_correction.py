@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Add project root to path (standardized approach)
+# Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -114,6 +114,32 @@ def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', di
             
         return mcorr_tif_path
 
+def compute_movie_residuals(clipped_mcorr_path, zcorr_movie, export_path):
+    """
+    Compute the residuals between the motion corrected movie (x/y), and the z-motion corrected movie (z).
+    """
+    # Load the motion corrected movie
+    mcorr_movie_16bit , dims, T = load_memmap(clipped_mcorr_path)
+    mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
+    mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
+    
+    # Compute the difference between the motion corrected movie and the z-motion corrected movie (residuals for each frame)
+    residual_movie = np.zeros_like(mcorr_movie_16bit)
+    for i, frame in enumerate(mcorr_movie_16bit):
+        residual_movie[i] = zcorr_movie[i] - frame
+        
+    # Convert all three movies' values to uint8, then concatenate them horizontally and save as a mp4 movie
+    mcorr_movie_ = (mcorr_movie_16bit / (2**16-1) * 255).astype('uint8')
+    zcorr_movie_ = (zcorr_movie / (2**16-1) * 255).astype('uint8')
+    residual_movie_ = (residual_movie / (2**16-1) * 255).astype('uint8')
+    
+    # Set the path of the mp4 movie
+    movie_path = Path.joinpath(export_path, f"compare_mcorr_zcorr_residuals.mp4")
+    
+    # Concatenate the three movies horizontally
+    cat_movie = np.concatenate((mcorr_movie_, zcorr_movie_, residual_movie_), axis=2)
+    create_mp4_movie(cat_movie, export_path, 'compare_mcorr_zcorr_residuals.mp4')
+   
 def save_movie_as_h5(memmap_path, h5_path, parameters):
     """
     Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.

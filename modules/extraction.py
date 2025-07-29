@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Add project root to path (standardized approach)
+# Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -29,7 +29,13 @@ import numpy as np
 import mesmerize_core as mc
 from scipy import io
 
-from Mesmerize.utils.pipeline_utils import log_and_print
+from caiman.mmapping import load_memmap
+
+from Mesmerize.utils.pipeline_utils import (
+    log_and_print, 
+    clip_range, 
+    cat_movies_to_mp4
+)
 
 __all__ = [
     "run_cnmf", 
@@ -49,6 +55,84 @@ def countdown(n: int) -> None:
         time.sleep(1)
         n -= 1
 
+def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf_obj=None, index=-1, excerpt=None):
+    """
+    Create a movie concatenating the components and the residuals.
+    """
+    # if mcorr_movie is not a string, load the data frame from the batch
+    # if not isinstance(mcorr_movie, str):
+    if batch_path is not None:
+        df = mc.load_batch(batch_path)
+        # Load the motion corrected movie
+        # mcorr_movie = df.iloc[index].caiman.get_input_movie()
+        # Load the components (reconstructed movie with no background)
+        neural_activity_movie = df.iloc[index].cnmf.get_rcm() 
+        # image_neural_activity = neural_activity_movie[0,:,:]
+        # Load the residuals
+        residuals_movie = df.iloc[index].cnmf.get_residuals()
+        # image_residuals = residuals_movie[0,:,:]
+    else:
+        mcorr_movie , dims, T = load_memmap(mcorr_movie_path)
+        mcorr_movie = np.reshape(mcorr_movie.T, [T] + list(dims), order='F')
+        mcorr_movie = mcorr_movie.transpose(0, 2, 1)
+             
+        # # If cnmf_obj is not a CNMF object, load the data frame from the batch path
+        # if isinstance(cnmf_obj, str):
+        #     # Load the data frame from the batch
+        #     df = mc.load_batch(batch_path)
+        #     # Load the CNMF results
+        #     cnmf_obj = df.iloc[index].cnmf.get_output()
+        #     # Keep only accepted components
+        #     cnmf_obj.estimates.select_components(use_object=True)
+        #     # Compute dF/F
+        #     if cnmf_obj.estimates.F_dff is None:
+        #         print('Calculating estimates.F_dff')
+        #         cnmf_obj.estimates.detrend_df_f(quantileMin=8, 
+        #                                         frames_window=400,
+        #                                         use_residuals=False)
+    
+        # reconstruct denoised components movie
+        neural_activity = cnmf_obj.estimates.A @ cnmf_obj.estimates.C  # A ⊗ C
+        # reshape neural activity to movie dimensions
+        dims = cnmf_obj.dims
+        T = cnmf_obj.estimates.C.shape[1]
+        neural_activity_movie = np.reshape(neural_activity.T, [T] + list(dims), order='F')
+        
+        # If residuals_movie is not defined, reconstruct it
+        # if 'residuals_movie' not in locals():
+
+        # reconstruct background movie
+        background = cnmf_obj.estimates.b @ cnmf_obj.estimates.f  # b ⊗ f
+        # reconstruct denoised movie
+        denoised_movie = neural_activity + background  # AC + bf
+        # reshape denoised movie to movie dimensions
+        denoised_movie = np.reshape(denoised_movie.T, [T] + list(dims), order='F')
+        # reconstruct residuals movie
+        residuals_movie = mcorr_movie - denoised_movie # mcorr_movie - AC - bf
+        # turn into a movie object
+        # denoised_movie = cm.movie(denoised_movie).reshape(dims + (-1,), order='F').transpose([2, 0, 1])
+
+    # If excerpt requested, keep only the first x frames of the movie
+    if excerpt is not None:
+        neural_activity_movie = neural_activity_movie[:excerpt]
+        residuals_movie = residuals_movie[:excerpt]
+
+    # Data is originally uint16, but values may extend beyond range, and converted to float at this point.
+    # Clip the values to the uint16 range, and convert to uint16 data type
+    neural_activity_movie = clip_range(neural_activity_movie, 'uint16').astype('uint16')
+    residuals_movie = clip_range(residuals_movie, 'uint16').astype('uint16')
+
+    # # Convert to uint8 to reduce file size further
+    # neural_activity_movie = (neural_activity_movie / (2**16-1) * 255).astype('uint8')
+    # residuals_movie = (residuals_movie / (2**16-1) * 255).astype('uint8')
+
+    # Set the path of the mp4 movie
+    movie_path = Path.joinpath(export_path, f"compare_components_residuals.mp4")
+
+    # Concatenate the two movies horizontally
+    cat_movies_to_mp4(neural_activity_movie, residuals_movie, movie_path)
+    
+    log_and_print(f"Saved components movie to {export_path}/components_movie.mp4")
 
 def run_cnmf(
     batch: Path,
