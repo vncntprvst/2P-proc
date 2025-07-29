@@ -19,12 +19,15 @@ from pathlib import Path
 # Set up proper import paths
 repo_root = Path(__file__).parent.parent
 mesmerize_dir = repo_root / "Mesmerize"
+modules_dir = repo_root / "modules"
 
 # Add directories to Python path
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 if str(mesmerize_dir) not in sys.path:
     sys.path.insert(0, str(mesmerize_dir))
+if str(modules_dir) not in sys.path:
+    sys.path.insert(0, str(modules_dir))
 
 # Import required modules - these imports need to come after path setup
 try:
@@ -41,8 +44,8 @@ try:
     # Import mesmerize-core
     import mesmerize_core as mc
 
-    # Import our pipeline module
-    from pipeline_mcorr_cnmf import run_mcorr
+    # Import our motion correction module
+    from modules.motion_correction import run_mcorr
 
 except ImportError as e:
     print(f"ERROR: Failed to import required modules: {e}")
@@ -123,21 +126,21 @@ def get_test_parameters(params_file):
         else:
             # If no parameter files found, use default parameters
             print("No parameter files found. Using default parameters.")
-            if hasattr(proc, 'get_default_parameters'):
-                return proc.get_default_parameters('mcorr')
-            else:
-                # Basic default parameters as fallback
-                return {
-                    'main': {
-                        'strides': [36, 36],
-                        'overlaps': [24, 24],
-                        'max_shifts': [12, 12],
-                        'max_deviation_rigid': 6,
-                        'border_nan': 'copy',
-                        'pw_rigid': True,
-                        'gSig_filt': None
-                    }
-                }
+            # Import motion_correction module to get default parameters
+            from modules import motion_correction as mcorr
+            return mcorr.get_default_mcorr_parameters()
+            # If the above fails, fall back to basic default parameters
+            # return {
+            #     'main': {
+            #         'strides': [36, 36],
+            #         'overlaps': [24, 24],
+            #         'max_shifts': [12, 12],
+            #         'max_deviation_rigid': 6,
+            #         'border_nan': 'copy',
+            #         'pw_rigid': True,
+            #         'gSig_filt': None
+            #     }
+            # }
     
     # Load parameters from file
     try:
@@ -153,10 +156,8 @@ def get_test_parameters(params_file):
     except json.JSONDecodeError as e:
         print(f"Error parsing parameter file: {e}")
         # Fall back to default parameters
-        if hasattr(proc, 'get_default_parameters'):
-            return proc.get_default_parameters('mcorr')
-        else:
-            raise
+        from modules import motion_correction as mcorr
+        return mcorr.get_default_mcorr_parameters()
 
 def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif', recompute=True):
     """
@@ -181,7 +182,7 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
     
     # Import the bruker_concat_tif module to handle file concatenation
     try:
-        from Mesmerize.bruker_concat_tif import concatenate_files
+        from modules.bruker_concat_tif import concatenate_files
         print("Successfully imported bruker_concat_tif module")
     except ImportError:
         print("Error: Failed to import bruker_concat_tif module")
@@ -353,7 +354,7 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
                 # Apply bit depth optimization (clip to uint16 range but keep as float32 for CaImAn compatibility)
                 print("Optimizing bit depth for motion corrected movie...")
                 try:
-                    from pipeline_mcorr_cnmf import overwrite_movie_memmap
+                    from modules.motion_correction import overwrite_movie_memmap
                     # Apply clipping to uint16 range
                     overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
                     print("Motion corrected movie optimized to uint16 range")

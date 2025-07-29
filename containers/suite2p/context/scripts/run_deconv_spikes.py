@@ -26,7 +26,7 @@ def deconv_spikes(dataFile, save_path, tau, fs, baseline, sig_baseline, win_base
 
     # Print model parameters
     print('The model parameters are:/n')
-    if 'no-baseline' not in kwargs:
+    if not kwargs.get('no_baseline', False):
         print('Baseline preprocessing is enabled.')
         print(f'tau={tau}, fs={fs}, baseline={baseline}, sig_baseline={sig_baseline}, win_baseline={win_baseline}, batch_size={batch_size}')
     else:
