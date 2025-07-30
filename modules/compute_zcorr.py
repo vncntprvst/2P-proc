@@ -917,6 +917,16 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                 if 'Z_patch' in averages and zone_id in averages['Z_patch']:
                     # zone_2D = averages['Z_patch'][zone_id].reshape((y_max - y_min, x_max - x_min))
                     composite_f_anat_frame[y_min:y_max, x_min:x_max] = averages['Z_patch'][zone_id]
+
+                # When this is the first zone in the first frame, print some info
+                # if frame_idx == 0 and zone_id == unique_zones[0]:
+                #     print(f"Frame {frame_num}, Zone {zone_id}:")
+                #     print(f"  R^2: {averages['r_squared'][zone_id]:.4f}")
+                #     print(f"  Patch number: {averages['patch_number'][zone_id]}")
+                #     print(f"  Patch z position: {averages['patch_z_pos'][zone_id]}")
+                #     print(f"  Patch x limits: {x_min}, {x_max}")
+                #     print(f"  Patch y limits: {y_min}, {y_max}")
+                #     print(f"  Range of values: {np.min(averages['Z_patch'][zone_id]):.2f} to {np.max(averages['Z_patch'][zone_id]):.2f}")
         
         F_anat_non_rigid[frame_idx, :, :] = composite_f_anat_frame
     
@@ -1372,6 +1382,7 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     
     # TODO: Update options to reload patch correlations: 
     if (export_path / 'patch_correlations.parquet').exists(): 
+        print(f"Loading patch correlations from {export_path / 'patch_correlations.parquet'}")
         patch_correlations_df = pd.read_parquet(export_path / 'patch_correlations.parquet') 
         patch_correlations_df['Z_patch'] = patch_correlations_df['Z_patch'].apply(lambda x: np.frombuffer(x, dtype=np.uint16))
     else:
@@ -1380,6 +1391,8 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
         patch_overlap = mcorr_params['overlaps']
         # Calculate patch size for both x and y dimensions 
         patch_size = [step + overlap for step, overlap in zip(step_size, patch_overlap)]
+        print()
+        print("Calling patch_regress to find the correlation between patches in the F_func movie and the anat z-stack over frames")
         print(f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}")
 
         # Get zpos, x and y shifts
@@ -1400,6 +1413,14 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
             frame_data_list.append((frameNum, F_func[frameNum, :, :],
                             Zstack, Nx, Ny, patch_size, step_size,
                             zpos[frameNum], valid_indices))
+            
+            if frameNum == 0:
+                print(f"Displaying values for frame {frameNum}")
+                print(f"Current zpos is: {current_zpos}")
+                print(f"F_func shape: {F_func[frameNum, :, :].shape}, Zstack shape: {Zstack.shape}")
+                print(f"Number of frames: {Nframe}, Number of z-stack frames: {Zstack_shape[2]}")
+                print(f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}")
+                print(f"Number of valid z indices per frame: {len(valid_indices)}")
                 
         # Call patch_regress in parallel
         patch_regress_results = Parallel(n_jobs=-1)(delayed(patch_regress)(frame_data) for frame_data in tqdm(frame_data_list, desc="Find the correlation between patches in the F_func movie and the anat z-stack over frames"))
@@ -1423,6 +1444,10 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     
     # Calculate patch overlap zones
     labeled_zones, zone_pattern= calculate_zones(patch_correlations_df, Ny, Nx)
+
+    print("Calculated labeled zones and zone pattern")
+    print(f"Number of zones: {len(labeled_zones)}")
+    print(f"Zone pattern shape: {zone_pattern.shape}, data type: {zone_pattern.dtype}, min: {zone_pattern.min()}, max: {zone_pattern.max()}")
         
     # Create non-rigid F_anat, using ProcessPoolExecutor to parallelize
     groups = list(patch_correlations_df.groupby('frame_num'))
@@ -1450,6 +1475,21 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     F_anat_non_rigid = np.concatenate([frame_arrays[idx] for idx in sorted_indices], axis=0)
     # Clip to uint16 range
     F_anat_non_rigid = np.clip(F_anat_non_rigid, 0, 2**16-1).astype(np.float32)
+
+    # Plot the first frame of mcorr movie, the first frame of the z-stack, and the first frame of the composite F_anat side by side
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+    ax[0].imshow(F_func[0, :, :], cmap='gray')
+    ax[0].set_title('First frame of F_func movie')
+    ax[1].imshow(Zstack[:, :, 0], cmap='gray')
+    ax[1].set_title('First frame of Zstack movie')
+    ax[2].imshow(F_anat_non_rigid[0, :, :], cmap='gray')
+    ax[2].set_title('First frame of composite F_anat movie')
+    plt.tight_layout()
+    # save the figure
+    plot_dir = movie_mmap_path.parent.parent / 'plots'
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(plot_dir / 'first_frames_comparison.png')
+    plt.close(fig)
     
     ###################################################
     ### Subtract z motion from the functional movie ###
