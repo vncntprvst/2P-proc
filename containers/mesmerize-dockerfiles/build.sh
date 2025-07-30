@@ -1,6 +1,7 @@
 #!/bin/bash
 
-docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.1.2 -f Dockerfile context
+# docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.1.2 -f Dockerfile context
+docker build -t wanglabneuro/mesmerize-base:0.2.0 -f Dockerfile_mesmerize_updated context
 # docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.1.0 -f Dockerfile_update .
 
 # Versions:

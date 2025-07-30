@@ -1,13 +1,23 @@
 #!/bin/bash
 
 # Copy the Mesmerize folder one level above, to the context folder
-rsync -avzP ../../Mesmerize context/
+rsync -avzP --include="utils/" --include="paths/" --include="parameters/" --include="*.py" --include="*.ipynb" --include="*.md" --exclude="*/" ../../Mesmerize/ context/Mesmerize/
+
+rsync -avzP ../../modules context/
+rsync -avzP ../../Matlab context/
+rsync -avzP ../../readme.md context/
+rsync -avzP ../../LICENSE.md context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.3.0 -f Dockerfile context --no-cache
+# docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.3.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:0.5.0 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize folder from the context folder
 rm -rf context/Mesmerize
+rm -rf context/modules
+rm -rf context/Matlab
+rm -f context/readme.md
+rm -f context/LICENSE.md
 
 # New versions are created with each release though GitHub Actions. 
 # Previous versions are kept for reference. 
