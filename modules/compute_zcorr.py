@@ -36,7 +36,6 @@ import pandas as pd
 import gc
 
 from caiman.mmapping import load_memmap
-import h5py
 
 from PIL import Image
 from matplotlib.colors import ListedColormap
@@ -614,29 +613,30 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
 
     return z_correlation
 
-def save_movie(movie, movie_path, format="memmap"):
-    """Save movie array to disk in the desired format."""
+def save_mmap_movie(movie, movie_path):
+    """
+    Save an array as a memmaped numpy array.
+    Original array must have dimensions T, y, x
+    """
+    # Save the movie as a memmaped numpy array
     movie_path = Path(movie_path)
-
-    if format == "h5":
-        # Save array to HDF5 file
-        with h5py.File(movie_path, "w") as f:
-            f.create_dataset("data", data=movie, compression="gzip", chunks=(1, movie.shape[1], movie.shape[2]))
-        return movie_path
-
-    # Default: save as memmap
+    # Transpose the array to (y, x, T)
     transposed_array = movie.transpose(1, 2, 0)
-    flattened_array = transposed_array.flatten(order="F")
-    movie_ = np.memmap(movie_path, dtype="float32", mode="w+", shape=flattened_array.shape)
+    # Flatten the transposed array in 'F' order (to align with the loading code)
+    flattened_array = transposed_array.flatten(order='F')
+    # Create a new memmap file with write access
+    movie_ = np.memmap(movie_path, dtype='float32', mode='w+', shape=flattened_array.shape)
     movie_[:] = flattened_array[:]
+    # Flush changes to disk and close the memmap
     del movie_
-    del flattened_array
+    del flattened_array    
     gc.collect()
-
-    memmap_paths = {"zcorr_movie_path": str(movie_path)}
-    with open(movie_path.parent / "memmap_paths.json", "w") as f:
+    
+    # Add the path to the memmap file to the memmap_paths.json file
+    memmap_paths = {'zcorr_movie_path': str(movie_path)}
+    with open(movie_path.parent / 'memmap_paths.json', 'w') as f:
         json.dump(memmap_paths, f)
-
+        
     return movie_path
 
 
@@ -758,12 +758,12 @@ def calculate_zones(patch_correlations, Ny, Nx):
     
     Inputs:
     - patch_correlations: DataFrame containing the patch correlations.
-    - Ny: int, the height of the movie in pixels.
-    - Nx: int, the width of the movie in pixels.
+    - Ny: int, the number of columns in the movie.
+    - Nx: int, the number of rows in the movie.
     
     Outputs:
-    - zone_pattern_contig: 2D numpy array with continuous zone IDs (0-indexed).
-    - zone_pattern: 2D numpy array with original non-contiguous zone IDs.
+    - zone_pattern_contig: 2D numpy array containing the zone pattern with continuous zone IDs.
+    - zone_pattern: 2D numpy array containing the zone pattern with non-contiguous unique zone IDs, for display purposes.   
     """
     start_time = time.time()
     
@@ -777,30 +777,6 @@ def calculate_zones(patch_correlations, Ny, Nx):
         y_start, y_end = row['patch_y_lims']
         mask[y_start:y_end, x_start:x_end] += 1
     
-    
-    # # Handle areas with no patches (including bottom rows)
-    # if np.any(mask == 0):
-    #     zero_count = np.sum(mask == 0)
-    #     print(f"Found {zero_count} pixels ({zero_count/mask.size:.1%} of image) with no patch coverage")
-        
-    #     # Create grid zones for uncovered areas (bottom rows, etc.)
-    #     grid_size = np.diff(patch_correlations[0]['patch_x_lims'])[0]  # Use the width of the first patch
-    #     if grid_size == 0:
-    #         grid_size = 60  # Default grid size
-    #     zero_mask = (mask == 0).astype(int)
-        
-    #     # Create grid pattern in zeros
-    #     for i in range(0, Nx, grid_size):
-    #         for j in range(0, Ny, grid_size):
-    #             if np.any(zero_mask[j:j+grid_size, i:i+grid_size]):
-    #                 # Use alternating pattern (1, 2) to ensure distinct zones
-    #                 zone_value = (i//grid_size + j//grid_size) % 2 + 1
-    #                 mask[j:j+grid_size, i:i+grid_size] = np.where(
-    #                     zero_mask[j:j+grid_size, i:i+grid_size] == 1,
-    #                     zone_value,
-    #                     mask[j:j+grid_size, i:i+grid_size]
-    #                 )
-
     # Label zones based on overlapping patches. Assign a unique number to each zone
 
     # Initialize the zone_pattern array to store zone identifiers
@@ -808,7 +784,6 @@ def calculate_zones(patch_correlations, Ny, Nx):
 
     # Change the mask values from 4 to 3 (even to odd)
     mask = np.where(mask == 4, 3, mask)
-
     # Process for odd values (mask values that are odd become 1, others 0)
     binary_mask_odd = (mask % 2 == 1).astype(int)
     labeled_zones_odd, num_zones_odd = label(binary_mask_odd)
@@ -842,8 +817,6 @@ def calculate_zones(patch_correlations, Ny, Nx):
         zone_pattern_contig[zone_pattern == zone_id] = new_id
 
     print(f"Patches divided into zones in {time.time() - start_time:.2f} seconds")
-    print(f"Created {len(np.unique(zone_pattern_contig))} unique zones")
-    print(f"Zone distribution: min={zone_pattern_contig.min()}, max={zone_pattern_contig.max()}")
         
     return zone_pattern_contig, zone_pattern
 
@@ -888,21 +861,8 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
             x_start, x_end = row['patch_x_lims']
             y_start, y_end = row['patch_y_lims']
             
-            # Get the expected patch dimensions
-            expected_height = y_end - y_start
-            expected_width = x_end - x_start
-            
-            # Get the actual patch
-            patch = row['Z_patch']
-            
-            # Check if patch dimensions match expected dimensions
-            if patch.shape != (expected_height, expected_width):
-                # Resize the patch to match expected dimensions using cv2
-                import cv2
-                patch_2D = cv2.resize(patch, (expected_width, expected_height), interpolation=cv2.INTER_LINEAR)
-            else:
-                # If dimensions match, just reshape as before
-                patch_2D = patch.reshape(expected_height, expected_width)
+            # Extract the patch area from the labeled_zones
+            patch_2D = row['Z_patch'].reshape(y_end - y_start, x_end - x_start)
             
             patch_zone_labels = labeled_zones[y_start:y_end, x_start:x_end]
             zone_ids = np.unique(patch_zone_labels)
@@ -955,14 +915,18 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                 zone_data.append(zone_info)
                 # reshape Zpatch to 2D and insert into composite_f_anat_frame               
                 if 'Z_patch' in averages and zone_id in averages['Z_patch']:
-                    zone_patch = averages['Z_patch'][zone_id]
-                    desired_shape = (y_max - y_min, x_max - x_min)
-                    # If the averaged patch does not match the expected zone size,
-                    # resize it to avoid broadcasting errors.
-                    if zone_patch.shape != desired_shape:
-                        import cv2
-                        zone_patch = cv2.resize(zone_patch, (desired_shape[1], desired_shape[0]), interpolation=cv2.INTER_LINEAR)
-                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = zone_patch
+                    # zone_2D = averages['Z_patch'][zone_id].reshape((y_max - y_min, x_max - x_min))
+                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = averages['Z_patch'][zone_id]
+
+                # When this is the first zone in the first frame, print some info
+                # if frame_idx == 0 and zone_id == unique_zones[0]:
+                #     print(f"Frame {frame_num}, Zone {zone_id}:")
+                #     print(f"  R^2: {averages['r_squared'][zone_id]:.4f}")
+                #     print(f"  Patch number: {averages['patch_number'][zone_id]}")
+                #     print(f"  Patch z position: {averages['patch_z_pos'][zone_id]}")
+                #     print(f"  Patch x limits: {x_min}, {x_max}")
+                #     print(f"  Patch y limits: {y_min}, {y_max}")
+                #     print(f"  Range of values: {np.min(averages['Z_patch'][zone_id]):.2f} to {np.max(averages['Z_patch'][zone_id]):.2f}")
         
         F_anat_non_rigid[frame_idx, :, :] = composite_f_anat_frame
     
@@ -992,7 +956,7 @@ def format_patch_correl_for_mat(zone_df):
     
     return mat_data
 
-def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_df):
+def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
     """
     Loop over each zones' pixel region and get the average fluorescence value for each zone from the FOV image
     """
@@ -1001,15 +965,10 @@ def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_df):
 
     for zone_id in range(np.max(labeled_zones) + 1):
         zone_indices = np.where(labeled_zones == zone_id)
-        if len(zone_indices[0]) > 0:  # Check if zone exists
-            # Get the mean fluorescence value for that zone
-            zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
-            # Get the R2 value for that zone
-            zone_r2_data = zone_df[zone_df['zone_id'] == zone_id]['r_squared']
-            if len(zone_r2_data) > 0:
-                zone_rsquare.append(zone_r2_data.values[0])
-            else:
-                zone_rsquare.append(0.0)  # Default R2 if zone not found
+        # Get the mean fluorescence value for that zone
+        zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
+        # Get the R2 value for that zone
+        zone_rsquare.append(zone_data[zone_data['zone_id'] == zone_id]['r_squared'].values[0])
         
     return zone_mean_fluorescence, zone_rsquare
 
@@ -1031,20 +990,13 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     ax[0, 0].set_title('Patch overlap zone pattern')
     
     # Plot the R^2 heatmap
-    # plot zone_df's average r_squared values as a heatmap
-    # Get number of unique zones
-    num_zones = np.max(labeled_zones) + 1
-    dim_num_zones = int(np.sqrt(num_zones))
+    # plot zone_data's average r_squared values as a heatmap
+    dim_num_zones = int(np.sqrt(np.max(labeled_zones) + 1))
 
-    # Validate square shape
-    if dim_num_zones**2 != num_zones:
-        raise ValueError(f"Zone layout is not a square: got {num_zones} zones, expected {dim_num_zones}²")
-
-    # Extract first-frame R² values
+    # Get zone_df data corresponding to the first frame
     frame_num = zone_df['frame_num'].min()
     zone_data = zone_df[zone_df['frame_num'] == frame_num]
 
-    # Reshape and plot heatmap
     r_squared_values = zone_data['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
     im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
     fig.colorbar(im, ax=ax[1, 0])
@@ -1430,6 +1382,7 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     
     # TODO: Update options to reload patch correlations: 
     if (export_path / 'patch_correlations.parquet').exists(): 
+        print(f"Loading patch correlations from {export_path / 'patch_correlations.parquet'}")
         patch_correlations_df = pd.read_parquet(export_path / 'patch_correlations.parquet') 
         patch_correlations_df['Z_patch'] = patch_correlations_df['Z_patch'].apply(lambda x: np.frombuffer(x, dtype=np.uint16))
     else:
@@ -1438,6 +1391,8 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
         patch_overlap = mcorr_params['overlaps']
         # Calculate patch size for both x and y dimensions 
         patch_size = [step + overlap for step, overlap in zip(step_size, patch_overlap)]
+        print()
+        print("Calling patch_regress to find the correlation between patches in the F_func movie and the anat z-stack over frames")
         print(f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}")
 
         # Get zpos, x and y shifts
@@ -1458,6 +1413,14 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
             frame_data_list.append((frameNum, F_func[frameNum, :, :],
                             Zstack, Nx, Ny, patch_size, step_size,
                             zpos[frameNum], valid_indices))
+            
+            if frameNum == 0:
+                print(f"Displaying values for frame {frameNum}")
+                print(f"Current zpos is: {current_zpos}")
+                print(f"F_func shape: {F_func[frameNum, :, :].shape}, Zstack shape: {Zstack.shape}")
+                print(f"Number of frames: {Nframe}, Number of z-stack frames: {Zstack_shape[2]}")
+                print(f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}")
+                print(f"Number of valid z indices per frame: {len(valid_indices)}")
                 
         # Call patch_regress in parallel
         patch_regress_results = Parallel(n_jobs=-1)(delayed(patch_regress)(frame_data) for frame_data in tqdm(frame_data_list, desc="Find the correlation between patches in the F_func movie and the anat z-stack over frames"))
@@ -1481,6 +1444,10 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     
     # Calculate patch overlap zones
     labeled_zones, zone_pattern= calculate_zones(patch_correlations_df, Ny, Nx)
+
+    print("Calculated labeled zones and zone pattern")
+    print(f"Number of zones: {len(labeled_zones)}")
+    print(f"Zone pattern shape: {zone_pattern.shape}, data type: {zone_pattern.dtype}, min: {zone_pattern.min()}, max: {zone_pattern.max()}")
         
     # Create non-rigid F_anat, using ProcessPoolExecutor to parallelize
     groups = list(patch_correlations_df.groupby('frame_num'))
@@ -1508,6 +1475,21 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     F_anat_non_rigid = np.concatenate([frame_arrays[idx] for idx in sorted_indices], axis=0)
     # Clip to uint16 range
     F_anat_non_rigid = np.clip(F_anat_non_rigid, 0, 2**16-1).astype(np.float32)
+
+    # Plot the first frame of mcorr movie, the first frame of the z-stack, and the first frame of the composite F_anat side by side
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+    ax[0].imshow(F_func[0, :, :], cmap='gray')
+    ax[0].set_title('First frame of F_func movie')
+    ax[1].imshow(Zstack[:, :, 0], cmap='gray')
+    ax[1].set_title('First frame of Zstack movie')
+    ax[2].imshow(F_anat_non_rigid[0, :, :], cmap='gray')
+    ax[2].set_title('First frame of composite F_anat movie')
+    plt.tight_layout()
+    # save the figure
+    plot_dir = movie_mmap_path.parent.parent / 'plots'
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(plot_dir / 'first_frames_comparison.png')
+    plt.close(fig)
     
     ###################################################
     ### Subtract z motion from the functional movie ###
@@ -1841,7 +1823,7 @@ def subtract_z_motion_pixels(movie_mmap_path, zpos, zstack_filepath, n_jobs=-1):
     # Return the corrected F matrix and the scaling factor
     return Fcorrected_reshaped, z_motion_scaling_factors
 
-def z_motion(mcorr_movie_path, parameters, recompute=True, output_format="memmap"):
+def z_motion(mcorr_movie_path, parameters, recompute=True):
     """
     Shifts the z-stack and performs z-motion correlation.
 
@@ -1961,13 +1943,11 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, output_format="memmap
                 print("No z-motion subtraction method specified.")
 
             # --- Save Corrected Movie ---
-            # If a corrected movie has been generated, save it to disk.
+            # If a corrected movie has been generated, save it to a memmap file.
             if zcorr_movie is not None:
-                movie_ext = "h5" if output_format == "h5" else mcorr_movie_path.suffix
-                movie_path = save_movie(
-                    zcorr_movie,
-                    mcorr_movie_path.parent / f"zcorr_movie_{mcorr_movie_path.stem}.{movie_ext}",
-                    format=output_format,
+                movie_path = save_mmap_movie(
+                    zcorr_movie, 
+                    mcorr_movie_path.parent / f"zcorr_movie_{mcorr_movie_path.name}"
                 )
                     
             return movie_path, z_motion_scaling_factors, z_correlation
