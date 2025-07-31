@@ -14,3 +14,6 @@ RUN uv pip install -r requirements.txt && \
 ENV CAIMAN_DATA=/root/caiman_data
 # Set $CAIMAN_TEMP
 ENV CAIMAN_TEMP=/root/caiman_data/temp
+
+# Test if the container is working: 
+# docker run --rm -it wanglabneuro/analysis-2p:latest python -c "import caiman; print(caiman.__version__)"
