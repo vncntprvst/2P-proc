@@ -24,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import os, glob, argparse, time
 # from tifftools import tiff_concat
-from tifffile import imread, imsave, imwrite, TiffWriter, TiffFile
+from tifffile import imread, imwrite, TiffWriter, TiffFile
 from libtiff import TIFF, libtiff_ctypes
 import numpy as np
 import warnings, contextlib
