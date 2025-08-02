@@ -509,7 +509,7 @@ def main():
         zstack_paths = [line.strip() for line in zstack_paths_input.split("\n") if line.strip()]
 
         # Logging
-        log_dict = path_data.get("paths", {}).get("logging", {})
+        log_dict = path_data.get("logging", {})
         log_path = st.text_input("Log path", value=log_dict.get("log_path", ""))
         possible_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         default_level = log_dict.get("log_level", "INFO")
@@ -530,7 +530,7 @@ def main():
         paths_section["data_paths"] = data_paths
         paths_section["export_paths"] = export_paths
         paths_section["zstack_paths"] = zstack_paths
-        paths_section["logging"] = {"log_path": log_path, "log_level": log_level}
+        st.session_state["config_data"]["logging"] = {"log_path": log_path, "log_level": log_level}
 
     # ---------------------------------------------------------------------
     # --- Display the current state of the path file
