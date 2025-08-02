@@ -283,7 +283,6 @@ def main():
     # Gather existing param files from the folder
     existing_params = list_existing_param_files(params_dir)
     existing_main = existing_params["main"]   # list[Path]
-    existing_zshift = existing_params["zshift"]
         
     # ---------------------------------------------------------------------
 
@@ -390,111 +389,43 @@ def main():
 
     with tab3:
         # ---------------------------------------------------------------------
-        # STEP 3: Create or reuse the Z-shift param file (optional)
+        # STEP 3: Configure z-motion correction parameters
         # ---------------------------------------------------------------------
-        use_zshift = st.checkbox("Use Z-motion correction? (requires a z-stack)", value=False, key="zshift_checkbox")
+        use_zshift = st.checkbox(
+            "Use Z-motion correction? (requires a z-stack)",
+            value=False,
+            key="zshift_checkbox",
+        )
 
-        if use_zshift:            
-            st.write('''
-            Enter the settings for z-stack used for z-motion correction (:blue-background[zstack_shift]) and set the z-motion correction method (:blue-background[subtract_z_motion])''')
-            # zmcorrcol1, zmcorrcol2, zmcorrcol3 = st.columns(3)
-            # with zmcorrcol2:
-            with st.container(key="z-mcorr-methods"):
-                st.write('''
-                    **"subtract_z_motion" options** (default: :grey-background[True])   
-                    - :grey-background[False]: Only z-pos will be computed.  
-                    - :grey-background[True]: Non-rigid F_anat will also be computed, but not subtracted, unless a :blue-background["subtract_method"] field is present.     
-                    
-                    **"subtract_method" options** (default: no method - do not include the field or set it to :grey-background[None])  
-                    - :grey-background[linear_regression_frames]: Subtract z-motion using linear regression on frames.
-                    - :grey-background[huber_regression_pixels]: Subtract z-motion using Huber regression on pixels.
-                    - :grey-background[huber_regression_frames]: Subtract z-motion using Huber regression on frames.
-                    ''')
-                    
-            if not existing_zshift:
-                st.warning("No existing z-shift param files found. Please create one first.")
-            else:
-                zshift_fnames = [p.name for p in existing_zshift]
-
-                # Compute default index based on session state if available
-                if "zshift_file_path" in st.session_state and st.session_state["zshift_file_path"]:
-                    current_zshift_name = Path(st.session_state["zshift_file_path"]).name
-                    if current_zshift_name in zshift_fnames:
-                        default_z_index = zshift_fnames.index(current_zshift_name)
-                    else:
-                        default_z_index = zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
-                else:
-                    default_z_index = zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
-
-                chosen_zshift_fname = st.selectbox(
-                    "Select an existing Z-shift parameter file",
-                    zshift_fnames,
-                    index=default_z_index,
-                    key="zshift_selectbox"
-                )
-                st.session_state["zshift_file_path"] = existing_zshift[zshift_fnames.index(chosen_zshift_fname)]
-                
-                # Load the chosen file contents
-                try:
-                    with open(st.session_state["zshift_file_path"], "r") as f:
-                        chosen_file_content = json.load(f)
-                    default_text = json.dumps(chosen_file_content, indent=4)
-                except Exception as e:
-                    default_text = f"⚠️ Error reading file: {e}"
-                
-                zshift_text = st.text_area(
-                    "Edit the parameters as needed. A new file can be saved below.",
-                    value=default_text,
-                    height=350
-                )
-                
-                # Let the user specify a new filename
-                zshift_filename = st.text_input(
-                    "Save as new file z-shift parameter file (name must start with params_zshift):",
-                    f"{st.session_state['zshift_file_path'].name}"
-                )
-                # Validate the filename
-                if not zshift_filename.startswith("params_zshift"):
-                    st.error("Filename must start with 'params_zshift'")
-                
-                if st.button("Save New Z-shift Parameter File"):
-                    try:
-                        new_content = json.loads(zshift_text)
-                        new_path = params_dir / zshift_filename
-                        # Store the new content and file path in session state so they persist
-                        st.session_state.new_zshift_content = new_content
-                        st.session_state.new_zshift_path = new_path
-                        
-                        if new_path.exists():
-                            st.session_state.pending_zshift_overwrite = True
-                            st.warning("File already exists. Click 'Confirm Overwrite (Z-shift)' to proceed.")
-                        else:
-                            st.session_state.pending_zshift_overwrite = False
-                            params_dir.mkdir(parents=True, exist_ok=True)
-                            with open(new_path, "w") as f:
-                                json.dump(new_content, f, indent=4)
-                            st.session_state["zshift_file_path"] = new_path
-                            st.success(f"Saved new Z-shift param file to {new_path}")
-                    except Exception as e:
-                        st.error(f"⚠️ Error saving param file: {e}")
-
-                if st.session_state.get("pending_zshift_overwrite", False):
-                    if st.button("Confirm Overwrite (Z-shift)"):
-                        try:
-                            new_content = st.session_state.new_zshift_content
-                            new_path = st.session_state.new_zshift_path
-                            params_dir.mkdir(parents=True, exist_ok=True)
-                            with open(new_path, "w") as f:
-                                json.dump(new_content, f, indent=4)
-                            st.session_state["zshift_file_path"] = new_path
-                            st.success(f"Overwritten file at {new_path}")
-                            st.session_state.pending_zshift_overwrite = False  # Reset the flag
-                        except Exception as e:
-                            st.error(f"⚠️ Error overwriting file: {e}")
+        if use_zshift:
+            st.write(
+                """
+            Enter the settings for z-stack used for z-motion correction (:blue-background[zstack_shift]) and set the z-motion correction method (:blue-background[subtract_z_motion])"""
+            )
+            default_z = (
+                st.session_state.get("config_data", {})
+                .get("params_mcorr", {})
+                .get("z_motion_correction", DEFAULT_CONFIG_TEMPLATE["params_mcorr"]["z_motion_correction"])
+            )
+            zshift_text = st.text_area(
+                "Edit the parameters as needed.",
+                value=json.dumps(default_z, indent=4),
+                height=350,
+            )
+            try:
+                st.session_state.setdefault("config_data", {}).setdefault("params_mcorr", {})[
+                    "z_motion_correction"
+                ] = json.loads(zshift_text)
+            except Exception as e:
+                st.error(f"⚠️ Error parsing JSON: {e}")
         else:
-            # If the user unchecks "Use Z-motion correction?" 
-            # clear any previously selected zshift path
-            st.session_state["zshift_file_path"] = None
+            z_params = (
+                st.session_state.get("config_data", {})
+                .get("params_mcorr", {})
+                .get("z_motion_correction")
+            )
+            if z_params:
+                z_params["subtract_z_motion"] = False
 
     # ---------------------------------------------------------------------
     # STEP 1: Create or load the path JSON, referencing the selected files
@@ -570,7 +501,7 @@ def main():
         export_paths = [line.strip() for line in export_paths_input.split("\n") if line.strip()]
 
         # If user wants z-stack
-        # use_zshift_for_paths = st.sidebar.checkbox("Use Z-motion correction?", value=False, key="zshift_paths_checkbox")
+        use_zshift = st.session_state.get("zshift_checkbox", False)
         zstack_paths_input = st.text_area(
             "Z-stack paths (one per line)",
             value="\n".join(path_data.get("paths", {}).get("zstack_paths", [])) if use_zshift else ""
@@ -826,10 +757,6 @@ def main():
                     if local_param.exists():
                         files_to_copy[str(local_param)] = f"{remote_params_dir}/{local_param.name}"
 
-                if st.session_state.get("zshift_file_path"):
-                    local_zparam = Path(st.session_state["zshift_file_path"])
-                    if local_zparam.exists():
-                        files_to_copy[str(local_zparam)] = f"{remote_params_dir}/{local_zparam.name}"
 
                 # Add batch scripts
                 batch_script_path = scripts_dir / batch_script_filename
