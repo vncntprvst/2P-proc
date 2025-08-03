@@ -1,0 +1,135 @@
+{
+    "experimenter":"First Last",
+    "subject":{
+        "name":"subject",
+        "sex":"M/F/U",
+        "DOB":"DD-MM-YYYY",
+        "genotype":"Strain or Genotype",
+        "virus":"Virus.Name",
+        "reporter":"Reporter_Name",
+        "injection_date":"DD-MM-YYYY",
+        "area":"Brain_Area"
+    }, 
+    "imaging": {
+        "date":"DDMMYYYY",
+        "experiment_type": "GC8m_16x_zoom1_765pi",
+        "run": [
+            "run1"
+        ],
+        "objective": 16,
+        "numerical_zoom": 1,
+        "wavelength": 920,
+        "power": 530,
+        "depth": 160,
+        "fr": 20,
+        "Npixel_x": 765,
+        "Npixel_y": 765,
+        "microns_per_pixel": 1.4542483660130718
+    },
+    "params_mcorr": {
+        "method": "caiman",
+        "main": {
+            "strides": [
+                72,
+                72
+            ],
+            "overlaps": [
+                36,
+                36
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 9,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_h5": true,
+        "z_motion_correction": {
+            "zstack_shift": {
+                "file_name": "zstack_shifted.tif",
+                "Ch": 2,
+                "alpha": 22,
+                "beta": 8,
+                "step": 1,
+                "micron_per_pixel": 1.46,
+                "Nx": 765,
+                "Ny": 765,
+                "Nz": 41
+            },
+            "subtract_z_motion": true,
+            "parameter_definitions": {
+                "file_name": "File name of the zstack once shifted",
+                "Ch": "Channel number to use",
+                "alpha": "Angle of the objective, in degrees",
+                "beta": "Angle of the stage on which the subject sits, in degrees",
+                "step": "Step size of the zstack in micron",
+                "micron_per_pixel": "Micron per pixel",
+                "Nx": "Frame size in x (width), in pixels",
+                "Ny": "Frame size in y (height), in pixels",
+                "Nz": "Number of frames in z"
+            },
+            "description": "These parameters are used to re-align z-stack frames, to compensate for the shift induced by the angle between the objective and the sample, as the objective moves vertically."
+        }
+    },
+    "params_extraction": {
+        "method": "suite2p",
+        "main": {
+            "fr": 15,
+            "p": 0,
+            "nb": 1,
+            "merge_thr": 0.8,
+            "rf": 20,
+            "stride": 10,
+            "K": 8,
+            "gSig": [
+                5,
+                5
+            ],
+            "ssub": 1,
+            "tsub": 1,
+            "method_init": "greedy_roi",
+            "min_SNR": 3.0,
+            "SNR_lowest": 2.5,
+            "rval_thr": 0.85,
+            "rval_lowest": 0.2,
+            "use_cnn": true,
+            "min_cnn_thr": 0.95,
+            "cnn_lowest": 0.2,
+            "decay_time": 0.15
+        },
+        "refit": true
+    },
+    "params_extra": {
+        "cleanup": true
+    },
+    "paths": {
+        "concatenation_groups": [
+            1,
+            1,
+            1,
+            1
+        ],
+        "data_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-001",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-002",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-003",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1529-004"
+        ],
+        "export_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2/10022023/run1run2run3run4/suite2p"
+        ],
+        "zstack_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004"
+        ]
+    },
+    "logging": {
+        "log_path": "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2",
+        "log_level": "INFO"
+    }
+}
