@@ -36,7 +36,6 @@ from caiman.mmapping import load_memmap
 
 from modules import bruker_concat_tif as ct
 from modules import compute_zcorr as cz
-from Mesmerize import pipeline_mcorr_cnmf as pl
 
 from Mesmerize.utils.pipeline_utils import (
     log_and_print, 
@@ -44,10 +43,10 @@ from Mesmerize.utils.pipeline_utils import (
     overwrite_movie_memmap, 
     load_mmap_movie, 
     clip_range, 
-    cat_movies_to_mp4
+    cat_movies_to_mp4,
+    memory_manager
 )
 
-# log_and_print, cat_movies_to_mp4, create_mp4_movie, load_mmap_movie, clip_range, overwrite_movie_memmap
 
 def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
     """
@@ -387,7 +386,7 @@ def run_motion_correction_workflow(
         'success': False
     }
     
-    with pl.memory_manager("motion_correction"):
+    with memory_manager("motion_correction"):
         try:
             # Get motion correction parameters
             parameters_mcorr = parameters['params_mcorr']
