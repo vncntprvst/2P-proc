@@ -14,14 +14,25 @@ from pathlib import Path
 from pipeline import pipeline_cnmf as preproc
 
 
-def run_cnmf(data_path, params):
+def run_cnmf(data_path, params, mcorr_output=None):
     """Run CNMF on a single dataset."""
-    _, batch_path = preproc.run_cnmf(data_path, params, export_path=params["export_path"])
+    _, batch_path = preproc.run_cnmf(
+        data_path,
+        params,
+        export_path=params["export_path"],
+        mcorr_movie=mcorr_output,
+    )
     return batch_path
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file", nargs="+", help="Input configuration JSON file")
+    parser.add_argument(
+        "--mcorr-output",
+        dest="mcorr_output",
+        default=None,
+        help="Path to a motion corrected movie to use if motion correction was skipped",
+    )
     args = parser.parse_args()
 
     for cfg_path in args.config_file:
@@ -108,7 +119,7 @@ def main():
             with open(params_path, "w") as f:
                 json.dump(save_params, f, indent=4)
 
-            batch_path = run_cnmf(data_path, params)
+            batch_path = run_cnmf(data_path, params, mcorr_output=args.mcorr_output)
 
             logging.info("Batch path: " + str(batch_path))
 
