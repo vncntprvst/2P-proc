@@ -8,11 +8,27 @@ import argparse
 import json
 import logging
 import datetime
-import os
+import os, sys
 from pathlib import Path
 
-from pipeline import pipeline_mcorr as preproc
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow warnings
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # Use first GPU if available
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'  # Prevent TF from taking all GPU memory
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' # Disable the Intel OneAPI Deep Neural Network Library optimizations
+os.environ['TF_CPP_VMODULE'] = 'cuda_dnn=0,cuda_fft=0,cuda_blas=0' # Prevent TensorFlow from logging CUDA-related warnings
 
+# Patch TensorFlow's logging to suppress specific warnings
+def filter_tensorflow_warnings():
+    logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+filter_tensorflow_warnings()
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline import pipeline_mcorr as preproc
 
 def run_mcorr(
     data_path,
@@ -106,6 +122,9 @@ def main():
         base_params = {
             "params_mcorr": base_params_mcorr,
             "params_extra": config.get("params_extra", {}),
+            "experimenter": config.get("experimenter", {}),
+            "subject": config.get("subject", {}),
+            "imaging": config.get("imaging", {})
         }
 
         for i, data_path in enumerate(grouped_paths_list):

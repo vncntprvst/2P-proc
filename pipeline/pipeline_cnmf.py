@@ -4,7 +4,13 @@ Runs constrained non-negative matrix factorization on motion corrected data."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from modules import extraction
 from pipeline.utils.pipeline_utils import (

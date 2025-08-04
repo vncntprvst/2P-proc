@@ -161,8 +161,12 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
     
     # Extract parameters
-    frame_rate = parameters.get('imaging', {}).get('fr', 30.0) or parameters.get('imaging', {}).get('fs', 30.0)
-    pixel_size_um = parameters.get('imaging', {}).get('microns_per_pixel', 1.0)
+    try:
+        frame_rate = parameters['imaging'].get('fr', 30.0) or parameters['imaging'].get('fs', 30.0)
+        pixel_size_um = parameters['imaging'].get('microns_per_pixel', 1.0)
+    except KeyError as e:
+        log_and_print(f"Missing key in parameters: {e}", level="error")
+        return None
 
     # Get image dimensions
     T, Ly, Lx = memmap_array.shape
@@ -250,6 +254,9 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
     # Set movie path
     movie_path = Path(export_path).joinpath('cat_tiff_bt.tiff')
     
+    # Set the parent raw data path before any batch operations
+    mc.set_parent_raw_data_path(Path(export_path))
+
     if not recompute and movie_path.exists():
         log_and_print(f"Concatenated movie already exists at {export_path}. Using existing file.")
     else:
@@ -407,7 +414,7 @@ def run_motion_correction_workflow(
                 overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
             
             # Z-motion correction (optional)
-            if 'zstack_path' in parameters and 'z_params' in parameters:
+            if 'zstack_path' in parameters and 'z_motion_correction' in parameters.get('params_mcorr', {}):
                 log_and_print("Starting z-motion correction...")
                 time_z0 = time.time()
                 

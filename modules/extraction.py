@@ -172,6 +172,8 @@ def run_cnmf(
         Scaling factors from z motion subtraction (unused but kept for backwards
         compatibility).
     """
+    # Set the parent raw data path before any batch operations
+    mc.set_parent_raw_data_path(Path(export_path))
 
     # Load batch dataframe
     df = mc.load_batch(batch)

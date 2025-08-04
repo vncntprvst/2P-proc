@@ -4,7 +4,19 @@ This module wraps the motion correction workflow so it can be executed independe
 
 from __future__ import annotations
 
+import os, sys
 from pathlib import Path
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow warnings
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # Use first GPU if available
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'  # Prevent TF from taking all GPU memory
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' # Disable the Intel OneAPI Deep Neural Network Library optimizations
+os.environ['TF_CPP_VMODULE'] = 'cuda_dnn=0,cuda_fft=0,cuda_blas=0' # Prevent TensorFlow from logging CUDA-related warnings
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from modules import motion_correction as mcorr
 from pipeline.utils.pipeline_utils import (

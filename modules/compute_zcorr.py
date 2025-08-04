@@ -44,6 +44,7 @@ import matplotlib.pyplot as plt
 from tifffile import TiffFile, TiffWriter, imread
 
 from modules import bruker_concat_tif as ct
+from pipeline.utils.pipeline_utils import log_and_print
 
 from scipy.ndimage import gaussian_filter, map_coordinates, shift, affine_transform, label, find_objects
 from scipy.stats import mode, linregress
@@ -1843,9 +1844,14 @@ def z_motion(mcorr_movie_path, parameters, recompute=True):
     
     # --- Parameter Setup ---
     # Extract z-stack parameters and the z-stack file path from the input parameters.
-    z_parameters = parameters['z_params']
-    zstack_path = parameters['zstack_path']
-    
+    z_parameters = parameters['params_mcorr'].get('z_motion_correction', {})
+    zstack_path = parameters.get('zstack_path', None)
+
+    # If zstack_path is not found, log an error and return None
+    if zstack_path is None:
+        log_and_print("Z-stack path not found in parameters.", level="error")
+        return None, None, None
+
     # If z_parameters is not already a dict, assume it is a path to a JSON file and load it.
     if not isinstance(z_parameters, dict):
         with open(z_parameters, 'r') as file:
@@ -1964,7 +1970,7 @@ if __name__ == "__main__":
     # Get arguements from command line
     parser = argparse.ArgumentParser(description="Compute z-motion correction for a movie")
     parser.add_argument("mcorr_movie_path", type=str, help="Path to the motion-corrected movie")
-    parser.add_argument("parameters", type=str, help="Path to the parameters file")
+    parser.add_argument("parameters", type=str, help="Path to the config file")
     args = parser.parse_args()
     mcorr_movie_path = Path(args.mcorr_movie_path)
     parameters = Path(args.parameters)

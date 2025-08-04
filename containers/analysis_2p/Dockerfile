@@ -1,5 +1,9 @@
 FROM wanglabneuro/mesmerize-base:latest
 
+# Install FFmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+    
 RUN mkdir -p /code && \
     mkdir -p /data
 
