@@ -245,27 +245,37 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
 
 def save_movie_as_bin(memmap_path, bin_path):
     """
-    Save a motion-corrected movie as a .bin file for Suite2p.
+    Save motion-corrected movie as Suite2p-compatible .bin file.
 
     Args:
-        memmap_path: Path to the memory-mapped movie file
-        bin_path: output path for the .bin file
+        memmap_path: Path to the memmap movie file
+        bin_path: Output path for the .bin file
+
+    Returns:
+        Path: Path to saved .bin file
     """
     log_and_print(f"Saving final movie to {bin_path}")
-    
+
     # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
-    
+
     # Clip and convert to uint16 for Suite2p
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
+    # Note that Suite2p expects float32 data for .bin files by default, 
+    # but the data type can be specified in the ops dictionary: ops['data_dtype'] = 'uint16'.
+    # We use uint16 here to save space and because the data does not use bit depth beyond 16 bits.
     
     # Optional: Check shape
     if memmap_array.ndim != 3:
         raise ValueError("Expected memmap array shape (frames, Ly, Lx), got: {}".format(memmap_array.shape))
     
     # Save as binary file in C-order (row-major)
-    memmap_array.tofile(bin_path)
+    with open(bin_path, 'wb') as f:
+        memmap_array.tofile(f)
+
     log_and_print(f"Saved binary movie: {bin_path} (shape: {memmap_array.shape}, dtype: {memmap_array.dtype})")
+    
+    return bin_path
 
 def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True):
     """
