@@ -243,6 +243,30 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
         
     return Path(h5_path)
 
+def save_movie_as_bin(memmap_path, bin_path):
+    """
+    Save a motion-corrected movie as a .bin file for Suite2p.
+
+    Args:
+        memmap_path: Path to the memory-mapped movie file
+        bin_path: output path for the .bin file
+    """
+    log_and_print(f"Saving final movie to {bin_path}")
+    
+    # Load the memmap movie as (frames, Ly, Lx)
+    memmap_array = load_mmap_movie(memmap_path)
+    
+    # Clip and convert to uint16 for Suite2p
+    memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
+    
+    # Optional: Check shape
+    if memmap_array.ndim != 3:
+        raise ValueError("Expected memmap array shape (frames, Ly, Lx), got: {}".format(memmap_array.shape))
+    
+    # Save as binary file in C-order (row-major)
+    memmap_array.tofile(bin_path)
+    log_and_print(f"Saved binary movie: {bin_path} (shape: {memmap_array.shape}, dtype: {memmap_array.dtype})")
+
 def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True):
     """
     Run motion correction on a set of ome.tif files.
@@ -458,6 +482,13 @@ def run_motion_correction_workflow(
                     memmap_path=movie_path,
                     h5_path=h5_path,
                     parameters=parameters
+                )
+            elif output_format == 'bin':
+                bin_path = export_path / 'mcorr_movie.bin'
+                # Save movie as Suite2p-compatible .bin
+                results['movie_path'] = save_movie_as_bin(
+                    memmap_path=movie_path,
+                    bin_path=bin_path
                 )
 
             log_and_print("Motion correction workflow completed successfully.")
