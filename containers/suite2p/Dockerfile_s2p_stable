@@ -33,8 +33,8 @@ WORKDIR /app
 RUN git clone https://github.com/MouseLand/suite2p.git && \
     cd suite2p && \
     git checkout tags/v0.14.0 && \
-    python -m pip install .
-
+    python -m pip install .[all]
+    
 # Set Suite2p as default environment
 SHELL [ "/bin/bash", "--login",  "-c" ]
 ENV PATH="$CONDA_DIR/envs/suite2p/bin:$PATH"
