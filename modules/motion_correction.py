@@ -142,107 +142,90 @@ def compute_movie_residuals(clipped_mcorr_path, zcorr_movie, export_path):
 def save_movie_as_h5(memmap_path, h5_path, parameters):
     """
     Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.
-    
+
     Args:
         memmap_path: Path to the memmap movie file
         h5_path: Output path for HDF5 file
         parameters: Parameter dictionary containing extraction settings
-    
+
     Returns:
         Path: Path to saved HDF5 file
     """
     log_and_print(f"Saving final movie to {h5_path}")
-    
-    # Load the memmap movie
+
+    # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
-    
-    # Suite2p expects uint16 data when reading from an h5 file
-    # The memmap is float32, so clip and convert before export
+
+    # Suite2p expects uint16 or float32; uint16 saves space and works if you set ops['data_dtype']='uint16'
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
-    
+
+    # Optional: Check shape
+    if memmap_array.ndim != 3:
+        raise ValueError(f"Expected shape (frames, Ly, Lx), got {memmap_array.shape}")
+
     # Extract parameters
     try:
-        frame_rate = parameters['imaging'].get('fr', 30.0) or parameters['imaging'].get('fs', 30.0)
-        pixel_size_um = parameters['imaging'].get('microns_per_pixel', 1.0)
-    except KeyError as e:
+        imaging = parameters.get('imaging', {})
+        frame_rate = imaging.get('fr') or imaging.get('fs')
+        if frame_rate is None:
+            frame_rate = 30.0
+            print("Warning: Using default frame rate of 30.0 Hz as 'fr' or 'fs' not found in parameters.")
+        pixel_size_um = imaging.get('microns_per_pixel')
+        if pixel_size_um is None:
+            pixel_size_um = 1.0
+            print("Warning: Using default pixel size of 1.0 μm as 'microns_per_pixel' not found in parameters.")
+
+    except Exception as e:
         log_and_print(f"Missing key in parameters: {e}", level="error")
         return None
 
     # Get image dimensions
     T, Ly, Lx = memmap_array.shape
-    
-    # Create HDF5 file with data - following bergamo_stitcher pattern
+
     with h5py.File(h5_path, 'w') as f:
-        # Create main dataset with chunking and compression
         dset = f.create_dataset(
             'data',
             data=memmap_array,
-            chunks=True,  # Enable chunking like bergamo_stitcher
+            chunks=True,
             compression='gzip',
             shuffle=True,
             dtype='uint16'
         )
-        
-        # Add spatial calibration metadata
+
+        # ImageJ/Suite2p-style metadata
         dset.attrs['element_size_um'] = [0, pixel_size_um, pixel_size_um]
         dset.attrs['pixel_size_um'] = pixel_size_um
         dset.attrs['spacing'] = pixel_size_um
         dset.attrs['unit'] = 'pixel'
-        
-        # Add acquisition metadata
-        dset.attrs['time_unit'] = 'seconds'
         dset.attrs['frame_rate_hz'] = frame_rate
         dset.attrs['frame_interval'] = 1.0 / frame_rate
-        dset.attrs['n_channels'] = 1  # Assuming single channel for calcium imaging
+        dset.attrs['n_channels'] = 1
         dset.attrs['n_timepoints'] = T
-        dset.attrs['fs'] = frame_rate  # Suite2p field
+        dset.attrs['fs'] = frame_rate
         dset.attrs['n_frames'] = T
         dset.attrs['height_pixels'] = Ly
         dset.attrs['width_pixels'] = Lx
-        
-        # Add physical dimensions
-        physical_width_um = Lx * pixel_size_um
-        physical_height_um = Ly * pixel_size_um
-        dset.attrs['physical_width_um'] = physical_width_um
-        dset.attrs['physical_height_um'] = physical_height_um
-        
-        # Add processing metadata as separate datasets (like bergamo_stitcher)
-        f.create_dataset(
-            'processing_pipeline',
-            data='Analysis_2P',
-            dtype=h5py.special_dtype(vlen=str)
-        )
-        
-        f.create_dataset(
-            'motion_corrected',
-            data='true',
-            dtype=h5py.special_dtype(vlen=str)
-        )
-        
-        f.create_dataset(
-            'data_type',
-            data='calcium_imaging',
-            dtype=h5py.special_dtype(vlen=str)
-        )
-        
-        # Add extraction parameters as metadata string
+        dset.attrs['physical_width_um'] = Lx * pixel_size_um
+        dset.attrs['physical_height_um'] = Ly * pixel_size_um
+
+        # Optional: Save processing details as datasets
+        f.create_dataset('processing_pipeline', data=np.string_('Analysis_2P'))
+        f.create_dataset('motion_corrected', data=np.string_('true'))
+        f.create_dataset('data_type', data=np.string_('calcium_imaging'))
+
+        # Optional: Add extraction parameters as a JSON string
         if 'params_extraction' in parameters:
             import json
             extraction_metadata = json.dumps(parameters['params_extraction'])
-            f.create_dataset(
-                'extraction_parameters',
-                data=extraction_metadata,
-                dtype=h5py.special_dtype(vlen=str)
-            )
-        
+            f.create_dataset('extraction_parameters', data=np.string_(extraction_metadata))
+
         log_and_print(f"HDF5 metadata:")
         log_and_print(f"  - Frame rate: {frame_rate} Hz")
         log_and_print(f"  - Pixel size: {pixel_size_um} μm")
         log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
-        log_and_print(f"  - Physical size: {physical_height_um:.1f} × {physical_width_um:.1f} μm")
-        
-    return Path(h5_path)
+        log_and_print(f"  - Physical size: {Ly * pixel_size_um:.1f} × {Lx * pixel_size_um:.1f} μm")
 
+    return Path(h5_path)
 def save_movie_as_bin(memmap_path, bin_path):
     """
     Save motion-corrected movie as Suite2p-compatible .bin file.
