@@ -399,8 +399,8 @@ def run_motion_correction_workflow(
         regex_pattern: Pattern to match input files
         recompute: Whether to recompute existing results
         create_movies: Whether to create output movies
-        output_format: 'memmap' (default) or 'h5' for final movie storage
-    
+        output_format: 'memmap' (default), 'h5', or 'bin' for final motion-corrected movie storage
+
     Returns:
         dict: Results dictionary with paths and metadata
     """
@@ -471,8 +471,7 @@ def run_motion_correction_workflow(
 
             if output_format == 'h5':
                 h5_path = export_path / 'mcorr_movie.h5'
-                                
-                # Save movie with proper metadata
+                # Save movie as Suite2p, AIND and ImageJ-compatible .h5
                 results['movie_path'] = save_movie_as_h5(
                     memmap_path=movie_path,
                     h5_path=h5_path,
@@ -505,7 +504,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
     parser.add_argument('-r', '--recompute', action='store_true', help='Recompute existing results')
     parser.add_argument('-c', '--create_movies', action='store_true', help='Create output movies')
-    parser.add_argument('-f', '--format', choices=['memmap', 'h5'], default='memmap', help='Output format for final movie')
+    parser.add_argument('-f', '--format', choices=['memmap', 'h5', 'bin'], default='memmap', help='Output format for final movie')
     args = parser.parse_args()
     
     # Convert input paths to Path objects
@@ -514,7 +513,7 @@ if __name__ == "__main__":
     pattern = args.pattern
     recompute = args.recompute
     create_movies = args.create_movies
-    output_format = args.format
+    save_mcorr_movie = args.format
     
     # Load parameters from JSON file if provided
     parameters = {}
@@ -533,5 +532,5 @@ if __name__ == "__main__":
         regex_pattern=pattern,
         recompute=recompute,
         create_movies=create_movies,
-        output_format=output_format
+        save_mcorr_movie=save_mcorr_movie
     )

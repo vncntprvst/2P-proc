@@ -44,8 +44,10 @@ def run_mcorr(
         Pattern to match input files.
     recompute : bool
         Recompute motion correction even if outputs exist.
-    output_format : {"memmap", "h5"}
+    output_format : {"memmap", "h5", "bin", False}
         Format of the saved movie.
+        If not False, use the specified format for saving the motion-corrected movie.
+        Options are 'h5', 'memmap' (default), or 'bin'. 
     """
     log_and_print("Starting motion correction pipeline.")
     export_path = Path(parameters["export_path"])
@@ -59,7 +61,7 @@ def run_mcorr(
             regex_pattern=regex_pattern,
             recompute=recompute,
             create_movies=True,
-            output_format=output_format,
+            save_mcorr_movie=save_mcorr_movie,
         )
 
     batch_path = mcorr_results["batch_path"]

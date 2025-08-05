@@ -46,7 +46,7 @@
             "pw_rigid": true,
             "gSig_filt": null
         },
-        "save_h5": true,
+        "save_mcorr_movie": false,
         "z_motion_correction": {
             "zstack_shift": {
                 "file_name": "zstack_shifted.tif",
