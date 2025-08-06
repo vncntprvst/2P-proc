@@ -61,7 +61,7 @@ def run_mcorr(
             regex_pattern=regex_pattern,
             recompute=recompute,
             create_movies=True,
-            save_mcorr_movie=save_mcorr_movie,
+            output_format=output_format,
         )
 
     batch_path = mcorr_results["batch_path"]

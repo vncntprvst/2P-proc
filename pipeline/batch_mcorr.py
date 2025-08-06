@@ -35,7 +35,7 @@ def run_mcorr(
     params,
     regex_pattern="*_Ch2_*.ome.tif",
     recompute=True,
-    save_mcorr_movie=False,
+    output_format=False,
 ):
     """
     Run motion correction on a single dataset.
@@ -45,11 +45,11 @@ def run_mcorr(
         params (dict): Parameters for motion correction.
         regex_pattern (str): Regular expression pattern to match data files.
         recompute (bool): Whether to recompute existing results.
-        save_mcorr_movie (bool or str): If not False, use the specified format for saving the motion-corrected movie.
+        output_format (bool or str): If not False, use the specified format for saving the motion-corrected movie.
             Options are 'h5', 'memmap' (default), or 'bin'.
     """
     # Validate mcorr format
-    if save_mcorr_movie not in [False, 'h5', 'memmap', 'bin']:
+    if output_format not in [False, 'h5', 'memmap', 'bin']:
         raise ValueError(
             "Invalid save_mcorr_movie format. "
             "Use 'false', 'memmap' (default), 'h5', or 'bin'."
@@ -60,7 +60,8 @@ def run_mcorr(
         params,
         regex_pattern=regex_pattern,
         recompute=recompute,
-        save_mcorr_movie=save_mcorr_movie if save_mcorr_movie else False)
+        output_format=output_format,
+        )
     
     return batch_path
 
@@ -81,19 +82,11 @@ def main():
         help="Recompute the motion correction even if the batch folder exists",
     )
     parser.add_argument(
-        "--save-h5",
-        action="store_true",
-        help="Save final movie as HDF5"
-    )
-    parser.add_argument(
         "--save-binary",
-        action="store_true",
-        help="Save final movie as binary memmap (default is HDF5)",
+        default=False,
+        help="Save final movie as binary file, either 'bin' or 'h5'. Default is False (a binary memmap is used temporarily and removed after cleanup)",
     )
     args = parser.parse_args()
-
-    if args.save_h5 and args.save_binary:
-        raise ValueError("Cannot specify both --save-h5 and --save-binary. Choose one.")
 
     for cfg_path in args.config_file:
         with open(cfg_path) as f:
@@ -142,12 +135,11 @@ def main():
             for p in paths:
                 print(f"    - {p}")
         print("\n")
-
+            
         base_params_mcorr = config.get("params_mcorr", {})
         z_motion_correction = base_params_mcorr.pop("z_motion_correction", None)
         # Remove fields not consumed by the motion-correction pipeline
         base_params_mcorr.pop("method", None)
-        base_params_mcorr.pop("save_mcorr_movie", None)
         base_params_mcorr.pop("save_mcorr_movie", None)
         base_params = {
             "experimenter": config.get("experimenter", {}),
@@ -206,12 +198,13 @@ def main():
             }
             with open(params_path, "w") as f:
                 json.dump(save_params, f, indent=4)
-
+           
             # Get save_mcorr_movie format from the config file
             save_mcorr_movie = config.get("params_mcorr", {}).get("save_mcorr_movie", False)
             # Override with command line argument if specified
-            if args.save_h5 or args.save_binary:
-                save_mcorr_movie = 'h5' if args.save_h5 else 'bin' if args.save_binary else 'memmap'
+            if args.save_binary:
+                print(f"Overriding save_mcorr_movie with command line argument: {args.save_binary}")
+                save_mcorr_movie = args.save_binary
             if save_mcorr_movie in ['h5', 'memmap', 'bin']:
                 logging.info("Save motion-corrected movie as: " + str(save_mcorr_movie))
             
@@ -220,7 +213,7 @@ def main():
                 params,
                 regex_pattern=args.regex_pattern,
                 recompute=args.recompute,
-                save_mcorr_movie=save_mcorr_movie,
+                output_format=save_mcorr_movie,
             )
 
             logging.info("Batch path: " + str(batch_path))
