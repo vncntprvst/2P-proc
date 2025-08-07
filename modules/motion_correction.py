@@ -155,8 +155,12 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
 
-    # Suite2p expects uint16 or float32; uint16 saves space and works if you set ops['data_dtype']='uint16'
-    memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
+    # Suite2p expects float32 for HDF5 files (like Scanbox does)
+    memmap_array = memmap_array.astype(np.float32)
+
+    # Log initial data state
+    log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
+    log_and_print(f"Data range: min={memmap_array.min():.3f}, max={memmap_array.max():.3f}, mean={memmap_array.mean():.3f}")
 
     # Optional: Check shape
     if memmap_array.ndim != 3:
@@ -181,48 +185,80 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     # Get image dimensions
     T, Ly, Lx = memmap_array.shape
 
+    # Ensure C-contiguous memory layout (same as .bin export)
+    if not memmap_array.flags['C_CONTIGUOUS']:
+        log_and_print("Converting to C-contiguous array...")
+        memmap_array = np.ascontiguousarray(memmap_array)
+
+    # Create debugging plots
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Plot original first frame
+    axes[0,0].imshow(memmap_array[0], cmap='gray')
+    axes[0,0].set_title(f'H5 Export: First Frame (min={memmap_array[0].min()}, max={memmap_array[0].max()})')
+    axes[0,0].axis('off')
+    
+    # Plot after C-ordering
+    axes[0,1].imshow(memmap_array[0], cmap='gray')
+    axes[0,1].set_title(f'After C-ordering (C_CONTIGUOUS={memmap_array.flags["C_CONTIGUOUS"]})')
+    axes[0,1].axis('off')
+
     with h5py.File(h5_path, 'w') as f:
+        # Create dataset exactly like Scanbox does - simple, no compression, float32
         dset = f.create_dataset(
             'data',
             data=memmap_array,
-            chunks=True,
-            compression='gzip',
-            shuffle=True,
-            dtype='uint16'
+            dtype='float32'
         )
 
-        # ImageJ/Suite2p-style metadata
-        dset.attrs['element_size_um'] = [0, pixel_size_um, pixel_size_um]
-        dset.attrs['pixel_size_um'] = pixel_size_um
-        dset.attrs['spacing'] = pixel_size_um
-        dset.attrs['unit'] = 'pixel'
-        dset.attrs['frame_rate_hz'] = frame_rate
-        dset.attrs['frame_interval'] = 1.0 / frame_rate
-        dset.attrs['n_channels'] = 1
-        dset.attrs['n_timepoints'] = T
+        # Minimal metadata - don't overdo it like the original version
         dset.attrs['fs'] = frame_rate
         dset.attrs['n_frames'] = T
-        dset.attrs['height_pixels'] = Ly
-        dset.attrs['width_pixels'] = Lx
-        dset.attrs['physical_width_um'] = Lx * pixel_size_um
-        dset.attrs['physical_height_um'] = Ly * pixel_size_um
-
-        # Optional: Save processing details as datasets
-        f.create_dataset('processing_pipeline', data=np.string_('Analysis_2P'))
-        f.create_dataset('motion_corrected', data=np.string_('true'))
-        f.create_dataset('data_type', data=np.string_('calcium_imaging'))
-
-        # Optional: Add extraction parameters as a JSON string
-        if 'params_extraction' in parameters:
-            import json
-            extraction_metadata = json.dumps(parameters['params_extraction'])
-            f.create_dataset('extraction_parameters', data=np.string_(extraction_metadata))
+        dset.attrs['Ly'] = Ly
+        dset.attrs['Lx'] = Lx
 
         log_and_print(f"HDF5 metadata:")
         log_and_print(f"  - Frame rate: {frame_rate} Hz")
         log_and_print(f"  - Pixel size: {pixel_size_um} μm")
         log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
         log_and_print(f"  - Physical size: {Ly * pixel_size_um:.1f} × {Lx * pixel_size_um:.1f} μm")
+
+    # Immediate read-back test
+    log_and_print("Performing HDF5 read-back verification...")
+    try:
+        with h5py.File(h5_path, 'r') as f:
+            test_array = f['data'][:]
+        log_and_print(f"Read-back success: shape={test_array.shape}, dtype={test_array.dtype}")
+        log_and_print(f"Read-back data: min={test_array.min()}, max={test_array.max()}, mean={test_array.mean():.3f}")
+        
+        # Plot read-back comparison
+        axes[1,0].imshow(test_array[0], cmap='gray')
+        axes[1,0].set_title(f'H5 Read-back Test (min={test_array[0].min()}, max={test_array[0].max()})')
+        axes[1,0].axis('off')
+        
+        # Plot difference (should be all zeros)
+        diff = memmap_array[0].astype(np.int32) - test_array[0].astype(np.int32)
+        axes[1,1].imshow(diff, cmap='RdBu', vmin=-10, vmax=10)
+        axes[1,1].set_title(f'Difference (max_abs_diff={np.abs(diff).max()})')
+        axes[1,1].axis('off')
+        
+        if np.all(test_array == 0):
+            log_and_print("ERROR: H5 read-back data is all zeros!", level='error')
+        elif not np.array_equal(memmap_array, test_array):
+            log_and_print("WARNING: H5 read-back data doesn't match original!", level='warning')
+        else:
+            log_and_print("✓ H5 read-back verification passed")
+            
+    except Exception as e:
+        log_and_print(f"H5 read-back test failed: {e}", level='error')
+
+    # Save debugging figure
+    plt.tight_layout()
+    debug_png_path = Path(h5_path).with_suffix('.debug.png')
+    # plt.savefig(debug_png_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    # log_and_print(f"Saved H5 debugging plots to {debug_png_path}")
 
     return Path(h5_path)
 
@@ -238,14 +274,13 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None):
     Returns:
         Path: Path to saved .bin file
     """
-    log_and_print(f"🔥 DEBUG: save_movie_as_bin function called - VERSION 2025-08-07")
     log_and_print(f"Saving final movie to {bin_path}")
 
     # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
     
     # Log initial data state
-    log_and_print(f"🔥 DEBUG: Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
+    log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
     log_and_print(f"Data range: min={memmap_array.min():.3f}, max={memmap_array.max():.3f}, mean={memmap_array.mean():.3f}")
     
     # Check for empty data
@@ -338,9 +373,9 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None):
     # Save debugging figure
     plt.tight_layout()
     debug_png_path = Path(bin_path).with_suffix('.debug.png')
-    plt.savefig(debug_png_path, dpi=150, bbox_inches='tight')
+    # plt.savefig(debug_png_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    log_and_print(f"Saved debugging plots to {debug_png_path}")
+    # log_and_print(f"Saved debugging plots to {debug_png_path}")
 
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
     return Path(bin_path)
@@ -488,8 +523,6 @@ def run_motion_correction_workflow(
         dict: Results dictionary with paths and metadata
     """
     
-    log_and_print(f"🔥 DEBUG: run_motion_correction_workflow called with output_format='{output_format}'")
-    
     results = {
         'batch_path': None,
         'movie_path': None,
@@ -497,88 +530,87 @@ def run_motion_correction_workflow(
         'success': False
     }
     
-    with memory_manager("motion_correction"):
-        try:
-            # Get motion correction parameters
-            parameters_mcorr = parameters['params_mcorr']
+    try:
+        # Get motion correction parameters
+        parameters_mcorr = parameters['params_mcorr']
+        
+        # Run the motion correction 
+        batch_path, index, movie_path = run_mcorr(
+            data_path, export_path, parameters_mcorr, regex_pattern, recompute
+        )
+        
+        results['batch_path'] = batch_path
+        results['movie_path'] = movie_path
+        
+        # Clip the motion corrected movie to uint16 range
+        if not recompute and movie_path.exists():
+            log_and_print(f"Clipped motion corrected movie already exists at {movie_path}.")
+        else:
+            log_and_print("Optimizing motion corrected movie bit depth...")
+            overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
+        
+        # Z-motion correction (optional)
+        if 'zstack_path' in parameters and 'z_motion_correction' in parameters.get('params_mcorr', {}):
+            log_and_print("Starting z-motion correction...")
+            time_z0 = time.time()
             
-            # Run the motion correction 
-            batch_path, index, movie_path = run_mcorr(
-                data_path, export_path, parameters_mcorr, regex_pattern, recompute
+            zcorr_movie_path, _, _ = cz.z_motion(
+                movie_path, parameters
             )
             
-            results['batch_path'] = batch_path
-            results['movie_path'] = movie_path
-            
-            # Clip the motion corrected movie to uint16 range
-            if not recompute and movie_path.exists():
-                log_and_print(f"Clipped motion corrected movie already exists at {movie_path}.")
+            # Save corrected movie, overwriting the original
+            if zcorr_movie_path is not None:
+                overwrite_movie_memmap(zcorr_movie_path, movie_path, clip=True, 
+                                        movie_type='zcorr', save_original=False, remove_input=True)
+                results['z_corrected'] = True
             else:
-                log_and_print("Optimizing motion corrected movie bit depth...")
-                overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
+                results['z_corrected'] = False
             
-            # Z-motion correction (optional)
-            if 'zstack_path' in parameters and 'z_motion_correction' in parameters.get('params_mcorr', {}):
-                log_and_print("Starting z-motion correction...")
-                time_z0 = time.time()
-                
-                zcorr_movie_path, _, _ = cz.z_motion(
-                    movie_path, parameters
-                )
-                
-                # Save corrected movie, overwriting the original
-                if zcorr_movie_path is not None:
-                    overwrite_movie_memmap(zcorr_movie_path, movie_path, clip=True, 
-                                         movie_type='zcorr', save_original=False, remove_input=True)
-                    results['z_corrected'] = True
-                else:
-                    results['z_corrected'] = False
-                
-                formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time_z0))
-                if zcorr_movie_path is not None:
-                    log_and_print(f"Z-motion correction completed in {formatted_time}.")
-                else:
-                    log_and_print(f"Z-motion computation completed in {formatted_time}.")
+            formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time_z0))
+            if zcorr_movie_path is not None:
+                log_and_print(f"Z-motion correction completed in {formatted_time}.")
+            else:
+                log_and_print(f"Z-motion computation completed in {formatted_time}.")
+        
+        # Create output movies (optional)
+        if create_movies:
+            log_and_print("Creating output movies...")
+                            
+            # Save as BigTIFF file  
+            create_mcorr_movie(movie_path, export_path, None, None, 
+                                        format='tiff', diff_corr=False)
             
-            # Create output movies (optional)
-            if create_movies:
-                log_and_print("Creating output movies...")
-                                
-                # Save as BigTIFF file  
-                create_mcorr_movie(movie_path, export_path, None, None, 
-                                          format='tiff', diff_corr=False)
-                
-                # Create comparison movie (first 240 frames)
-                create_mcorr_movie(mcorr_path=movie_path, export_path=export_path, 
-                                          batch=batch_path, index=index, excerpt=240)
-            
-            results['success'] = True
+            # Create comparison movie (first 240 frames)
+            create_mcorr_movie(mcorr_path=movie_path, export_path=export_path, 
+                                        batch=batch_path, index=index, excerpt=240)
+        
+        results['success'] = True
 
-            if output_format == 'h5':
-                print("Saving motion corrected movie as .h5 file...")
-                h5_path = export_path / 'mcorr_movie.h5'
-                # Save movie as Suite2p, AIND and ImageJ-compatible .h5
-                results['movie_path'] = save_movie_as_h5(
-                    memmap_path=movie_path,
-                    h5_path=h5_path,
-                    parameters=parameters
-                )
-            elif output_format == 'bin':
-                log_and_print("🔥 DEBUG: Saving motion corrected movie as .bin file...")
-                bin_path = export_path / 'mcorr_movie.bin'
-                # Save movie as Suite2p-compatible .bin
-                results['movie_path'] = save_movie_as_bin(
-                    memmap_path=movie_path,
-                    bin_path=bin_path,
-                    parameters=parameters
-                )
+        if output_format == 'h5':
+            print("Saving motion corrected movie as .h5 file...")
+            h5_path = export_path / 'mcorr_movie.h5'
+            # Save movie as Suite2p, AIND and ImageJ-compatible .h5
+            results['movie_path'] = save_movie_as_h5(
+                memmap_path=movie_path,
+                h5_path=h5_path,
+                parameters=parameters
+            )
+        elif output_format == 'bin':
+            log_and_print("Saving motion corrected movie as .bin file...")
+            bin_path = export_path / 'mcorr_movie.bin'
+            # Save movie as Suite2p-compatible .bin
+            results['movie_path'] = save_movie_as_bin(
+                memmap_path=movie_path,
+                bin_path=bin_path,
+                parameters=parameters
+            )
 
-            log_and_print("Motion correction workflow completed successfully.")
-            
-        except Exception as e:
-            log_and_print(f"Motion correction workflow failed: {e}", level='error')
-            results['error'] = str(e)
-            raise
+        log_and_print("Motion correction workflow completed successfully.")
+        
+    except Exception as e:
+        log_and_print(f"Motion correction workflow failed: {e}", level='error')
+        results['error'] = str(e)
+        raise
     
     return results
 
