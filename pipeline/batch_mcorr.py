@@ -136,7 +136,7 @@ def main():
                 print(f"    - {p}")
         print("\n")
             
-        base_params_mcorr = config.get("params_mcorr", {})
+        base_params_mcorr = config.get("params_mcorr", {}).copy()
         z_motion_correction = base_params_mcorr.pop("z_motion_correction", None)
         # Remove fields not consumed by the motion-correction pipeline
         base_params_mcorr.pop("method", None)
@@ -200,13 +200,19 @@ def main():
                 json.dump(save_params, f, indent=4)
            
             # Get save_mcorr_movie format from the config file
-            save_mcorr_movie = config.get("params_mcorr", {}).get("save_mcorr_movie", False)
+            save_mcorr_movie = config.get("params_mcorr", {}).get("save_mcorr_movie", "memmap")
+            print(f"  Save motion-corrected movie format from config: {save_mcorr_movie}")
             # Override with command line argument if specified
             if args.save_binary:
                 print(f"Overriding save_mcorr_movie with command line argument: {args.save_binary}")
                 save_mcorr_movie = args.save_binary
-            if save_mcorr_movie in ['h5', 'memmap', 'bin']:
-                logging.info("Save motion-corrected movie as: " + str(save_mcorr_movie))
+            
+            # Ensure valid format
+            if save_mcorr_movie not in ['h5', 'memmap', 'bin']:
+                print(f"Invalid save_mcorr_movie format: {save_mcorr_movie}. Using 'memmap'")
+                save_mcorr_movie = 'memmap'
+                
+            logging.info("Save motion-corrected movie as: " + str(save_mcorr_movie))
             
             batch_path = run_mcorr(
                 data_path,

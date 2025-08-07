@@ -238,13 +238,14 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None):
     Returns:
         Path: Path to saved .bin file
     """
+    log_and_print(f"🔥 DEBUG: save_movie_as_bin function called - VERSION 2025-08-07")
     log_and_print(f"Saving final movie to {bin_path}")
 
     # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
     
     # Log initial data state
-    log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
+    log_and_print(f"🔥 DEBUG: Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
     log_and_print(f"Data range: min={memmap_array.min():.3f}, max={memmap_array.max():.3f}, mean={memmap_array.mean():.3f}")
     
     # Check for empty data
@@ -487,6 +488,8 @@ def run_motion_correction_workflow(
         dict: Results dictionary with paths and metadata
     """
     
+    log_and_print(f"🔥 DEBUG: run_motion_correction_workflow called with output_format='{output_format}'")
+    
     results = {
         'batch_path': None,
         'movie_path': None,
@@ -561,12 +564,13 @@ def run_motion_correction_workflow(
                     parameters=parameters
                 )
             elif output_format == 'bin':
-                print("Saving motion corrected movie as .bin file...")
+                log_and_print("🔥 DEBUG: Saving motion corrected movie as .bin file...")
                 bin_path = export_path / 'mcorr_movie.bin'
                 # Save movie as Suite2p-compatible .bin
                 results['movie_path'] = save_movie_as_bin(
                     memmap_path=movie_path,
-                    bin_path=bin_path
+                    bin_path=bin_path,
+                    parameters=parameters
                 )
 
             log_and_print("Motion correction workflow completed successfully.")
