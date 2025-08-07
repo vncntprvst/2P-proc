@@ -23,7 +23,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import sys
 import time
 from pathlib import Path
 import numpy as np
@@ -226,14 +225,16 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
         log_and_print(f"  - Physical size: {Ly * pixel_size_um:.1f} × {Lx * pixel_size_um:.1f} μm")
 
     return Path(h5_path)
-def save_movie_as_bin(memmap_path, bin_path):
+
+def save_movie_as_bin(memmap_path, bin_path, parameters=None):
     """
     Save motion-corrected movie as Suite2p-compatible .bin file.
-
+    
     Args:
         memmap_path: Path to the memmap movie file
         bin_path: Output path for the .bin file
-
+        parameters: Parameter dictionary (optional, for metadata)
+    
     Returns:
         Path: Path to saved .bin file
     """
@@ -241,26 +242,107 @@ def save_movie_as_bin(memmap_path, bin_path):
 
     # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
+    
+    # Log initial data state
+    log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
+    log_and_print(f"Data range: min={memmap_array.min():.3f}, max={memmap_array.max():.3f}, mean={memmap_array.mean():.3f}")
+    
+    # Check for empty data
+    if np.all(memmap_array == 0):
+        log_and_print("ERROR: Input memmap data is all zeros!", level='error')
+        return None
 
-    # Clip and convert to uint16 for Suite2p (or use .astype(np.float32) if desired)
+    # Clip and convert to uint16
     memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
     # Note that Suite2p expects float32 data for .bin files by default, 
     # but the data type can be specified in the ops dictionary: ops['data_dtype'] = 'uint16'.
     # We use uint16 here to save space and because the data does not use bit depth beyond 16 bits.
 
-    # Optional: Check shape
-    if memmap_array.ndim != 3:
-        raise ValueError("Expected memmap array shape (frames, Ly, Lx), got: {}".format(memmap_array.shape))
+    log_and_print(f"After uint16 conversion: min={memmap_array.min()}, max={memmap_array.max()}, mean={memmap_array.mean():.3f}")
     
-    # Ensure C-order (row-major)
-    memmap_array = np.ascontiguousarray(memmap_array)
+    # Validate shape
+    if memmap_array.ndim != 3:
+        raise ValueError(f"Expected memmap array shape (frames, Ly, Lx), got: {memmap_array.shape}")
+    
+    nframes, Ly, Lx = memmap_array.shape
 
-    # Save as binary file
+    # Create debugging plots
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Plot original first frame
+    axes[0,0].imshow(memmap_array[0], cmap='gray')
+    axes[0,0].set_title(f'First Frame (min={memmap_array[0].min()}, max={memmap_array[0].max()})')
+    axes[0,0].axis('off')
+    
+    # Ensure C-contiguous memory layout (required for Suite2p)
+    if not memmap_array.flags['C_CONTIGUOUS']:
+        log_and_print("Converting to C-contiguous array...")
+        memmap_array = np.ascontiguousarray(memmap_array)
+    
+    # Plot after C-ordering
+    axes[0,1].imshow(memmap_array[0], cmap='gray')
+    axes[0,1].set_title(f'After C-ordering (C_CONTIGUOUS={memmap_array.flags["C_CONTIGUOUS"]})')
+    axes[0,1].axis('off')
+    
+    # Log final array properties
+    log_and_print(f"Final array properties:")
+    log_and_print(f"  Shape: {memmap_array.shape}")
+    log_and_print(f"  Dtype: {memmap_array.dtype}")
+    log_and_print(f"  C-contiguous: {memmap_array.flags['C_CONTIGUOUS']}")
+    log_and_print(f"  Memory usage: {memmap_array.nbytes / (1024**3):.2f} GB")
+
+    # Save binary file
+    log_and_print(f"Writing {memmap_array.nbytes} bytes to {bin_path}...")
     with open(bin_path, 'wb') as f:
         memmap_array.tofile(f)
 
-    log_and_print(f"Saved .bin movie to {bin_path}")
-    return bin_path
+    # Verify file size
+    file_size = Path(bin_path).stat().st_size
+    expected_size = nframes * Ly * Lx * 2  # 2 bytes per uint16
+    log_and_print(f"File verification: written={file_size} bytes, expected={expected_size} bytes")
+    
+    if file_size != expected_size:
+        log_and_print(f"ERROR: File size mismatch!", level='error')
+        return None
+
+    # Immediate read-back test
+    log_and_print("Performing read-back verification...")
+    try:
+        test_array = np.fromfile(bin_path, dtype=np.uint16).reshape(nframes, Ly, Lx)
+        log_and_print(f"Read-back success: shape={test_array.shape}, dtype={test_array.dtype}")
+        log_and_print(f"Read-back data: min={test_array.min()}, max={test_array.max()}, mean={test_array.mean():.3f}")
+        
+        # Plot read-back comparison
+        axes[1,0].imshow(test_array[0], cmap='gray')
+        axes[1,0].set_title(f'Read-back Test (min={test_array[0].min()}, max={test_array[0].max()})')
+        axes[1,0].axis('off')
+        
+        # Plot difference (should be all zeros)
+        diff = memmap_array[0].astype(np.int32) - test_array[0].astype(np.int32)
+        axes[1,1].imshow(diff, cmap='RdBu', vmin=-10, vmax=10)
+        axes[1,1].set_title(f'Difference (max_abs_diff={np.abs(diff).max()})')
+        axes[1,1].axis('off')
+        
+        if np.all(test_array == 0):
+            log_and_print("ERROR: Read-back data is all zeros!", level='error')
+        elif not np.array_equal(memmap_array, test_array):
+            log_and_print("WARNING: Read-back data doesn't match original!", level='warning')
+        else:
+            log_and_print("✓ Read-back verification passed")
+            
+    except Exception as e:
+        log_and_print(f"Read-back test failed: {e}", level='error')
+
+    # Save debugging figure
+    plt.tight_layout()
+    debug_png_path = Path(bin_path).with_suffix('.debug.png')
+    plt.savefig(debug_png_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    log_and_print(f"Saved debugging plots to {debug_png_path}")
+
+    log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
+    return Path(bin_path)
 
 def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True):
     """
@@ -470,6 +552,7 @@ def run_motion_correction_workflow(
             results['success'] = True
 
             if output_format == 'h5':
+                print("Saving motion corrected movie as .h5 file...")
                 h5_path = export_path / 'mcorr_movie.h5'
                 # Save movie as Suite2p, AIND and ImageJ-compatible .h5
                 results['movie_path'] = save_movie_as_h5(
@@ -478,6 +561,7 @@ def run_motion_correction_workflow(
                     parameters=parameters
                 )
             elif output_format == 'bin':
+                print("Saving motion corrected movie as .bin file...")
                 bin_path = export_path / 'mcorr_movie.bin'
                 # Save movie as Suite2p-compatible .bin
                 results['movie_path'] = save_movie_as_bin(
