@@ -21,6 +21,7 @@ rm -f context/LICENSE.md
 
 # New versions are created with each release though GitHub Actions. 
 # Previous versions are kept for reference. 
+# v0.5.1: h5 and bin export + Suite2P extraction
 # v0.5.0: Updated to use the latest Mesmerize base image (overhauled the Dockerfile and reduced image size 3x), and added the modularized Analysis 2P pipeline. 
 # v0.3.+ ... v0.4.0: Generated through GH CI/CD pipeline.
 # v0.3.0: Getting close to v1.0. Matlab pipeline (with intregated DLC and rastermap calls) working locally and on remote server.    
