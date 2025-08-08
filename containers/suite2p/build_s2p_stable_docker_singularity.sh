@@ -57,3 +57,7 @@ if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
 else
     echo "HPPC_IMAGE_REPO variable not set. Not copying to HPPC."
 fi
+
+# Test the Singularity image
+# echo "Testing Singularity image."
+# apptainer exec suite2p_latest.sif suite2p --version
