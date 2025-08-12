@@ -158,9 +158,11 @@ def clip_range(array, clip_range='uint16'):
     Clip the values of an array to a specific range.
     """
     if clip_range == 'uint16':
-        return np.clip(array, 0, 2**16-1)
+        return np.clip(array, 0, 2**16 - 1)
     elif clip_range == 'uint8':
-        return np.clip(array, 0, 2**8-1)
+        return np.clip(array, 0, 2**8 - 1)
+    elif clip_range == 'int16':
+        return np.clip(array, -2**15, 2**15 - 1)
     else:
         return array
 

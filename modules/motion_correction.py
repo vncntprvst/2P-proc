@@ -299,8 +299,8 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     # Load the memmap movie as (frames, Ly, Lx)
     memmap_array = load_mmap_movie(memmap_path)
 
-    # Suite2p expects float32 for HDF5 files (like Scanbox does)
-    memmap_array = memmap_array.astype(np.float32)
+    # Convert to int16 for Suite2p compatibility
+    memmap_array = clip_range(memmap_array, 'int16').astype(np.int16)
 
     # Log initial data state
     log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
@@ -349,11 +349,11 @@ def save_movie_as_h5(memmap_path, h5_path, parameters):
     axes[0,1].axis('off')
 
     with h5py.File(h5_path, 'w') as f:
-        # Create dataset exactly like Scanbox does - simple, no compression, float32
+        # Create dataset compatible with Suite2p - simple, no compression, int16
         dset = f.create_dataset(
             'data',
             data=memmap_array,
-            dtype='float32'
+            dtype='int16'
         )
 
         # Minimal metadata - don't overdo it like the original version
@@ -432,13 +432,10 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None):
         log_and_print("ERROR: Input memmap data is all zeros!", level='error')
         return None
 
-    # Clip and convert to uint16
-    memmap_array = clip_range(memmap_array, 'uint16').astype(np.uint16)
-    # Note that Suite2p expects float32 data for .bin files by default, 
-    # but the data type can be specified in the ops dictionary: ops['data_dtype'] = 'uint16'.
-    # We use uint16 here to save space and because the data does not use bit depth beyond 16 bits.
+    # Clip and convert to int16 for Suite2p compatibility
+    memmap_array = clip_range(memmap_array, 'int16').astype(np.int16)
 
-    log_and_print(f"After uint16 conversion: min={memmap_array.min()}, max={memmap_array.max()}, mean={memmap_array.mean():.3f}")
+    log_and_print(f"After int16 conversion: min={memmap_array.min()}, max={memmap_array.max()}, mean={memmap_array.mean():.3f}")
     
     # Validate shape
     if memmap_array.ndim != 3:
@@ -479,7 +476,7 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None):
 
     # Verify file size
     file_size = Path(bin_path).stat().st_size
-    expected_size = nframes * Ly * Lx * 2  # 2 bytes per uint16
+    expected_size = nframes * Ly * Lx * 2  # 2 bytes per int16
     log_and_print(f"File verification: written={file_size} bytes, expected={expected_size} bytes")
     
     if file_size != expected_size:
@@ -489,7 +486,7 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None):
     # Immediate read-back test
     log_and_print("Performing read-back verification...")
     try:
-        test_array = np.fromfile(bin_path, dtype=np.uint16).reshape(nframes, Ly, Lx)
+        test_array = np.fromfile(bin_path, dtype=np.int16).reshape(nframes, Ly, Lx)
         log_and_print(f"Read-back success: shape={test_array.shape}, dtype={test_array.dtype}")
         log_and_print(f"Read-back data: min={test_array.min()}, max={test_array.max()}, mean={test_array.mean():.3f}")
         
@@ -677,21 +674,23 @@ def run_motion_correction_workflow(
     try:
         # Get motion correction parameters
         parameters_mcorr = parameters['params_mcorr']
-        
-        # Run the motion correction 
+
+        # Run the motion correction
         batch_path, index, movie_path = run_mcorr(
             data_path, export_path, parameters_mcorr, regex_pattern, recompute
         )
-        
+
         results['batch_path'] = batch_path
         results['movie_path'] = movie_path
-        
-        # Clip the motion corrected movie to uint16 range
+
+        # Determine whether to clip to uint16 range
+        clip_movie = output_format not in ('h5', 'bin')
+
         if not recompute and movie_path.exists():
-            log_and_print(f"Clipped motion corrected movie already exists at {movie_path}.")
+            log_and_print(f"Motion corrected movie already exists at {movie_path}.")
         else:
             log_and_print("Optimizing motion corrected movie bit depth...")
-            overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
+            overwrite_movie_memmap(movie_path, movie_path, clip=clip_movie, movie_type='mcorr')
         
         # Z-motion correction (optional)
         if 'zstack_path' in parameters and 'z_motion_correction' in parameters.get('params_mcorr', {}):
@@ -704,8 +703,14 @@ def run_motion_correction_workflow(
             
             # Save corrected movie, overwriting the original
             if zcorr_movie_path is not None:
-                overwrite_movie_memmap(zcorr_movie_path, movie_path, clip=True, 
-                                        movie_type='zcorr', save_original=False, remove_input=True)
+                overwrite_movie_memmap(
+                    zcorr_movie_path,
+                    movie_path,
+                    clip=clip_movie,
+                    movie_type='zcorr',
+                    save_original=False,
+                    remove_input=True,
+                )
                 results['z_corrected'] = True
             else:
                 results['z_corrected'] = False
