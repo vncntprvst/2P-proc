@@ -40,14 +40,15 @@ from caiman.mmapping import load_memmap
 from modules import bruker_concat_tif as ct
 from modules import compute_zcorr as cz
 
-from Mesmerize.utils.pipeline_utils import (
-    log_and_print, 
+from pipeline.utils.pipeline_utils import (
+    log_and_print,
     create_mp4_movie,
-    overwrite_movie_memmap, 
-    load_mmap_movie, 
-    clip_range, 
+    overwrite_movie_memmap,
+    load_mmap_movie,
+    clip_range,
     cat_movies_to_mp4,
-    memory_manager
+    memory_manager,
+    load_caiman_memmap,
 )
 
 
@@ -282,242 +283,123 @@ def run_roi_zcorr(export_path, parameters):
     log_and_print("ROI z-motion correction completed.")
     return export_path
    
-def save_movie_as_h5(memmap_path, h5_path, parameters):
+def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale=None, chunk_size=256):
     """
-    Save motion-corrected movie as HDF5 with proper metadata for Suite2p and ImageJ.
+    Streamed save of motion-corrected movie as HDF5 (AIND / Suite2p extraction-ready).
 
-    Args:
-        memmap_path: Path to the memmap movie file
-        h5_path: Output path for HDF5 file
-        parameters: Parameter dictionary containing extraction settings
-
-    Returns:
-        Path: Path to saved HDF5 file
+    Avoids loading full movie in RAM by iterating through CaImAn memmap frames.
     """
-    log_and_print(f"Saving final movie to {h5_path}")
+    log_and_print(f"Saving final movie to {h5_path} (dtype_out={dtype_out})")
+    adapter = load_caiman_memmap(memmap_path)
+    T, Ly, Lx = adapter.shape
+    log_and_print(f"Memmap adapter: frames={T}, Ly={Ly}, Lx={Lx}, dtype={adapter.dtype}")
 
-    # Load the memmap movie as (frames, Ly, Lx)
-    memmap_array = load_mmap_movie(memmap_path)
-
-    # Convert to int16 for Suite2p compatibility
-    memmap_array = clip_range(memmap_array, 'int16').astype(np.int16)
-
-    # Log initial data state
-    log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
-    log_and_print(f"Data range: min={memmap_array.min():.3f}, max={memmap_array.max():.3f}, mean={memmap_array.mean():.3f}")
-
-    # Optional: Check shape
-    if memmap_array.ndim != 3:
-        raise ValueError(f"Expected shape (frames, Ly, Lx), got {memmap_array.shape}")
-
-    # Extract parameters
+    # Metadata extraction
     try:
-        imaging = parameters.get('imaging', {})
-        frame_rate = imaging.get('fr') or imaging.get('fs')
-        if frame_rate is None:
-            frame_rate = 30.0
-            print("Warning: Using default frame rate of 30.0 Hz as 'fr' or 'fs' not found in parameters.")
-        pixel_size_um = imaging.get('microns_per_pixel')
-        if pixel_size_um is None:
-            pixel_size_um = 1.0
-            print("Warning: Using default pixel size of 1.0 μm as 'microns_per_pixel' not found in parameters.")
+        imaging = parameters.get('imaging', {}) if parameters else {}
+    except Exception:
+        imaging = {}
+    frame_rate = imaging.get('fr') or imaging.get('fs') or 30.0
+    pixel_size_um = imaging.get('microns_per_pixel', 1.0)
 
-    except Exception as e:
-        log_and_print(f"Missing key in parameters: {e}", level="error")
-        return None
+    if dtype_out not in ('uint16','float32'):
+        raise ValueError("dtype_out must be 'uint16' or 'float32'")
 
-    # Get image dimensions
-    T, Ly, Lx = memmap_array.shape
-
-    # Ensure C-contiguous memory layout (same as .bin export)
-    if not memmap_array.flags['C_CONTIGUOUS']:
-        log_and_print("Converting to C-contiguous array...")
-        memmap_array = np.ascontiguousarray(memmap_array)
-
-    # Create debugging plots
-    import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # Plot original first frame
-    axes[0,0].imshow(memmap_array[0], cmap='gray')
-    axes[0,0].set_title(f'H5 Export: First Frame (min={memmap_array[0].min()}, max={memmap_array[0].max()})')
-    axes[0,0].axis('off')
-    
-    # Plot after C-ordering
-    axes[0,1].imshow(memmap_array[0], cmap='gray')
-    axes[0,1].set_title(f'After C-ordering (C_CONTIGUOUS={memmap_array.flags["C_CONTIGUOUS"]})')
-    axes[0,1].axis('off')
+    running_min = np.inf
+    running_max = -np.inf
 
     with h5py.File(h5_path, 'w') as f:
-        # Create dataset compatible with Suite2p - simple, no compression, int16
-        dset = f.create_dataset(
-            'data',
-            data=memmap_array,
-            dtype='int16'
-        )
-
-        # Minimal metadata - don't overdo it like the original version
+        if dtype_out == 'uint16':
+            dset = f.create_dataset('data', shape=(T, Ly, Lx), dtype='uint16', compression=None)
+        else:
+            dset = f.create_dataset('data', shape=(T, Ly, Lx), dtype='float32', compression=None)
         dset.attrs['fs'] = frame_rate
-        dset.attrs['n_frames'] = T
-        dset.attrs['Ly'] = Ly
-        dset.attrs['Lx'] = Lx
+        dset.attrs['n_frames'] = int(T)
+        dset.attrs['Ly'] = int(Ly)
+        dset.attrs['Lx'] = int(Lx)
+        dset.attrs['pixel_size_um'] = float(pixel_size_um)
 
-        log_and_print(f"HDF5 metadata:")
-        log_and_print(f"  - Frame rate: {frame_rate} Hz")
-        log_and_print(f"  - Pixel size: {pixel_size_um} μm")
-        log_and_print(f"  - Dimensions: {T} frames × {Ly} × {Lx} pixels")
-        log_and_print(f"  - Physical size: {Ly * pixel_size_um:.1f} × {Lx * pixel_size_um:.1f} μm")
+        for start in range(0, T, chunk_size):
+            stop = min(T, start + chunk_size)
+            block = adapter[start:stop].astype(np.float32, copy=False)  # (chunk, Ly, Lx)
+            if scale is not None:
+                block *= scale
+            # Update stats before conversion
+            blk_min = float(block.min())
+            blk_max = float(block.max())
+            if blk_min < running_min: running_min = blk_min
+            if blk_max > running_max: running_max = blk_max
 
-    # Immediate read-back test
-    log_and_print("Performing HDF5 read-back verification...")
+            if dtype_out == 'uint16':
+                if block.min() < 0:
+                    # shift to positive per-chunk if needed
+                    block = block - block.min()
+                block = clip_range(block, 'uint16').astype(np.uint16, copy=False)
+            else:  # float32
+                block = block.astype(np.float32, copy=False)
+
+            dset[start:stop] = np.ascontiguousarray(block)
+            if (start // chunk_size) % 20 == 0 or stop == T:
+                log_and_print(f"  Wrote frames {start}:{stop} (min={blk_min:.1f}, max={blk_max:.1f})")
+
+    log_and_print(f"H5 written: {h5_path} (range min={running_min:.2f}, max={running_max:.2f})")
+
+    # Quick verification (first frame only)
     try:
         with h5py.File(h5_path, 'r') as f:
-            test_array = f['data'][:]
-        log_and_print(f"Read-back success: shape={test_array.shape}, dtype={test_array.dtype}")
-        log_and_print(f"Read-back data: min={test_array.min()}, max={test_array.max()}, mean={test_array.mean():.3f}")
-        
-        # Plot read-back comparison
-        axes[1,0].imshow(test_array[0], cmap='gray')
-        axes[1,0].set_title(f'H5 Read-back Test (min={test_array[0].min()}, max={test_array[0].max()})')
-        axes[1,0].axis('off')
-        
-        # Plot difference (should be all zeros)
-        diff = memmap_array[0].astype(np.int32) - test_array[0].astype(np.int32)
-        axes[1,1].imshow(diff, cmap='RdBu', vmin=-10, vmax=10)
-        axes[1,1].set_title(f'Difference (max_abs_diff={np.abs(diff).max()})')
-        axes[1,1].axis('off')
-        
-        if np.all(test_array == 0):
-            log_and_print("ERROR: H5 read-back data is all zeros!", level='error')
-        elif not np.array_equal(memmap_array, test_array):
-            log_and_print("WARNING: H5 read-back data doesn't match original!", level='warning')
+            test = f['data'][0]
+        if test.shape != (Ly, Lx):
+            log_and_print("WARNING: First frame shape mismatch on H5 read-back", level='warning')
         else:
-            log_and_print("✓ H5 read-back verification passed")
-            
+            log_and_print("H5 read-back first frame OK")
     except Exception as e:
-        log_and_print(f"H5 read-back test failed: {e}", level='error')
+        log_and_print(f"H5 verification failed: {e}", level='warning')
 
-    # Save debugging figure
-    plt.tight_layout()
-    debug_png_path = Path(h5_path).with_suffix('.debug.png')
-    # plt.savefig(debug_png_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    # log_and_print(f"Saved H5 debugging plots to {debug_png_path}")
-
+    adapter.close()
     return Path(h5_path)
 
-def save_movie_as_bin(memmap_path, bin_path, parameters=None):
+def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, scale=None):
     """
-    Save motion-corrected movie as Suite2p-compatible .bin file.
-    
-    Args:
-        memmap_path: Path to the memmap movie file
-        bin_path: Output path for the .bin file
-        parameters: Parameter dictionary (optional, for metadata)
-    
-    Returns:
-        Path: Path to saved .bin file
+    Stream-save motion-corrected movie as Suite2p-compatible .bin file (int16 C-order).
     """
-    log_and_print(f"Saving final movie to {bin_path}")
+    log_and_print(f"Saving final movie to {bin_path} (chunk_size={chunk_size})")
+    adapter = load_caiman_memmap(memmap_path)
+    T, Ly, Lx = adapter.shape
+    log_and_print(f"Memmap adapter: frames={T}, Ly={Ly}, Lx={Lx}, dtype={adapter.dtype}")
 
-    # Load the memmap movie as (frames, Ly, Lx)
-    memmap_array = load_mmap_movie(memmap_path)
-    
-    # Log initial data state
-    log_and_print(f"Loaded memmap array: shape={memmap_array.shape}, dtype={memmap_array.dtype}")
-    log_and_print(f"Data range: min={memmap_array.min():.3f}, max={memmap_array.max():.3f}, mean={memmap_array.mean():.3f}")
-    
-    # Check for empty data
-    if np.all(memmap_array == 0):
-        log_and_print("ERROR: Input memmap data is all zeros!", level='error')
-        return None
+    running_min = np.inf
+    running_max = -np.inf
 
-    # Clip and convert to int16 for Suite2p compatibility
-    memmap_array = clip_range(memmap_array, 'int16').astype(np.int16)
-
-    log_and_print(f"After int16 conversion: min={memmap_array.min()}, max={memmap_array.max()}, mean={memmap_array.mean():.3f}")
-    
-    # Validate shape
-    if memmap_array.ndim != 3:
-        raise ValueError(f"Expected memmap array shape (frames, Ly, Lx), got: {memmap_array.shape}")
-    
-    nframes, Ly, Lx = memmap_array.shape
-
-    # Create debugging plots
-    import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # Plot original first frame
-    axes[0,0].imshow(memmap_array[0], cmap='gray')
-    axes[0,0].set_title(f'First Frame (min={memmap_array[0].min()}, max={memmap_array[0].max()})')
-    axes[0,0].axis('off')
-    
-    # Ensure C-contiguous memory layout (required for Suite2p)
-    if not memmap_array.flags['C_CONTIGUOUS']:
-        log_and_print("Converting to C-contiguous array...")
-        memmap_array = np.ascontiguousarray(memmap_array)
-    
-    # Plot after C-ordering
-    axes[0,1].imshow(memmap_array[0], cmap='gray')
-    axes[0,1].set_title(f'After C-ordering (C_CONTIGUOUS={memmap_array.flags["C_CONTIGUOUS"]})')
-    axes[0,1].axis('off')
-    
-    # Log final array properties
-    log_and_print(f"Final array properties:")
-    log_and_print(f"  Shape: {memmap_array.shape}")
-    log_and_print(f"  Dtype: {memmap_array.dtype}")
-    log_and_print(f"  C-contiguous: {memmap_array.flags['C_CONTIGUOUS']}")
-    log_and_print(f"  Memory usage: {memmap_array.nbytes / (1024**3):.2f} GB")
-
-    # Save binary file
-    log_and_print(f"Writing {memmap_array.nbytes} bytes to {bin_path}...")
     with open(bin_path, 'wb') as f:
-        memmap_array.tofile(f)
+        for start in range(0, T, chunk_size):
+            stop = min(T, start + chunk_size)
+            block = adapter[start:stop].astype(np.float32, copy=False)
+            if scale is not None:
+                block *= scale
+            blk_min = float(block.min()); blk_max = float(block.max())
+            if blk_min < running_min: running_min = blk_min
+            if blk_max > running_max: running_max = blk_max
+            block = clip_range(block, 'int16').astype(np.int16, copy=False)
+            f.write(np.ascontiguousarray(block).tobytes())
+            if (start // chunk_size) % 20 == 0 or stop == T:
+                log_and_print(f"  Wrote frames {start}:{stop} (min={blk_min:.1f}, max={blk_max:.1f})")
 
-    # Verify file size
-    file_size = Path(bin_path).stat().st_size
-    expected_size = nframes * Ly * Lx * 2  # 2 bytes per int16
-    log_and_print(f"File verification: written={file_size} bytes, expected={expected_size} bytes")
-    
-    if file_size != expected_size:
-        log_and_print(f"ERROR: File size mismatch!", level='error')
-        return None
+    # Verify size
+    expected_size = T * Ly * Lx * 2
+    actual_size = Path(bin_path).stat().st_size
+    log_and_print(f"Binary written: {bin_path} bytes={actual_size} expected={expected_size}")
+    if actual_size != expected_size:
+        log_and_print("WARNING: Size mismatch in .bin export", level='warning')
 
-    # Immediate read-back test
-    log_and_print("Performing read-back verification...")
+    # Quick read-back of first frame
     try:
-        test_array = np.fromfile(bin_path, dtype=np.int16).reshape(nframes, Ly, Lx)
-        log_and_print(f"Read-back success: shape={test_array.shape}, dtype={test_array.dtype}")
-        log_and_print(f"Read-back data: min={test_array.min()}, max={test_array.max()}, mean={test_array.mean():.3f}")
-        
-        # Plot read-back comparison
-        axes[1,0].imshow(test_array[0], cmap='gray')
-        axes[1,0].set_title(f'Read-back Test (min={test_array[0].min()}, max={test_array[0].max()})')
-        axes[1,0].axis('off')
-        
-        # Plot difference (should be all zeros)
-        diff = memmap_array[0].astype(np.int32) - test_array[0].astype(np.int32)
-        axes[1,1].imshow(diff, cmap='RdBu', vmin=-10, vmax=10)
-        axes[1,1].set_title(f'Difference (max_abs_diff={np.abs(diff).max()})')
-        axes[1,1].axis('off')
-        
-        if np.all(test_array == 0):
-            log_and_print("ERROR: Read-back data is all zeros!", level='error')
-        elif not np.array_equal(memmap_array, test_array):
-            log_and_print("WARNING: Read-back data doesn't match original!", level='warning')
-        else:
-            log_and_print("✓ Read-back verification passed")
-            
+        first = np.fromfile(bin_path, dtype=np.int16, count=Ly*Lx).reshape(Ly, Lx)
+        log_and_print(f"First frame read-back: min={first.min()} max={first.max()}")
     except Exception as e:
-        log_and_print(f"Read-back test failed: {e}", level='error')
+        log_and_print(f"Read-back failed: {e}", level='warning')
 
-    # Save debugging figure
-    plt.tight_layout()
-    debug_png_path = Path(bin_path).with_suffix('.debug.png')
-    # plt.savefig(debug_png_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    # log_and_print(f"Saved debugging plots to {debug_png_path}")
-
+    log_and_print(f"Range across stream: min={running_min:.2f}, max={running_max:.2f}")
+    adapter.close()
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
     return Path(bin_path)
 

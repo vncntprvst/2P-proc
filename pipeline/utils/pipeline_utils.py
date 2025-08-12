@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from caiman.mmapping import load_memmap
+from caiman.paths import decode_mmap_filename_dict
 import logging
 import numpy as np
 import time
@@ -58,6 +59,106 @@ def memory_manager(stage="operation"):
     finally:
         gc.collect()
 
+# -----------------------------------------------------------------------------
+# Adapter: expose a CaImAn memmap with a Suite2p BinaryFile-like API
+# -----------------------------------------------------------------------------
+class _FrameAccessor:
+    """Internal helper to mimic Suite2p's BinaryFile .file slicing interface."""
+    def __init__(self, parent: 'CaimanMemmapBinary'):
+        self._parent = parent
+    def __getitem__(self, indices):
+        return self._parent._get_frames(indices)
+
+class CaimanMemmapBinary:
+    """
+    BinaryFile-like wrapper for a CaImAn memmap (.mmap or .npy) without loading it fully.
+
+    Provides minimal interface compatibility with Suite2p's BinaryFile:
+      Attributes: Ly, Lx, filename, dtype, file, n_frames, shape, size
+      Methods: __getitem__, data(), close(), sampled_mean() (approximate)
+
+    Notes
+    -----
+    CaImAn stores data as a 2D memmap (pixels, T) where pixels = Ly*Lx*(d3).
+    The filename encodes dimensions and order (C or F). We reshape lazily when
+    frames are requested. This avoids allocating (T, Ly, Lx) in RAM.
+    """
+    def __init__(self, mmap_path: str | Path):
+        self.filename = str(mmap_path)
+        self._decoded = decode_mmap_filename_dict(self.filename)
+        self.Ly = int(self._decoded['d1'])
+        self.Lx = int(self._decoded['d2'])
+        self._d3 = int(self._decoded['d3'])
+        if self._d3 != 1:
+            raise NotImplementedError("Adapter currently supports d3 == 1 (2D data)")
+        self._T = int(self._decoded['T'])
+        self._order = self._decoded['order']  # 'F' or 'C'
+        self.dtype = np.float32  # CaImAn memmaps are float32 by convention
+        pixels = self.Ly * self.Lx * self._d3
+        # Open underlying memmap (pixels, T)
+        self._mmap = np.memmap(self.filename, mode='r', dtype=self.dtype, shape=(pixels, self._T), order=self._order)
+        # Provide .file accessor mimicking Suite2p BinaryFile.file slicing
+        self.file = _FrameAccessor(self)
+        self._closed = False
+
+    # --- properties mirroring Suite2p BinaryFile ---
+    @property
+    def n_frames(self) -> int:
+        return self._T
+
+    @property
+    def shape(self):
+        return (self._T, self.Ly, self.Lx)
+
+    @property
+    def size(self):
+        return self._mmap.size
+
+    def _get_frames(self, indices):
+        """Return frames (n, Ly, Lx) for given indices (slice/int/array)."""
+        # Normalize indices to an array of frame indices
+        if isinstance(indices, slice):
+            frame_inds = np.arange(*indices.indices(self._T))
+        elif isinstance(indices, (list, tuple, np.ndarray)):
+            frame_inds = np.asarray(indices)
+        else:  # single int
+            frame_inds = np.asarray([indices])
+        # Fetch columns corresponding to frames
+        block = self._mmap[:, frame_inds]  # shape (pixels, n_frames)
+        nF = block.shape[1]
+        # Reshape (Ly, Lx, nF) with proper order then transpose to (nF, Ly, Lx)
+        frames = block.reshape(self.Ly, self.Lx, nF, order=self._order).transpose(2, 0, 1)
+        if frames.shape[0] == 1 and not isinstance(indices, slice) and not isinstance(indices, (list, tuple, np.ndarray)):
+            return frames[0]
+        return frames
+
+    def __getitem__(self, indices):
+        return self._get_frames(indices)
+
+    def data(self):
+        """Return entire movie (T, Ly, Lx). Beware of memory usage."""
+        return self._get_frames(slice(0, self._T))
+
+    def sampled_mean(self, nsamps: int = 1000):
+        """Approximate mean by sampling up to nsamps frames evenly spaced."""
+        nsamps = min(nsamps, self._T)
+        inds = np.linspace(0, self._T - 1, nsamps, dtype=int)
+        frames = self[inds].astype(np.float32)
+        return frames.mean(axis=0)
+
+    def close(self):
+        if not self._closed:
+            try:
+                self._mmap._mmap.close()
+            except Exception:
+                pass
+            self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 def get_batch_ids(batch_path):
     df = mc.load_batch(batch_path)
@@ -279,13 +380,18 @@ def save_mmap_movie(movie, movie_path):
 def load_mmap_movie(movie_path):
     """
     Load a memmaped numpy array.
+    Returns a fully materialized 3D numpy array (T, Ly, Lx).
+    For large datasets prefer using `load_caiman_memmap` to avoid loading all frames.
     """
     # Load the movie from the memmap file
     movie , dims, T = load_memmap(movie_path)
     # Reshape the array to the desired dimensions
     movie = np.reshape(movie.T, [T] + list(dims), order='F')
-    
     return movie
+
+def load_caiman_memmap(movie_path: str | Path) -> CaimanMemmapBinary:
+    """Convenience loader returning a BinaryFile-like adapter for a CaImAn memmap."""
+    return CaimanMemmapBinary(movie_path)
 
 def create_mp4_movie(input_movie, export_path, filename=None):
     """
@@ -368,4 +474,3 @@ def cat_movies_to_mp4(movie1, movie2, movie_path):
     
     # Create the mp4 movie
     create_mp4_movie(cat_movie, export_path, filename)
- 
