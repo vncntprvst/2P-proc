@@ -544,7 +544,12 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
         try:
             time0 = time.time()
             ##################
-            ct.concatenate_files(data_path, export_path, regex_pattern)
+            ct.concatenate_files(
+                input_paths=data_path, 
+                output_path=export_path, 
+                regex=regex_pattern,
+                scale_range=False
+            )
             ##################
             formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
             print(f"Concatenation completed in {formatted_time}.")
