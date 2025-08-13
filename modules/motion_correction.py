@@ -408,13 +408,27 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
     return Path(bin_path)
 
-def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True):
+def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True, scale_range=False):
     """
     Run motion correction on a set of ome.tif files.
     Concatenate the ome.tif files into a single multi-page tiff file.
     Create a new batch.
     Add the motion correction item to the batch.
     Run the batch.
+
+    Arguments:
+    - data_path: Path to the folder containing the input ome.tif files.
+    - export_path: Path to the folder where the output files will be saved.
+    - parameters: Dictionary containing the parameters for motion correction.
+    - regex_pattern: Regular expression pattern to match the input files.
+    - recompute: Boolean indicating whether to recompute the motion correction.
+    - scale_range: Boolean indicating whether to scale the output to uint16 range.
+
+    Returns:
+    - batch_path: Path to the created batch file.
+    - index: Index of the movie in the batch.
+    - movie_path: Path to the concatenated movie file.
+
     """
     # Set movie path
     movie_path = Path(export_path).joinpath('cat_tiff_bt.tiff')
@@ -435,7 +449,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True)
                 input_paths=data_path, 
                 output_path=export_path, 
                 regex=regex_pattern,
-                scale_range=False
+                scale_range=scale_range
             )
             ##################
             formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
@@ -568,8 +582,9 @@ def run_motion_correction_workflow(
         parameters_mcorr = parameters['params_mcorr']
 
         # Run the motion correction
+        scale_range = parameters_mcorr.get('scale_range', 'False')
         batch_path, index, movie_path = run_mcorr(
-            data_path, export_path, parameters_mcorr, regex_pattern, recompute
+            data_path, export_path, parameters_mcorr, regex_pattern, recompute, scale_range=scale_range
         )
 
         results['batch_path'] = batch_path
@@ -590,7 +605,7 @@ def run_motion_correction_workflow(
             time_z0 = time.time()
             
             zcorr_movie_path, _, _ = cz.z_motion(
-                movie_path, parameters
+                movie_path, parameters, scale_range=scale_range
             )
             
             # Save corrected movie, overwriting the original
@@ -601,7 +616,7 @@ def run_motion_correction_workflow(
                     clip=clip_movie,
                     movie_type='zcorr',
                     save_original=False,
-                    remove_input=True,
+                    remove_input=True
                 )
                 results['z_corrected'] = True
             else:
