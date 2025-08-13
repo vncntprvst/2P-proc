@@ -35,7 +35,7 @@ from sklearn.linear_model import HuberRegressor
 
 # Import CaImAn and Mesmerize components
 import mesmerize_core as mc
-from caiman.mmapping import load_memmap
+# from caiman.mmapping import load_memmap
 
 from modules import bruker_concat_tif as ct
 from modules import compute_zcorr as cz
@@ -45,6 +45,7 @@ from pipeline.utils.pipeline_utils import (
     create_mp4_movie,
     overwrite_movie_memmap,
     load_mmap_movie,
+    load_caiman_memmap,
     clip_range,
     cat_movies_to_mp4,
     memory_manager,
@@ -52,28 +53,44 @@ from pipeline.utils.pipeline_utils import (
 )
 
 
-def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
+def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
     """
     Save the motion corrected movie (memmaped array) as a BigTIFF file or a mp4 movie.
     If diff_corr is true (default), concatenate the original movie and the motion corrected movie horizontally.
     """
+    # # Load the movie from the memmap file
+    # mcorr_movie_16bit , dims, T = load_memmap(mcorr_path)
+    # # Reshape the array to the desired dimensions
+    # mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
+    # # At this point the images should already be transposed
+    # # mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
+    # # image = mcorr_movie_16bit[0,:,:]  
+
     # Load the movie from the memmap file
-    mcorr_movie_16bit , dims, T = load_memmap(mcorr_path)
-    # Reshape the array to the desired dimensions
-    mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
-    # At this point the images should already be transposed
-    # mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
-    # image = mcorr_movie_16bit[0,:,:]  
-    
+    loaded_mcorr_movie = load_caiman_memmap(mcorr_movie_path)
+
+    # Check the data range to assess the factor to use for converting to uint8
+    if loaded_mcorr_movie.max() > 2**16-1:
+        # movie is 16 bit
+        scale_factor = 255 / (2**16-1)
+    elif loaded_mcorr_movie.max() > 2**12-1 and loaded_mcorr_movie.max() <= 2**16-1:
+        # movie is 12 bit
+        scale_factor = 255 / (2**12-1)
+    elif loaded_mcorr_movie.max() > 255 and loaded_mcorr_movie.max() <= 2**12-1:
+        # movie is 8 bit
+        scale_factor = 255 / (2**8-1)
+    else:
+        scale_factor = 1
+
     # If excerpt is not None, keep only the first x frames of the movie
     if excerpt is not None:
-        mcorr_movie_16bit = mcorr_movie_16bit[:excerpt]
+        loaded_mcorr_movie = loaded_mcorr_movie[:excerpt]
         
     # Convert values to uint8
     if to_uint8:
-        mcorr_movie_ = (mcorr_movie_16bit / (2**16-1) * 255).astype('uint8')
+        mcorr_movie_ = (loaded_mcorr_movie * scale_factor).astype('uint8')
     else:
-        mcorr_movie_ = mcorr_movie_16bit
+        mcorr_movie_ = loaded_mcorr_movie
     
     if format == 'mp4':
         if diff_corr:
@@ -83,9 +100,23 @@ def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', di
             original_movie = df.iloc[index].caiman.get_input_movie()
             if excerpt is not None:
                 original_movie = original_movie[:excerpt]
+
+            # Check the data range to assess the factor to use for converting to uint8
+            if original_movie.max() > 2**16-1:
+                # movie is 16 bit
+                scale_factor = 255 / (2**16-1)
+            elif original_movie.max() > 2**12-1 and original_movie.max() <= 2**16-1:
+                # movie is 12 bit
+                scale_factor = 255 / (2**12-1)
+            elif original_movie.max() > 255 and original_movie.max() <= 2**12-1:
+                # movie is 8 bit
+                scale_factor = 255 / (2**8-1)
+            else:
+                scale_factor = 1
+
             # Convert values to uint8
             if to_uint8:
-                original_movie_ = (original_movie / (2**16-1) * 255).astype('uint8')
+                original_movie_ = (original_movie * scale_factor).astype('uint8')
             else:
                 original_movie_ = original_movie
             # Set the path of the mp4 movie
@@ -98,7 +129,7 @@ def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', di
         else:
             # Save the motion corrected movie as a mp4 movie
             # movie_path = Path.joinpath(export_path, f"mcorr.mp4")
-            create_mp4_movie(mcorr_movie_16bit, export_path, 'mcorr.mp4')
+            create_mp4_movie(loaded_mcorr_movie, export_path, 'mcorr.mp4')
             log_and_print(f"Saved motion corrected movie to {export_path}/mcorr.mp4")
             
             return Path.joinpath(export_path, 'mcorr.mp4')
@@ -117,22 +148,23 @@ def create_mcorr_movie(mcorr_path, export_path, batch, index=0, format='mp4', di
             
         return mcorr_tif_path
 
-def compute_movie_residuals(clipped_mcorr_path, zcorr_movie, export_path):
+def compute_movie_residuals(mcorr_movie_path, zcorr_movie, export_path):
     """
     Compute the residuals between the motion corrected movie (x/y), and the z-motion corrected movie (z).
     """
     # Load the motion corrected movie
-    mcorr_movie_16bit , dims, T = load_memmap(clipped_mcorr_path)
-    mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
-    mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
-    
+    # loaded_mcorr_movie , dims, T = load_memmap(clipped_mcorr_path)
+    # loaded_mcorr_movie = np.reshape(loaded_mcorr_movie.T, [T] + list(dims), order='F')
+    # loaded_mcorr_movie = loaded_mcorr_movie.transpose(0, 2, 1)
+    loaded_mcorr_movie = load_caiman_memmap(mcorr_movie_path)
+
     # Compute the difference between the motion corrected movie and the z-motion corrected movie (residuals for each frame)
-    residual_movie = np.zeros_like(mcorr_movie_16bit)
-    for i, frame in enumerate(mcorr_movie_16bit):
+    residual_movie = np.zeros_like(loaded_mcorr_movie)
+    for i, frame in enumerate(loaded_mcorr_movie):
         residual_movie[i] = zcorr_movie[i] - frame
         
     # Convert all three movies' values to uint8, then concatenate them horizontally and save as a mp4 movie
-    mcorr_movie_ = (mcorr_movie_16bit / (2**16-1) * 255).astype('uint8')
+    mcorr_movie_ = (loaded_mcorr_movie / (2**16-1) * 255).astype('uint8')
     zcorr_movie_ = (zcorr_movie / (2**16-1) * 255).astype('uint8')
     residual_movie_ = (residual_movie / (2**16-1) * 255).astype('uint8')
     
@@ -637,7 +669,7 @@ def run_motion_correction_workflow(
                                         format='tiff', diff_corr=False)
             
             # Create comparison movie (first 240 frames)
-            create_mcorr_movie(mcorr_path=movie_path, export_path=export_path, 
+            create_mcorr_movie(mcorr_movie_path=movie_path, export_path=export_path, 
                                         batch=batch_path, index=index, excerpt=240)
         
         results['success'] = True
