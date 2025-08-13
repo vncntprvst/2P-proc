@@ -46,13 +46,13 @@ def run_mcorr(
         regex_pattern (str): Regular expression pattern to match data files.
         recompute (bool): Whether to recompute existing results.
         output_format (bool or str): If not False, use the specified format for saving the motion-corrected movie.
-            Options are 'h5', 'memmap' (default), or 'bin'.
+            Options are 'h5', 'memmap' (default), 'bin', or 'tiff'.
     """
     # Validate mcorr format
-    if output_format not in [False, 'h5', 'memmap', 'bin']:
+    if output_format not in [False, 'h5', 'memmap', 'bin', 'tiff']:
         raise ValueError(
             "Invalid save_mcorr_movie format. "
-            "Use 'false', 'memmap' (default), 'h5', or 'bin'."
+            "Use 'false', 'memmap' (default), 'h5', 'bin', or 'tiff'."
         )
     
     _, batch_path = preproc.run_mcorr(

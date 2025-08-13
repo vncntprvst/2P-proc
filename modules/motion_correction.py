@@ -440,6 +440,44 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
     return Path(bin_path)
 
+def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, dtype_out='uint16', scale=None):
+    """Stream-save motion-corrected movie as BigTIFF (multi-page).
+
+    Frames are written sequentially to avoid loading the full movie. By default, scales/clips to uint16.
+    """
+    log_and_print(f"Saving final movie to {tiff_path} (dtype_out={dtype_out})")
+    adapter = load_caiman_memmap(memmap_path)
+    T, Ly, Lx = adapter.shape
+    running_min = np.inf
+    running_max = -np.inf
+
+    # choose converter
+    def to_dtype(frames: np.ndarray) -> np.ndarray:
+        arr = frames
+        if scale is not None:
+            arr = arr.astype(np.float32) * float(scale)
+        if dtype_out == 'uint16':
+            arr = clip_range(arr, 'uint16').astype(np.uint16)
+        elif dtype_out == 'float32':
+            arr = arr.astype(np.float32)
+        else:
+            raise ValueError("dtype_out must be 'uint16' or 'float32'")
+        return arr
+
+    with TiffWriter(str(tiff_path), bigtiff=True) as tif:
+        for start in range(0, T, chunk_size):
+            stop = min(T, start + chunk_size)
+            chunk = adapter[start:stop]  # (chunk, Ly, Lx)
+            running_min = min(running_min, float(np.min(chunk)))
+            running_max = max(running_max, float(np.max(chunk)))
+            out = to_dtype(chunk)
+            for k in range(out.shape[0]):
+                tif.write(out[k], contiguous=True, photometric='minisblack')
+
+    log_and_print(f"TIFF written: {tiff_path} (range min={running_min:.2f}, max={running_max:.2f})")
+    adapter.close()
+    return Path(tiff_path)
+
 def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True, scale_range=False):
     """
     Run motion correction on a set of ome.tif files.
@@ -692,6 +730,14 @@ def run_motion_correction_workflow(
                 bin_path=bin_path,
                 parameters=parameters
             )
+        elif output_format == 'tiff':
+            log_and_print("Saving motion corrected movie as BigTIFF file...")
+            tiff_path = export_path / 'mcorr_movie.tif'
+            results['movie_path'] = save_movie_as_tiff(
+                memmap_path=movie_path,
+                tiff_path=tiff_path,
+                parameters=parameters
+            )
 
         log_and_print("Motion correction workflow completed successfully.")
         
@@ -712,7 +758,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
     parser.add_argument('-r', '--recompute', action='store_true', help='Recompute existing results')
     parser.add_argument('-c', '--create_movies', action='store_true', help='Create output movies')
-    parser.add_argument('-f', '--format', choices=['memmap', 'h5', 'bin'], default='memmap', help='Output format for final movie')
+    parser.add_argument('-f', '--format', choices=['memmap', 'h5', 'bin', 'tiff'], default='memmap', help='Output format for final movie')
     args = parser.parse_args()
     
     # Convert input paths to Path objects
