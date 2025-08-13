@@ -45,7 +45,6 @@ from pipeline.utils.pipeline_utils import (
     create_mp4_movie,
     overwrite_movie_memmap,
     load_mmap_movie,
-    load_caiman_memmap,
     clip_range,
     cat_movies_to_mp4,
     memory_manager,
@@ -67,19 +66,19 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
     # # image = mcorr_movie_16bit[0,:,:]  
 
     # Load the movie from the memmap file
-    loaded_mcorr_movie = load_caiman_memmap(mcorr_movie_path)
-
+    loaded_mcorr_movie = load_mmap_movie(mcorr_movie_path)
     # Check the data range to assess the factor to use for converting to uint8
-    if loaded_mcorr_movie.max() > 2**16-1:
+    if loaded_mcorr_movie.mean() > 2**16-1:
+        # movie is 32 bit
+        scale_factor = 255 / (2**32-1)
+    elif loaded_mcorr_movie.mean() > 2**12-1 and loaded_mcorr_movie.mean() <= 2**16-1:
         # movie is 16 bit
         scale_factor = 255 / (2**16-1)
-    elif loaded_mcorr_movie.max() > 2**12-1 and loaded_mcorr_movie.max() <= 2**16-1:
+    elif loaded_mcorr_movie.mean() > 255 and loaded_mcorr_movie.mean() <= 2**12-1:
         # movie is 12 bit
         scale_factor = 255 / (2**12-1)
-    elif loaded_mcorr_movie.max() > 255 and loaded_mcorr_movie.max() <= 2**12-1:
-        # movie is 8 bit
-        scale_factor = 255 / (2**8-1)
     else:
+        # movie is 8 bit
         scale_factor = 1
 
     # If excerpt is not None, keep only the first x frames of the movie
@@ -101,17 +100,22 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
             if excerpt is not None:
                 original_movie = original_movie[:excerpt]
 
+            # If adapter-like, materialize to NumPy array
+            _orig_data_attr = getattr(original_movie, "data", None)
+            if callable(_orig_data_attr):
+                original_movie = _orig_data_attr()
             # Check the data range to assess the factor to use for converting to uint8
-            if original_movie.max() > 2**16-1:
+            if original_movie.mean() > 2**16-1:
+                # movie is 32 bit
+                scale_factor = 255 / (2**32-1)
+            elif original_movie.mean() > 2**12-1 and original_movie.mean() <= 2**16-1:
                 # movie is 16 bit
                 scale_factor = 255 / (2**16-1)
-            elif original_movie.max() > 2**12-1 and original_movie.max() <= 2**16-1:
+            elif original_movie.mean() > 255 and original_movie.mean() <= 2**12-1:
                 # movie is 12 bit
                 scale_factor = 255 / (2**12-1)
-            elif original_movie.max() > 255 and original_movie.max() <= 2**12-1:
-                # movie is 8 bit
-                scale_factor = 255 / (2**8-1)
             else:
+                # movie is 8 bit
                 scale_factor = 1
 
             # Convert values to uint8
@@ -129,7 +133,7 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
         else:
             # Save the motion corrected movie as a mp4 movie
             # movie_path = Path.joinpath(export_path, f"mcorr.mp4")
-            create_mp4_movie(loaded_mcorr_movie, export_path, 'mcorr.mp4')
+            create_mp4_movie(mcorr_movie_, export_path, 'mcorr.mp4')
             log_and_print(f"Saved motion corrected movie to {export_path}/mcorr.mp4")
             
             return Path.joinpath(export_path, 'mcorr.mp4')
@@ -634,7 +638,7 @@ def run_motion_correction_workflow(
         regex_pattern: Pattern to match input files
         recompute: Whether to recompute existing results
         create_movies: Whether to create output movies
-        output_format: 'memmap' (default), 'h5', or 'bin' for final motion-corrected movie storage
+        output_format: 'memmap' (default), 'h5', 'tiff', or 'bin' for final motion-corrected movie storage
 
     Returns:
         dict: Results dictionary with paths and metadata
@@ -732,7 +736,7 @@ def run_motion_correction_workflow(
             )
         elif output_format == 'tiff':
             log_and_print("Saving motion corrected movie as BigTIFF file...")
-            tiff_path = export_path / 'mcorr_movie.tif'
+            tiff_path = export_path / 'mcorr_movie.tiff'
             results['movie_path'] = save_movie_as_tiff(
                 memmap_path=movie_path,
                 tiff_path=tiff_path,

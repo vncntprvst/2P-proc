@@ -8,6 +8,8 @@ from __future__ import annotations
 import os, sys
 from pathlib import Path
 
+from tifffile import TiffFile
+
 # Add project root to path (standardized approach)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -291,15 +293,25 @@ def overwrite_movie_memmap(movie, original_mmap_path, clip=True, movie_type='mco
     """
     Overwrite the original memmap file with the new movie.
     """
-
     # Check if movie is a Path object or a numpy array
     if isinstance(movie, Path):
         #  Load the movie from the memmap file
         movie_array = load_mmap_movie(movie)
     else:
         movie_array = movie
+    print(f"Movie type: {type(movie_array)}, with shape: {movie_array.shape}")
+    first_frame = movie_array[0]
+    print(f"First frame dtype: {first_frame.dtype}, shape: {first_frame.shape}, min_val: {first_frame.min()}, max_val: {first_frame.max()}")
+    print(f"Movie median: {np.median(movie_array)}")
+
+    # # Compare original movie median
+    # with TiffFile(movie.parent.parent / "cat_tiff_bt.tiff") as tif:
+    #     og_tiff = tif.asarray()
+    #     print(f"Z-stack shape: {og_tiff.shape}")
+    #     print(f"Z-stack median: {np.median(og_tiff)}")
 
     if clip:
+        print(f"Clipping movie array to uint16 range.")
         # Clip, but don't convert to uint16 yet (caiman expects 32 bit float) image
         movie_array = clip_range(movie_array, 'uint16')
     
