@@ -255,19 +255,24 @@ def run_roi_zcorr(export_path, parameters):
                 .to_numpy()
             )
 
-        np.save(export_path / "F_roi_zcorrected.npy", Fcorrected)
-        np.save(export_path / "F_roi_zbaseline.npy", Fz_rescaled)
-        np.save(export_path / "roi_z_scaling.npy", b)
+        # Save results
+        np.savez_compressed(export_path / "F_roi_zcorrected.npz",
+                            F_roi_zcorrected=Fcorrected,
+                            F_roi_zbaseline=Fz_rescaled,
+                            roi_z_scaling=b)
 
         try:
             import matplotlib.pyplot as plt
+
+            plots_dir = export_path / "plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
 
             plt.figure()
             plt.plot(zpos)
             plt.xlabel("Frame")
             plt.ylabel("Z position (µm)")
             plt.tight_layout()
-            plt.savefig(export_path / "roi_z_drift.png")
+            plt.savefig(plots_dir / "roi_z_drift.png")
             plt.close()
 
             plt.figure()
@@ -275,7 +280,7 @@ def run_roi_zcorr(export_path, parameters):
             plt.xlabel("Scaling factor")
             plt.ylabel("Count")
             plt.tight_layout()
-            plt.savefig(export_path / "roi_z_scaling_hist.png")
+            plt.savefig(plots_dir / "roi_z_scaling_hist.png")
             plt.close()
         except Exception as e:
             log_and_print(f"Could not save diagnostic plots: {e}", level="warning")
