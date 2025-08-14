@@ -24,7 +24,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import time
-from pathlib import Path
 import numpy as np
 import h5py
 from tifffile import TiffWriter, TiffFile
@@ -67,19 +66,6 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
 
     # Load the movie from the memmap file
     loaded_mcorr_movie = load_mmap_movie(mcorr_movie_path)
-    # Check the data range to assess the factor to use for converting to uint8
-    if loaded_mcorr_movie.mean() > 2**16-1:
-        # movie is 32 bit
-        scale_factor = 255 / (2**32-1)
-    elif loaded_mcorr_movie.mean() > 2**12-1 and loaded_mcorr_movie.mean() <= 2**16-1:
-        # movie is 16 bit
-        scale_factor = 255 / (2**16-1)
-    elif loaded_mcorr_movie.mean() > 255 and loaded_mcorr_movie.mean() <= 2**12-1:
-        # movie is 12 bit
-        scale_factor = 255 / (2**12-1)
-    else:
-        # movie is 8 bit
-        scale_factor = 1
 
     # If excerpt is not None, keep only the first x frames of the movie
     if excerpt is not None:
@@ -87,9 +73,11 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
         
     # Convert values to uint8
     if to_uint8:
+        # Data is originally uint12, and is loaded as float 32, but is 16 bit range.
+        scale_factor = 255 / (2**16-1)
         mcorr_movie_ = (loaded_mcorr_movie * scale_factor).astype('uint8')
     else:
-        mcorr_movie_ = loaded_mcorr_movie
+        mcorr_movie_ = loaded_mcorr_movie.astype(np.uint16)
     
     if format == 'mp4':
         if diff_corr:
@@ -100,29 +88,12 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
             if excerpt is not None:
                 original_movie = original_movie[:excerpt]
 
-            # If adapter-like, materialize to NumPy array
-            _orig_data_attr = getattr(original_movie, "data", None)
-            if callable(_orig_data_attr):
-                original_movie = _orig_data_attr()
-            # Check the data range to assess the factor to use for converting to uint8
-            if original_movie.mean() > 2**16-1:
-                # movie is 32 bit
-                scale_factor = 255 / (2**32-1)
-            elif original_movie.mean() > 2**12-1 and original_movie.mean() <= 2**16-1:
-                # movie is 16 bit
-                scale_factor = 255 / (2**16-1)
-            elif original_movie.mean() > 255 and original_movie.mean() <= 2**12-1:
-                # movie is 12 bit
-                scale_factor = 255 / (2**12-1)
-            else:
-                # movie is 8 bit
-                scale_factor = 1
-
             # Convert values to uint8
             if to_uint8:
+                scale_factor = 255 / (2**16-1)
                 original_movie_ = (original_movie * scale_factor).astype('uint8')
             else:
-                original_movie_ = original_movie
+                original_movie_ = original_movie.astype(np.uint16)
             # Set the path of the mp4 movie
             movie_path = Path.joinpath(export_path, f"compare_og_mcorr.mp4")
             # Concatenate the two movies horizontally
