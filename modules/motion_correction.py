@@ -321,11 +321,11 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
     running_max = -np.inf
 
     # Create a figure of pixel values histograms
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    axs[0].hist(adapter.flatten(), bins=100, color='gray')
-    axs[0].set_title('Histogram of Pixel Values (Memmap)')
-    axs[0].set_xlabel('Pixel Value')
-    axs[0].set_ylabel('Frequency')
+    # fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    # axs[0].hist(adapter.flatten(), bins=100, color='gray')
+    # axs[0].set_title('Histogram of Pixel Values (Memmap)')
+    # axs[0].set_xlabel('Pixel Value')
+    # axs[0].set_ylabel('Frequency')
 
     with h5py.File(h5_path, 'w') as f:
         if dtype_out == 'uint16':
@@ -375,25 +375,25 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
         log_and_print(f"H5 verification failed: {e}", level='warning')
 
     # choose bin edges using running_min/running_max computed above
-    nbins = 100
-    bin_edges = np.linspace(running_min, running_max, nbins + 1)
-    hist_counts = np.zeros(nbins, dtype=np.int64)
+    # nbins = 100
+    # bin_edges = np.linspace(running_min, running_max, nbins + 1)
+    # hist_counts = np.zeros(nbins, dtype=np.int64)
 
-    # Compute histogram of pixel values on h5 file
-    with h5py.File(h5_path, 'r') as f:
-        data = f['data'][:]
-        hist_counts, _ = np.histogram(data, bins=bin_edges)
+    # # Compute histogram of pixel values on h5 file
+    # with h5py.File(h5_path, 'r') as f:
+    #     data = f['data'][:]
+    #     hist_counts, _ = np.histogram(data, bins=bin_edges)
 
-    axs[1].bar(bin_edges[:-1], hist_counts, width=np.diff(bin_edges), color='gray')
-    axs[1].set_title('Histogram of Pixel Values (H5)')
-    axs[1].set_xlabel('Pixel Value')
-    axs[1].set_ylabel('Frequency')
-    plt.tight_layout()
+    # axs[1].bar(bin_edges[:-1], hist_counts, width=np.diff(bin_edges), color='gray')
+    # axs[1].set_title('Histogram of Pixel Values (H5)')
+    # axs[1].set_xlabel('Pixel Value')
+    # axs[1].set_ylabel('Frequency')
+    # plt.tight_layout()
 
-    # Save figure
-    histo_fig_path = h5_path.parent / "plots" / "pixel_value_histogram_h5.png"
-    plt.savefig(histo_fig_path)
-    plt.close(fig)
+    # # Save figure
+    # histo_fig_path = h5_path.parent / "plots" / "pixel_value_histogram_h5.png"
+    # plt.savefig(histo_fig_path)
+    # plt.close(fig)
 
     adapter.close()
     return Path(h5_path)
@@ -411,11 +411,11 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     running_max = -np.inf
 
     # Create a figure of pixel values histograms
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    axs[0].hist(adapter.flatten(), bins=100, color='gray')
-    axs[0].set_title('Histogram of Pixel Values (Memmap)')
-    axs[0].set_xlabel('Pixel Value')
-    axs[0].set_ylabel('Frequency')
+    # fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    # axs[0].hist(adapter.flatten(), bins=100, color='gray')
+    # axs[0].set_title('Histogram of Pixel Values (Memmap)')
+    # axs[0].set_xlabel('Pixel Value')
+    # axs[0].set_ylabel('Frequency')
 
     with open(bin_path, 'wb') as f:
         for start in range(0, T, chunk_size):
@@ -445,18 +445,18 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     except Exception as e:
         log_and_print(f"Read-back failed: {e}", level='warning')
 
-    # Compute histogram of pixel values
-    hist, bin_edges = np.histogram(np.fromfile(bin_path, dtype=np.int16), bins=100)
-    axs[1].bar(bin_edges[:-1], hist, width=np.diff(bin_edges), color='gray')
-    axs[1].set_title('Histogram of Pixel Values (Bin)')
-    axs[1].set_xlabel('Pixel Value')
-    axs[1].set_ylabel('Frequency')
-    plt.tight_layout()
+    # # Compute histogram of pixel values
+    # hist, bin_edges = np.histogram(np.fromfile(bin_path, dtype=np.int16), bins=100)
+    # axs[1].bar(bin_edges[:-1], hist, width=np.diff(bin_edges), color='gray')
+    # axs[1].set_title('Histogram of Pixel Values (Bin)')
+    # axs[1].set_xlabel('Pixel Value')
+    # axs[1].set_ylabel('Frequency')
+    # plt.tight_layout()
 
-    # Save figure
-    histo_fig_path = bin_path.parent / "plots" / "pixel_value_histogram_bin.png"
-    plt.savefig(histo_fig_path)
-    plt.close(fig)
+    # # Save figure
+    # histo_fig_path = bin_path.parent / "plots" / "pixel_value_histogram_bin.png"
+    # plt.savefig(histo_fig_path)
+    # plt.close(fig)
 
     log_and_print(f"Range across stream: min={running_min:.2f}, max={running_max:.2f}")
     adapter.close()
@@ -476,12 +476,12 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
     running_min = np.inf
     running_max = -np.inf
 
-    # Create a figure of pixel values histograms
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    axs[0].hist(adapter.flatten(), bins=100, color='gray')
-    axs[0].set_title('Histogram of Pixel Values (Memmap)')
-    axs[0].set_xlabel('Pixel Value')
-    axs[0].set_ylabel('Frequency')
+    # # Create a figure of pixel values histograms
+    # fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    # axs[0].hist(adapter.flatten(), bins=100, color='gray')
+    # axs[0].set_title('Histogram of Pixel Values (Memmap)')
+    # axs[0].set_xlabel('Pixel Value')
+    # axs[0].set_ylabel('Frequency')
 
     # choose converter
     def to_dtype(frames: np.ndarray) -> np.ndarray:
@@ -509,29 +509,29 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
     log_and_print(f"TIFF written: {tiff_path} (range min={running_min:.2f}, max={running_max:.2f})")
     adapter.close()
 
-    # choose bin edges using running_min/running_max computed above
-    nbins = 100
-    bin_edges = np.linspace(running_min, running_max, nbins + 1)
-    hist_counts = np.zeros(nbins, dtype=np.int64)
+    # # choose bin edges using running_min/running_max computed above
+    # nbins = 100
+    # bin_edges = np.linspace(running_min, running_max, nbins + 1)
+    # hist_counts = np.zeros(nbins, dtype=np.int64)
 
-    with TiffFile(str(tiff_path)) as tif:
-        for page in tif.pages:
-            arr = page.asarray()
-            c, _ = np.histogram(arr, bins=bin_edges)
-            hist_counts += c
+    # with TiffFile(str(tiff_path)) as tif:
+    #     for page in tif.pages:
+    #         arr = page.asarray()
+    #         c, _ = np.histogram(arr, bins=bin_edges)
+    #         hist_counts += c
 
-    # plot as bar (centers and widths)
-    centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    axs[1].bar(centers, hist_counts, width=np.diff(bin_edges), color='gray')
-    axs[1].set_title('Histogram of Pixel Values (TIFF)')
-    axs[1].set_xlabel('Pixel Value')
-    axs[1].set_ylabel('Frequency')
-    plt.tight_layout()
+    # # plot as bar (centers and widths)
+    # centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    # axs[1].bar(centers, hist_counts, width=np.diff(bin_edges), color='gray')
+    # axs[1].set_title('Histogram of Pixel Values (TIFF)')
+    # axs[1].set_xlabel('Pixel Value')
+    # axs[1].set_ylabel('Frequency')
+    # plt.tight_layout()
 
-    # Save figure
-    histo_fig_path = tiff_path.parent / "plots" / "pixel_value_histogram_tiff.png"
-    fig.savefig(histo_fig_path, dpi=300)
-    plt.close(fig)
+    # # Save figure
+    # histo_fig_path = tiff_path.parent / "plots" / "pixel_value_histogram_tiff.png"
+    # fig.savefig(histo_fig_path, dpi=300)
+    # plt.close(fig)
 
     return Path(tiff_path)
 
@@ -570,7 +570,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
         # Using the concat_tif.py script to concatenate the tif files. If needed, install libtiff with: pip install pylibtiff
         log_and_print(f"Loading and concatenating data from {data_path}.")
         try:
-            time0 = time.time()
+            # time0 = time.time()
             ##################
             ct.concatenate_files(
                 input_paths=data_path, 
@@ -579,9 +579,21 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
                 scale_range=scale_range
             )
             ##################
-            formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
-            print(f"Concatenation completed in {formatted_time}.")
+            # formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
+            # print(f"Concatenation completed in {formatted_time}.")
 
+            # Check the tiff file dtype and value range
+            with TiffFile(movie_path) as tif:
+                dtype = tif.pages[0].asarray().dtype
+                min_val = tif.pages[0].asarray().min()
+                max_val = tif.pages[0].asarray().max()
+                mean_val = tif.pages[0].asarray().mean()
+                print(f"Concatenated TIFF file \n\
+                    dtype: {dtype}, \n\
+                    min: {min_val}, \n\
+                    max: {max_val}, \n\
+                    mean: {mean_val}")
+                
             # Verify that the concatenated movie is long enough for subsequent
             # correlation computations. If the movie is too short, CaImAn's
             # ``local_correlations_movie_parallel`` will fail silently.
@@ -597,7 +609,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
         except Exception as e:
             log_and_print(f"An error occurred while concatenating files: {e}")
 
-    log_and_print(f"Concatenated movie path: {movie_path}.")    
+    # log_and_print(f"Concatenated movie path: {movie_path}.\n")    
 
     if not recompute:
         #  Check if a batch_*_pickle file exists in the export path
@@ -670,6 +682,22 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
         # Get the motion corrected output as a memmaped numpy array
         # mcorr_movie = df.iloc[mcorr_index].mcorr.get_output()
 
+        # Load motion corrected movie and check dtype, and mean pixel values
+        mcorr_movie = load_mmap_movie(movie_path)
+        if mcorr_movie is not None:
+            shape = mcorr_movie.shape
+            dtype = mcorr_movie.dtype
+            first_frame = mcorr_movie[0]
+            log_and_print(f"Motion corrected movie \n\
+                        shape: {shape}, \n\
+                        dtype: {dtype}, \n\
+                        first frame min: {first_frame.min()}, \n\
+                        first frame max: {first_frame.max()}, \n\
+                        first frame mean: {first_frame.mean()}")
+        else:
+            log_and_print("Motion corrected movie could not be loaded.", level='error')
+
+
     return batch_path, 0, movie_path
   
 def run_motion_correction_workflow(
@@ -709,7 +737,13 @@ def run_motion_correction_workflow(
         parameters_mcorr = parameters['params_mcorr']
 
         # Run the motion correction
-        scale_range = parameters_mcorr.get('scale_range', 'False')
+        scale_range_raw = parameters_mcorr.get('scale_range', False)
+        # Handle string representations of booleans
+        if isinstance(scale_range_raw, str):
+            scale_range = scale_range_raw.lower() in ('true', '1', 'yes')
+        else:
+            scale_range = bool(scale_range_raw)
+
         batch_path, index, movie_path = run_mcorr(
             data_path, export_path, parameters_mcorr, regex_pattern, recompute, scale_range=scale_range
         )
