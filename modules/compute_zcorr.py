@@ -1923,11 +1923,11 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
                     if not os.path.exists(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy"):
                         zcorr_movie, z_motion_scaling_factors = subtract_z_motion_patches(
                             mcorr_movie_path,
-                            zstack_path / z_shifted_file, 
-                            z_correlation, 
+                            zstack_path / z_shifted_file,
+                            z_correlation,
                             parameters['params_mcorr']['main'],
-                            subtract_method,
-                            True
+                            subtract_method=subtract_method,
+                            save_tiffs=True
                         )
                         # Save the scaling factors if they have been computed.
                         if z_motion_scaling_factors is not None:
