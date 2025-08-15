@@ -1,0 +1,3 @@
+pynwb>=2.5.0
+nwbinspector>=0.4.10
+neuroconv>=0.5.2
