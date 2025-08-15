@@ -31,7 +31,7 @@ from scipy import io
 
 from caiman.mmapping import load_memmap
 
-from Mesmerize.utils.pipeline_utils import (
+from pipeline.utils.pipeline_utils import (
     log_and_print, 
     clip_range, 
     cat_movies_to_mp4

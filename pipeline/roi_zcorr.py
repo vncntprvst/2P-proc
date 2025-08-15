@@ -5,7 +5,8 @@ import argparse
 import json
 import logging
 import datetime
-import os, sys
+import os
+import sys
 from pathlib import Path
 
 # Add project root to path
@@ -13,7 +14,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from pipeline import pipeline_roi_zcorr as roi_z
+from modules.motion_correction import run_roi_zcorr
 
 
 def main():
@@ -56,7 +57,7 @@ def main():
         for export_path in export_paths:
             export_path = Path(export_path)
             logging.info("Export path: " + str(export_path))
-            roi_z.run_roi_zcorr(export_path, params)
+            run_roi_zcorr(export_path, params)
 
         logging.shutdown()
 

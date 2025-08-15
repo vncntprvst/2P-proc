@@ -47,7 +47,7 @@ def run_mcorr(
     output_format : {"memmap", "h5", "bin", False}
         Format of the saved movie.
         If not False, use the specified format for saving the motion-corrected movie.
-        Options are 'h5', 'memmap' (default), or 'bin'. 
+        Options are 'h5', 'memmap' (default), 'tiff' or 'bin'. 
     """
     log_and_print("Starting motion correction pipeline.")
     export_path = Path(parameters["export_path"])
