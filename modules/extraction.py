@@ -31,18 +31,19 @@ from scipy import io
 
 from caiman.mmapping import load_memmap
 
-from Mesmerize.utils.pipeline_utils import (
+from pipeline.utils.pipeline_utils import (
     log_and_print, 
     clip_range, 
     cat_movies_to_mp4
 )
 
 __all__ = [
-    "run_cnmf", 
-    "save_processing_parameters", 
+    "run_cnmf",
+    "run_cnmf_on_movie",
+    "save_processing_parameters",
     "prepare_cnmf_object",
     "copy_mean_intensity_template",
-    "export_cnmf_results"
+    "export_cnmf_results",
 ]
 
 
@@ -72,7 +73,15 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
         residuals_movie = df.iloc[index].cnmf.get_residuals()
         # image_residuals = residuals_movie[0,:,:]
     else:
-        mcorr_movie , dims, T = load_memmap(mcorr_movie_path)
+        mcorr_movie_path = Path(mcorr_movie_path)
+        if mcorr_movie_path.suffix in {".h5", ".hdf5"}:
+            import caiman as cm
+
+            movie = cm.load(str(mcorr_movie_path))
+            mcorr_movie_path = Path(
+                cm.save_memmap(movie, base_name=str(mcorr_movie_path.with_suffix("")), order="C")
+            )
+        mcorr_movie, dims, T = load_memmap(str(mcorr_movie_path))
         mcorr_movie = np.reshape(mcorr_movie.T, [T] + list(dims), order='F')
         mcorr_movie = mcorr_movie.transpose(0, 2, 1)
              
@@ -163,14 +172,25 @@ def run_cnmf(
         Scaling factors from z motion subtraction (unused but kept for backwards
         compatibility).
     """
+    # Set the parent raw data path before any batch operations
+    mc.set_parent_raw_data_path(Path(export_path))
 
     # Load batch dataframe
     df = mc.load_batch(batch)
 
+    mcorr_movie_path = df.iloc[index].caiman.get_input_movie()
+    if str(mcorr_movie_path).endswith((".h5", ".hdf5")):
+        import caiman as cm
+
+        movie = cm.load(mcorr_movie_path)
+        mcorr_movie_path = cm.save_memmap(
+            movie, base_name=str(Path(mcorr_movie_path).with_suffix("")), order="C"
+        )
+
     # Add CNMF item using the motion corrected result
     df.caiman.add_item(
         algo="cnmf",
-        input_movie_path=df.iloc[index],
+        input_movie_path=mcorr_movie_path,
         params=params_extraction,
         item_name=df.iloc[index]["item_name"],
     )
@@ -235,6 +255,44 @@ def run_cnmf(
     export_cnmf_results(df, cnmf_obj, export_path, z_correlation)
 
     return cnmf_obj
+
+
+def run_cnmf_on_movie(mcorr_movie_path, export_path, params_extraction):
+    """Run CNMF directly on a motion corrected movie file.
+
+    Parameters
+    ----------
+    mcorr_movie_path : str or Path
+        Path to the motion corrected movie (``.mmap`` or ``.h5``).
+    export_path : Path
+        Directory where outputs should be written.
+    params_extraction : dict
+        Parameters for the CNMF algorithm.
+    """
+
+    export_path = Path(export_path)
+    export_path.mkdir(parents=True, exist_ok=True)
+
+    mcorr_movie_path = Path(mcorr_movie_path)
+    if mcorr_movie_path.suffix in {".h5", ".hdf5"}:
+        import caiman as cm
+
+        movie = cm.load(str(mcorr_movie_path))
+        mcorr_movie_path = Path(
+            cm.save_memmap(movie, base_name=str(export_path / "mcorr"), order="C")
+        )
+
+    from caiman.source_extraction.cnmf import cnmf as cnmf_mod
+    from caiman.source_extraction.cnmf import params as params_mod
+
+    cnmf_params = params_mod.CNMFParams(params_extraction.get("main", {}))
+    cnm = cnmf_mod.CNMF(
+        n_processes=params_extraction.get("n_processes", 1),
+        params=cnmf_params,
+    )
+    cnm.fit_file(str(mcorr_movie_path))
+    cnm.save(str(export_path / "cnmf_result.hdf5"))
+    return cnm
 
 
 def save_processing_parameters(df, export_path, data_path, params_extraction):

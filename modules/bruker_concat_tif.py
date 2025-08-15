@@ -77,7 +77,7 @@ def concat_tiff_files(file_list, output_file, compression=None):
     """ Concatenate a list of tiff files into a multi-page TIFF""" 
     # with suppress_c_stderr():
     libtiff_ctypes.suppress_warnings()
-    #  ask TIFF to supresses warnings when opening image
+
     tif = TIFF.open(file_list[0], 'r')
     first_img = tif.read_image()
     tif.close()
@@ -242,7 +242,11 @@ def convert_to_bigtiff(input_file, output_file, compression='lzw', scale_range=F
             loaded_movie = (loaded_movie * scale_factor).astype(np.uint16)
         
         print(f"Converted data range: {loaded_movie.min()} - {loaded_movie.max()}")
-        
+
+    else:
+        print(f"Images are {loaded_movie.dtype} with range {loaded_movie.min()} - {loaded_movie.max()}.")
+        print(f"No scaling of data range requested. \n")
+
     # Flip each frame of the movie individually (this is done earlier in concat_tiff_files)
     # flipped_movie = np.array([np.flipud(frame) for frame in loaded_movie])
     
@@ -295,14 +299,23 @@ def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-st
             convert_to_bigtiff(multipagetiff_file, bigtiff_file, compression, scale_range)
         except Exception as e:
             print(f"Error converting to BigTIFF: {e}")
+            raise
         else:
             print(f"Done with conversion.")
-        
-        # set warnings back to default
-        warnings.resetwarnings() 
-    
+        finally:
+            # set warnings back to default
+            warnings.resetwarnings()
+
     print(f"Concatenated {len(tiff_files)} files to BigTIFF {bigtiff_file}.")
-   
+
+    # Double check the output
+    reloaded_movie = load_multi_page_tiff(bigtiff_file)
+
+    print(f"Checking BigTIFF file: {bigtiff_file}")
+    print(f"Number of pages: {len(reloaded_movie)}")
+    print(f"Image shape: {reloaded_movie.shape[1:]}, \n\
+        dtype: {reloaded_movie.dtype}, \n\
+        range: {reloaded_movie.min()} - {reloaded_movie.max()}\n")
     
 def concatenate_tiff_to_hdf5(tiff_files, export_path):
     import caiman as cm
@@ -372,7 +385,7 @@ def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method=
     # Calculate the elapsed time
     elapsed_time = time.time() - start_time
 
-    print(f"Concatenation completed in {elapsed_time:.2f} seconds.")
+    print(f"Concatenation completed in {elapsed_time:.2f} seconds.\n")
 
 def main():
     parser = argparse.ArgumentParser()

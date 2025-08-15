@@ -1,6 +1,6 @@
 #!/bin/bash
 
-docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.3 -f Dockerfile context
+docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.3 -f Dockerfile_s2p_rastermap .
 
 # Versions:
 # v0.0.3: Activate Suite2p conda environment in Dockerfile

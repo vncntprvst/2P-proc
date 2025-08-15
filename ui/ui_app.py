@@ -58,18 +58,14 @@ st.markdown(
 code_dir = Path(__file__).resolve().parents[1]
 caiman_pipeline_dir = code_dir / "Mesmerize"
 params_dir = caiman_pipeline_dir / "parameters"
-paths_dir = caiman_pipeline_dir / "paths"
+configs_dir = caiman_pipeline_dir / "configs"
 scripts_dir = code_dir / "scripts"
 
 # -------------------------------------------------------------------------
 # Load default templates
 # -------------------------------------------------------------------------
-with open(params_dir / "params_mcorr_cnmf_template.json", "r") as f:
-    DEFAULT_MAIN_PARAM_TEMPLATE = json.load(f)
-with open(params_dir / "params_zshift_template.json", "r") as f:
-    DEFAULT_ZSHIFT_PARAM_TEMPLATE = json.load(f)
-with open(paths_dir / "paths_template.json", "r") as f:
-    DEFAULT_PATH_FILE_TEMPLATE = json.load(f)
+with open(configs_dir / "config_template.json", "r") as f:
+    DEFAULT_CONFIG_TEMPLATE = json.load(f)
 
 # -------------------------------------------------------------------------
 # Create or filter list of existing param files
@@ -126,14 +122,10 @@ def parse_run_numbers(data_paths):
 # Initialize session state to store selected file paths
 # -------------------------------------------------------------------------
 def init_session_state():
-    if "caiman_param_file_path" not in st.session_state:
-        st.session_state["caiman_param_file_path"] = None
-    if "zshift_file_path" not in st.session_state:
-        st.session_state["zshift_file_path"] = None
-    if "path_file_data" not in st.session_state:
-        st.session_state["path_file_data"] = {} 
-    if "path_file_path" not in st.session_state:
-        st.session_state["path_file_path"] = None
+    if "config_data" not in st.session_state:
+        st.session_state["config_data"] = {}
+    if "config_file_path" not in st.session_state:
+        st.session_state["config_file_path"] = None
     if "show_settings_modal" not in st.session_state:
         st.session_state["show_settings_modal"] = True
     # Load the .env file from ui/.env
@@ -153,39 +145,19 @@ def init_session_state():
     st.session_state["remote_scratch"] = os.getenv("OM_SCRATCH_DIR")
     
 # -------------------------------------------------------------------------
-# List existing path files
+# List existing config files
 # -------------------------------------------------------------------------
-def list_existing_path_files(paths_dir: Path):
-    """Return all .json files in the paths_dir directory."""
-    if not paths_dir.exists():
+def list_existing_config_files(config_dir: Path):
+    """Return all .json files in the config_dir directory."""
+    if not config_dir.exists():
         return []
-    return list(paths_dir.glob("*.json"))
-    
-def build_path_file_dict(run_method: str, use_zshift: bool = False, remote_params_dir: str = ""):
-    """
-    Build the path file dictionary based on the current session state.
-    """
-    # Build final path file dictionary
-    path_file_dict = st.session_state["path_file_data"].copy()
+    return list(config_dir.glob("*.json"))
 
-    # Update the main parameter file field:
-    if st.session_state.get("caiman_param_file_path"):
-        if run_method == "Run on Openmind cluster":
-            file_name = Path(st.session_state["caiman_param_file_path"]).name
-            remote_param_file_path = Path(remote_params_dir) / file_name
-            path_file_dict["params_files"] = [str(remote_param_file_path).replace("\\", "/")]
-        else:
-            path_file_dict["params_files"] = [str(st.session_state["caiman_param_file_path"])]
 
-    if use_zshift and st.session_state.get("zshift_file_path"):
-        if run_method == "Run on Openmind cluster":
-            file_name = Path(st.session_state["zshift_file_path"]).name
-            remote_zparam_file_path = Path(remote_params_dir) / file_name
-            path_file_dict["z_params_files"] = [str(remote_zparam_file_path).replace("\\", "/")]
-        else:
-            path_file_dict["z_params_files"] = [str(st.session_state["zshift_file_path"])]
-            
-    return path_file_dict
+def build_config_dict(run_method: str, use_zshift: bool = False, remote_params_dir: str = ""):
+    """Return the current configuration dictionary."""
+
+    return st.session_state["config_data"].copy()
                 
 # -------------------------------------------------------------------------
 # Get remote user
@@ -263,11 +235,11 @@ def main():
                 index=0  # default is "Run on Openmind cluster"
             )
             if run_method == "Run on Openmind cluster":
-                paths_dir = caiman_pipeline_dir / "paths" / "openmind"
+                configs_dir = caiman_pipeline_dir / "configs" / "openmind"
             else:
-                paths_dir = caiman_pipeline_dir / "paths" 
-            with open(paths_dir / "paths_template.json", "r") as f:
-                DEFAULT_PATH_FILE_TEMPLATE = json.load(f)
+                configs_dir = caiman_pipeline_dir / "configs"
+            with open(configs_dir / "config_template.json", "r") as f:
+                DEFAULT_CONFIG_TEMPLATE = json.load(f)
                 
             if run_method == "Run on Openmind cluster":
                 with st.popover("Edit Openmind Settings", use_container_width=True):
@@ -294,9 +266,9 @@ def main():
                         st.session_state["nese_user_dir"] = new_nese_user_dir
                         st.success("Settings updated!")
  
-                    # Set the environment variables remote_paths_dir and remote_params_dir
+                    # Set the environment variables remote_configs_dir and remote_params_dir
                     remote_params_dir = Path(Path(new_remote_code_dir) / "Mesmerize" / "parameters").as_posix()
-                    remote_paths_dir = Path(Path(new_remote_code_dir) / "Mesmerize" / "paths" / "openmind").as_posix()
+                    remote_configs_dir = Path(Path(new_remote_code_dir) / "Mesmerize" / "configs" / "openmind").as_posix()
 
             # else:
                 # When "Run locally" is selected, show a disabled settings button
@@ -311,7 +283,6 @@ def main():
     # Gather existing param files from the folder
     existing_params = list_existing_param_files(params_dir)
     existing_main = existing_params["main"]   # list[Path]
-    existing_zshift = existing_params["zshift"]
         
     # ---------------------------------------------------------------------
 
@@ -418,188 +389,95 @@ def main():
 
     with tab3:
         # ---------------------------------------------------------------------
-        # STEP 3: Create or reuse the Z-shift param file (optional)
+        # STEP 3: Configure z-motion correction parameters
         # ---------------------------------------------------------------------
-        use_zshift = st.checkbox("Use Z-motion correction? (requires a z-stack)", value=False, key="zshift_checkbox")
+        use_zshift = st.checkbox(
+            "Use Z-motion correction? (requires a z-stack)",
+            value=False,
+            key="zshift_checkbox",
+        )
 
-        if use_zshift:            
-            st.write('''
-            Enter the settings for z-stack used for z-motion correction (:blue-background[zstack_shift]) and set the z-motion correction method (:blue-background[subtract_z_motion])''')
-            # zmcorrcol1, zmcorrcol2, zmcorrcol3 = st.columns(3)
-            # with zmcorrcol2:
-            with st.container(key="z-mcorr-methods"):
-                st.write('''
-                    **"subtract_z_motion" options** (default: :grey-background[True])   
-                    - :grey-background[False]: Only z-pos will be computed.  
-                    - :grey-background[True]: Non-rigid F_anat will also be computed, but not subtracted, unless a :blue-background["subtract_method"] field is present.     
-                    
-                    **"subtract_method" options** (default: no method - do not include the field or set it to :grey-background[None])  
-                    - :grey-background[linear_regression_frames]: Subtract z-motion using linear regression on frames.
-                    - :grey-background[huber_regression_pixels]: Subtract z-motion using Huber regression on pixels.
-                    - :grey-background[huber_regression_frames]: Subtract z-motion using Huber regression on frames.
-                    ''')
-                    
-            if not existing_zshift:
-                st.warning("No existing z-shift param files found. Please create one first.")
-            else:
-                zshift_fnames = [p.name for p in existing_zshift]
-
-                # Compute default index based on session state if available
-                if "zshift_file_path" in st.session_state and st.session_state["zshift_file_path"]:
-                    current_zshift_name = Path(st.session_state["zshift_file_path"]).name
-                    if current_zshift_name in zshift_fnames:
-                        default_z_index = zshift_fnames.index(current_zshift_name)
-                    else:
-                        default_z_index = zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
-                else:
-                    default_z_index = zshift_fnames.index("params_zshift_template.json") if "params_zshift_template.json" in zshift_fnames else 0
-
-                chosen_zshift_fname = st.selectbox(
-                    "Select an existing Z-shift parameter file",
-                    zshift_fnames,
-                    index=default_z_index,
-                    key="zshift_selectbox"
-                )
-                st.session_state["zshift_file_path"] = existing_zshift[zshift_fnames.index(chosen_zshift_fname)]
-                
-                # Load the chosen file contents
-                try:
-                    with open(st.session_state["zshift_file_path"], "r") as f:
-                        chosen_file_content = json.load(f)
-                    default_text = json.dumps(chosen_file_content, indent=4)
-                except Exception as e:
-                    default_text = f"⚠️ Error reading file: {e}"
-                
-                zshift_text = st.text_area(
-                    "Edit the parameters as needed. A new file can be saved below.",
-                    value=default_text,
-                    height=350
-                )
-                
-                # Let the user specify a new filename
-                zshift_filename = st.text_input(
-                    "Save as new file z-shift parameter file (name must start with params_zshift):",
-                    f"{st.session_state['zshift_file_path'].name}"
-                )
-                # Validate the filename
-                if not zshift_filename.startswith("params_zshift"):
-                    st.error("Filename must start with 'params_zshift'")
-                
-                if st.button("Save New Z-shift Parameter File"):
-                    try:
-                        new_content = json.loads(zshift_text)
-                        new_path = params_dir / zshift_filename
-                        # Store the new content and file path in session state so they persist
-                        st.session_state.new_zshift_content = new_content
-                        st.session_state.new_zshift_path = new_path
-                        
-                        if new_path.exists():
-                            st.session_state.pending_zshift_overwrite = True
-                            st.warning("File already exists. Click 'Confirm Overwrite (Z-shift)' to proceed.")
-                        else:
-                            st.session_state.pending_zshift_overwrite = False
-                            params_dir.mkdir(parents=True, exist_ok=True)
-                            with open(new_path, "w") as f:
-                                json.dump(new_content, f, indent=4)
-                            st.session_state["zshift_file_path"] = new_path
-                            st.success(f"Saved new Z-shift param file to {new_path}")
-                    except Exception as e:
-                        st.error(f"⚠️ Error saving param file: {e}")
-
-                if st.session_state.get("pending_zshift_overwrite", False):
-                    if st.button("Confirm Overwrite (Z-shift)"):
-                        try:
-                            new_content = st.session_state.new_zshift_content
-                            new_path = st.session_state.new_zshift_path
-                            params_dir.mkdir(parents=True, exist_ok=True)
-                            with open(new_path, "w") as f:
-                                json.dump(new_content, f, indent=4)
-                            st.session_state["zshift_file_path"] = new_path
-                            st.success(f"Overwritten file at {new_path}")
-                            st.session_state.pending_zshift_overwrite = False  # Reset the flag
-                        except Exception as e:
-                            st.error(f"⚠️ Error overwriting file: {e}")
+        if use_zshift:
+            st.write(
+                """
+            Enter the settings for z-stack used for z-motion correction (:blue-background[zstack_shift]) and set the z-motion correction method (:blue-background[subtract_z_motion])"""
+            )
+            default_z = (
+                st.session_state.get("config_data", {})
+                .get("params_mcorr", {})
+                .get("z_motion_correction", DEFAULT_CONFIG_TEMPLATE["params_mcorr"]["z_motion_correction"])
+            )
+            zshift_text = st.text_area(
+                "Edit the parameters as needed.",
+                value=json.dumps(default_z, indent=4),
+                height=350,
+            )
+            try:
+                st.session_state.setdefault("config_data", {}).setdefault("params_mcorr", {})[
+                    "z_motion_correction"
+                ] = json.loads(zshift_text)
+            except Exception as e:
+                st.error(f"⚠️ Error parsing JSON: {e}")
         else:
-            # If the user unchecks "Use Z-motion correction?" 
-            # clear any previously selected zshift path
-            st.session_state["zshift_file_path"] = None
+            z_params = (
+                st.session_state.get("config_data", {})
+                .get("params_mcorr", {})
+                .get("z_motion_correction")
+            )
+            if z_params:
+                z_params["subtract_z_motion"] = False
 
     # ---------------------------------------------------------------------
     # STEP 1: Create or load the path JSON, referencing the selected files
     # ---------------------------------------------------------------------
     with tab1:
         # st.header("Path File Setup", divider=True)
-        st.write('''The :grey-background[Path file] is the only input required to run the pipeline.  
-                 It contains the paths to the data, export directory, and parameter files. Edit the fields below as needed, check the preview in the left sidebar, and save the JSON file.''')
+        st.write('''The configuration file is the only input required to run the pipeline.
+                 It contains the paths to the data, export directory, and parameters. Edit the fields below as needed, check the preview in the left sidebar, and save the JSON file.''')
 
-        # We'll store the loaded or template dictionary here
-        # if path_file_mode == "Load Existing":
-        existing_paths_files = list_existing_path_files(paths_dir)
+        existing_paths_files = list_existing_config_files(configs_dir)
         if not existing_paths_files:
-            st.warning("No existing path files found. Please create one first.")
-            path_data = DEFAULT_PATH_FILE_TEMPLATE.copy()
+            st.warning("No existing config files found. Please create one first.")
+            path_data = DEFAULT_CONFIG_TEMPLATE.copy()
         else:
             path_fnames = [p.name for p in existing_paths_files]
-            selected_path_file = (
-                "paths_template.json"
-                if st.session_state.get("path_file_path") is None
-                else st.session_state["path_file_path"].name
+            selected_config_file = (
+                "config_template.json"
+                if st.session_state.get("config_file_path") is None
+                else st.session_state["config_file_path"].name
             )
-            default_index = path_fnames.index(selected_path_file) if selected_path_file in path_fnames else 0
-            chosen_path_fname = st.selectbox("Select an existing path file:", path_fnames, index=default_index)
-            
+            default_index = path_fnames.index(selected_config_file) if selected_config_file in path_fnames else 0
+            chosen_path_fname = st.selectbox("Select an existing config file:", path_fnames, index=default_index)
+
             chosen_idx = path_fnames.index(chosen_path_fname)
             chosen_fullpath_pathfile = existing_paths_files[chosen_idx]
-            
-            # Load the chosen path file into a dictionary
-            if (not st.session_state.get("path_file_data")) or (str(st.session_state["path_file_path"]) != str(chosen_fullpath_pathfile)):
+
+            # Load the chosen config file into a dictionary
+            if (not st.session_state.get("config_data")) or (
+                str(st.session_state["config_file_path"]) != str(chosen_fullpath_pathfile)
+            ):
                 try:
                     with open(chosen_fullpath_pathfile, "r") as f:
-                        st.session_state["path_file_data"] = json.load(f)
-                    st.session_state["path_file_path"] = chosen_fullpath_pathfile
+                        st.session_state["config_data"] = json.load(f)
+                    st.session_state["config_file_path"] = chosen_fullpath_pathfile
                 except Exception as e:
                     st.error(f"⚠️ Error loading {chosen_fullpath_pathfile}: {e}")
-                    st.session_state["path_file_data"] = DEFAULT_PATH_FILE_TEMPLATE.copy()
-                    st.session_state["path_file_path"] = paths_dir / "paths_template.json"
+                    st.session_state["config_data"] = DEFAULT_CONFIG_TEMPLATE.copy()
+                    st.session_state["config_file_path"] = configs_dir / "config_template.json"
 
-                path_data = st.session_state["path_file_data"]
-
-                # --- Automatically select parameter files if they exist locally ---
-                # Check for CaImAn parameter file(s)
-                if ("params_files" in path_data and path_data["params_files"]):
-                    # and not st.session_state.get("caiman_param_file_path")
-                    param_candidates = [Path(p).name for p in path_data["params_files"]]
-                    existing_main_params = list_existing_param_files(params_dir)["main"]
-                    for candidate in param_candidates:
-                        for p in existing_main_params:
-                            if candidate == p.name:
-                                st.session_state["caiman_param_file_path"] = p
-                                st.info(f"Automatically selected CaImAn parameter file: :grey-background[{p.name}]")
-                                break  # Select the first match
-
-                # Check for z-shift parameter file(s)
-                if ("z_params_files" in path_data and path_data["z_params_files"]):
-                    # and not st.session_state.get("zshift_file_path")
-                    zparam_candidates = [Path(p).name for p in path_data["z_params_files"]]
-                    existing_zshift_params = list_existing_param_files(params_dir)["zshift"]
-                    for candidate in zparam_candidates:
-                        for p in existing_zshift_params:
-                            if candidate == p.name:
-                                st.session_state["zshift_file_path"] = p
-                                st.info(f"Automatically selected Z-shift parameter file: :grey-background[{p.name}]")
-                                break  # Select the first match
+                path_data = st.session_state["config_data"]
             else:
-                path_data = st.session_state["path_file_data"]
+                path_data = st.session_state["config_data"]
 
         # --- Now let the user edit each field in the usual text inputs:
-        subject = st.text_input("Subject Name", value=path_data.get("subject", ""))
-        date_ = st.text_input("Experiment Date", value=path_data.get("date", datetime.now().strftime("%Y%m%d")))
-        exp_type = st.text_input("Experiment Type (e.g. :grey-background[GC8m_16x_zoom1_765pi] - typically matches the parameter file name.)", value=path_data.get("experiment_type", ""))
+        subject = st.text_input("Subject Name", value=path_data.get("subject", {}).get("name", ""))
+        date_ = st.text_input("Experiment Date", value=path_data.get("imaging", {}).get("date", datetime.now().strftime("%Y%m%d")))
+        exp_type = st.text_input("Experiment Type (e.g. :grey-background[GC8m_16x_zoom1_765pi] - typically matches the parameter file name.)", value=path_data.get("imaging", {}).get("experiment_type", ""))
 
         # Concatenation groups
         concat_groups_str = st.text_input(
             "Concatenation groups (comma-separated). Use this to group runs together for processing. Default: empty field.",
-            ",".join(str(x) for x in path_data.get("concatenation_groups", []))
+            ",".join(str(x) for x in path_data.get("paths", {}).get("concatenation_groups", []))
         )
         try:
             concat_groups = [int(x.strip()) for x in concat_groups_str.split(",") if x.strip()]
@@ -609,24 +487,24 @@ def main():
         # Data paths
         data_paths_input = st.text_area(
             "Data paths (one per line)",
-            value="\n".join(path_data.get("data_paths", []))
+            value="\n".join(path_data.get("paths", {}).get("data_paths", []))
         )
         data_paths = [line.strip() for line in data_paths_input.split("\n") if line.strip()]
 
         # Export paths
         export_paths_input = st.text_area(
             "Export paths (one per line). See :grey-background[help] for details.",
-            value="\n".join(path_data.get("export_paths", [])),
+            value="\n".join(path_data.get("paths", {}).get("export_paths", [])),
             help="If using the script to transfer data, the export path will be: :grey-background[<scratch_space>/<subject>/<session_date>/<run_name>/<method>]. The last four parts of the export path provided will define <subject>, <session_date>, <run_name>, and <method>."
         )
 
         export_paths = [line.strip() for line in export_paths_input.split("\n") if line.strip()]
 
         # If user wants z-stack
-        # use_zshift_for_paths = st.sidebar.checkbox("Use Z-motion correction?", value=False, key="zshift_paths_checkbox")
+        use_zshift = st.session_state.get("zshift_checkbox", False)
         zstack_paths_input = st.text_area(
             "Z-stack paths (one per line)",
-            value="\n".join(path_data.get("zstack_paths", [])) if use_zshift else ""
+            value="\n".join(path_data.get("paths", {}).get("zstack_paths", [])) if use_zshift else ""
         )
         zstack_paths = [line.strip() for line in zstack_paths_input.split("\n") if line.strip()]
 
@@ -643,57 +521,57 @@ def main():
             index=possible_log_levels.index(default_level)
         )
 
-        # Update st.session_state["path_file_data"] with the new values
-        st.session_state["path_file_data"]["subject"] = subject
-        st.session_state["path_file_data"]["date"] = date_
-        st.session_state["path_file_data"]["experiment_type"] = exp_type
-        st.session_state["path_file_data"]["concatenation_groups"] = concat_groups
-        st.session_state["path_file_data"]["data_paths"] = data_paths
-        st.session_state["path_file_data"]["export_paths"] = export_paths
-        st.session_state["path_file_data"]["zstack_paths"] = zstack_paths
-        st.session_state["path_file_data"]["logging"] = {"log_path": log_path, "log_level": log_level}       
+        # Update st.session_state["config_data"] with the new values
+        st.session_state["config_data"].setdefault("subject", {})["name"] = subject
+        st.session_state["config_data"].setdefault("imaging", {})["date"] = date_
+        st.session_state["config_data"]["imaging"]["experiment_type"] = exp_type
+        paths_section = st.session_state["config_data"].setdefault("paths", {})
+        paths_section["concatenation_groups"] = concat_groups
+        paths_section["data_paths"] = data_paths
+        paths_section["export_paths"] = export_paths
+        paths_section["zstack_paths"] = zstack_paths
+        st.session_state["config_data"]["logging"] = {"log_path": log_path, "log_level": log_level}
 
     # ---------------------------------------------------------------------
     # --- Display the current state of the path file
-    path_file_dict = build_path_file_dict(run_method, use_zshift, remote_params_dir)
+    config_dict = build_config_dict(run_method, use_zshift, remote_params_dir)
     # Preview JSON
-    st.sidebar.subheader("Path File Preview") #divider=True)
-    st.sidebar.write('''Filling the forms to the right will automatically update the fields below.  
-                     Save or download the File path below once ready.''')
-    st.sidebar.write(''':material/info: The fields :grey-background[data_paths], :grey-background[export_paths], and :grey-background[params_files] must be filled.''')
-    st.sidebar.json(path_file_dict)
+    st.sidebar.subheader("Config File Preview")
+    st.sidebar.write('''Filling the forms to the right will automatically update the fields below.
+                     Save or download the config file once ready.''')
+    st.sidebar.json(config_dict)
 
     # --- Suggest a default filename based on subject, date and run numbers
-    runs = parse_run_numbers(path_file_dict["data_paths"])
+    runs = parse_run_numbers(config_dict.get("paths", {}).get("data_paths", []))
     if runs:
         # e.g. 'run1_run2_run3'
         runs_str = "_".join(runs)
-        default_filename = f"paths_{subject}_{date_}_{runs_str}.json" if (subject and date_) else "my_paths.json"
+        default_filename = f"config_{subject}_{date_}_{runs_str}.json" if (subject and date_) else "my_config.json"
     else:
         # fallback if no runs found
-        default_filename = f"paths_{subject}_{date_}_run.json" if (subject and date_) else "my_paths.json"
+        default_filename = f"config_{subject}_{date_}_run.json" if (subject and date_) else "my_config.json"
 
-    path_json_name = st.sidebar.text_input("Path JSON filename:", default_filename)
+    path_json_name = st.sidebar.text_input("Config JSON filename:", default_filename)
 
     col1, col2 = st.sidebar.columns(2)
 
     with col1:
-        if st.sidebar.button("Save Path JSON"):
+        if st.sidebar.button("Save Config JSON"):
             try:
-                path_file_path = paths_dir / path_json_name
-                paths_dir.mkdir(parents=True, exist_ok=True)
-                with open(path_file_path, "w") as f:
-                    json.dump(path_file_dict, f, indent=4)
-                st.sidebar.success(f"Saved {path_json_name} locally to {path_file_path}")
+                config_file_path = configs_dir / path_json_name
+                configs_dir.mkdir(parents=True, exist_ok=True)
+                with open(config_file_path, "w") as f:
+                    json.dump(config_dict, f, indent=4)
+                st.sidebar.success(f"Saved {path_json_name} locally to {config_file_path}")
             except Exception as e:
-                st.sidebar.error(f"⚠️ Error saving path JSON: {e}")
+                st.sidebar.error(f"⚠️ Error saving config JSON: {e}")
     with col2:
         st.sidebar.download_button(
-            label="Download Path JSON",
-            data=json.dumps(path_file_dict, indent=4),
+            label="Download Config JSON",
+            data=json.dumps(config_dict, indent=4),
             file_name=path_json_name,
             mime="application/json"
-        )  
+        )
                           
     # ---------------------------------------------------------------------
     # STEP 4: Run the pipeline
@@ -797,7 +675,7 @@ def main():
         # 1) Button to run locally    
         if run_method == "Run locally":
             if st.button(f"Run Pipeline Locally ({platform.node()})"):
-                cmd = ["python", f"{scripts_dir}/batch_mcorr_cnmf.py", path_json_name]
+                cmd = ["python", f"{scripts_dir}/batch_mcorr.py", str(configs_dir / path_json_name)]
                 st.write(f"Running command locally: {' '.join(cmd)}")
                 try:
                     completed_proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -817,7 +695,7 @@ def main():
                 remote_host = os.getenv("SSH_LOGIN_NODE")
                 remote_code_dir = os.getenv("OM_CODE_DIR")
                 remote_pipeline_dir = f"{remote_code_dir}/Mesmerize"
-                remote_paths_dir = f"{remote_pipeline_dir}/paths/openmind"
+                remote_configs_dir = f"{remote_pipeline_dir}/configs/openmind"
                 remote_params_dir = f"{remote_pipeline_dir}/parameters"
                 remote_scripts_dir = f"{remote_code_dir}/scripts"
                 remote_utils_dir = f"{remote_code_dir}/scripts/utils"
@@ -845,15 +723,15 @@ def main():
                 except Exception as e:
                     st.error(f"⚠️ Error updating SBATCH directives: :red-background[{e}]")                
 
-                local_path_json = paths_dir / path_json_name
+                local_path_json = configs_dir / path_json_name
                 if not local_path_json.exists():
-                    st.error(f"Path JSON does not exist locally: {local_path_json}")
+                    st.error(f"Config JSON does not exist locally: {local_path_json}")
                     st.stop()
 
                 # Step 1: Create Directories & List `utils/` in a Single SSH Command
                 try:
                     ssh_command = f"""
-                        mkdir -p {remote_paths_dir} {remote_params_dir} {remote_scripts_dir} {remote_utils_dir} && 
+                        mkdir -p {remote_configs_dir} {remote_params_dir} {remote_scripts_dir} {remote_utils_dir} &&
                         ls {remote_utils_dir} 2>/dev/null
                     """
                     ssh_proc = subprocess.run(
@@ -870,7 +748,7 @@ def main():
 
                 # Step 2: Collect Files to Transfer via SCP
                 files_to_copy = {
-                    str(local_path_json): f"{remote_paths_dir}/{path_json_name}",
+                    str(local_path_json): f"{remote_configs_dir}/{path_json_name}",
                 }
 
                 # Add parameter files if they exist
@@ -879,10 +757,6 @@ def main():
                     if local_param.exists():
                         files_to_copy[str(local_param)] = f"{remote_params_dir}/{local_param.name}"
 
-                if st.session_state.get("zshift_file_path"):
-                    local_zparam = Path(st.session_state["zshift_file_path"])
-                    if local_zparam.exists():
-                        files_to_copy[str(local_zparam)] = f"{remote_params_dir}/{local_zparam.name}"
 
                 # Add batch scripts
                 batch_script_path = scripts_dir / batch_script_filename
@@ -923,7 +797,7 @@ def main():
 
                 # Step 4: Submit Cluster Job
                 script_filename = "cluster_processing.sh" if copy_files else "om_batch_mcorr_cnmf.sh"
-                cluster_cmd = f"cd {remote_scripts_dir} && sbatch {script_filename} {remote_paths_dir}/{path_json_name}"
+                cluster_cmd = f"cd {remote_scripts_dir} && sbatch {script_filename} {remote_configs_dir}/{path_json_name}"
 
                 try:
                     ssh_proc = subprocess.run(["ssh", remote_host, cluster_cmd], capture_output=True, text=True)

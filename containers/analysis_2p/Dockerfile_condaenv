@@ -62,4 +62,4 @@ ENV CAIMAN_TEMP=/home/$IM_USER/caiman_data/temp
 RUN echo ". $CONDA_DIR/etc/profile.d/conda.sh" >> /home/$IM_USER/.profile
 
 # start batch script to run Mesmerize analysis pipeline on batch of files when container is run
-# ENTRYPOINT ["conda", "run", "-n", "mescore", "python", "-u", "batch_mcorr_cnmf.py"]
+# ENTRYPOINT ["conda", "run", "-n", "mescore", "python", "-u", "batch_mcorr.py"]

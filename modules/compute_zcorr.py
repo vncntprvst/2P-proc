@@ -44,6 +44,7 @@ import matplotlib.pyplot as plt
 from tifffile import TiffFile, TiffWriter, imread
 
 from modules import bruker_concat_tif as ct
+from pipeline.utils.pipeline_utils import log_and_print
 
 from scipy.ndimage import gaussian_filter, map_coordinates, shift, affine_transform, label, find_objects
 from scipy.stats import mode, linregress
@@ -104,8 +105,8 @@ def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
 
     # Return both the aligned images and the shifts
     return aligned_images, shifts
-        
-def shift_zstack(zshift_params, zstack_in, z_shifted_file):
+
+def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
 
     """
     Shift images in zstack by dx and dy to compensate for drift due to objective angle.
@@ -125,6 +126,8 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file):
         }
     - zstack_in: Path to the folder containing the z-stack images.
         e.g. zstack_in='D:/Analysis_2P/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004'
+    - z_shifted_file: Name of the output shifted z-stack file.
+    - scale_range: Boolean indicating whether to scale the output to uint16 range.
 
     Returns:
     - zstack_out: Path to the folder containing the shifted z-stack images.
@@ -183,9 +186,12 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file):
             coordinates = np.array([Y.ravel() / micron_per_pixel, X.ravel() / micron_per_pixel])
             shifted_Zstack[iz] = map_coordinates(V, coordinates, order=1, mode='nearest').reshape(Ny, Nx)
     
-    # Normalize to uint16 range, from uint12 range (even though in float64 format at that point)    
-    shifted_Zstack = (shifted_Zstack * ((2**16 - 1) / (2**12 - 1))).astype(np.float32)
-    
+    if scale_range:
+        # Normalize to uint16 range, from uint12 range (even though in float64 format at that point)    
+        shifted_Zstack = (shifted_Zstack * ((2**16 - 1) / (2**12 - 1))).astype(np.float32)
+    else:
+        shifted_Zstack = shifted_Zstack.astype(np.float32)
+
     # print(f"Aligned zstack shape: {shifted_Zstack.shape}, data type: {shifted_Zstack.dtype}, min: {shifted_Zstack.min()}, max: {shifted_Zstack.max()}")
     
     # Refine alignment by registering the z-stack to iself
@@ -1823,7 +1829,7 @@ def subtract_z_motion_pixels(movie_mmap_path, zpos, zstack_filepath, n_jobs=-1):
     # Return the corrected F matrix and the scaling factor
     return Fcorrected_reshaped, z_motion_scaling_factors
 
-def z_motion(mcorr_movie_path, parameters, recompute=True):
+def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     """
     Shifts the z-stack and performs z-motion correlation.
 
@@ -1843,9 +1849,14 @@ def z_motion(mcorr_movie_path, parameters, recompute=True):
     
     # --- Parameter Setup ---
     # Extract z-stack parameters and the z-stack file path from the input parameters.
-    z_parameters = parameters['z_params']
-    zstack_path = parameters['zstack_path']
-    
+    z_parameters = parameters['params_mcorr'].get('z_motion_correction', {})
+    zstack_path = parameters.get('zstack_path', None)
+
+    # If zstack_path is not found, log an error and return None
+    if zstack_path is None:
+        log_and_print("Z-stack path not found in parameters.", level="error")
+        return None, None, None
+
     # If z_parameters is not already a dict, assume it is a path to a JSON file and load it.
     if not isinstance(z_parameters, dict):
         with open(z_parameters, 'r') as file:
@@ -1862,7 +1873,12 @@ def z_motion(mcorr_movie_path, parameters, recompute=True):
     try:
         # If the shifted z-stack file doesn't exist, generate it using the shift_zstack function.
         if not os.path.exists(zstack_path / z_shifted_file) or recompute:
-            shift_zstack_path = shift_zstack(z_parameters['zstack_shift'], zstack_path, z_shifted_file)
+            shift_zstack_path = shift_zstack(
+                z_parameters['zstack_shift'], 
+                zstack_path, 
+                z_shifted_file,
+                scale_range=scale_range
+            )
         else:
             shift_zstack_path = zstack_path / z_shifted_file
     except Exception as e:
@@ -1907,11 +1923,11 @@ def z_motion(mcorr_movie_path, parameters, recompute=True):
                     if not os.path.exists(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy"):
                         zcorr_movie, z_motion_scaling_factors = subtract_z_motion_patches(
                             mcorr_movie_path,
-                            zstack_path / z_shifted_file, 
-                            z_correlation, 
+                            zstack_path / z_shifted_file,
+                            z_correlation,
                             parameters['params_mcorr']['main'],
-                            subtract_method,
-                            True
+                            subtract_method=subtract_method,
+                            save_tiffs=True
                         )
                         # Save the scaling factors if they have been computed.
                         if z_motion_scaling_factors is not None:
@@ -1964,7 +1980,7 @@ if __name__ == "__main__":
     # Get arguements from command line
     parser = argparse.ArgumentParser(description="Compute z-motion correction for a movie")
     parser.add_argument("mcorr_movie_path", type=str, help="Path to the motion-corrected movie")
-    parser.add_argument("parameters", type=str, help="Path to the parameters file")
+    parser.add_argument("parameters", type=str, help="Path to the config file")
     args = parser.parse_args()
     mcorr_movie_path = Path(args.mcorr_movie_path)
     parameters = Path(args.parameters)
