@@ -169,7 +169,31 @@ def run_roi_zcorr(export_path, parameters):
     f_anat_files = sorted(export_path.glob("F_anat_non_rigid*.tiff"))
 
     cnmf_file = export_path / "cnmf_result.hdf5"
-    s2p_files = [export_path / "F.npy", export_path / "stat.npy"]
+
+    # Locate Suite2p outputs flexibly: root, suite2p/plane0, any suite2p/plane*, or stray plane0
+    s2p_dir = None
+    s2p_files = None
+    candidates = []
+    # Root-level outputs
+    candidates.append(export_path)
+    # Standard suite2p plane0
+    candidates.append(export_path / "suite2p" / "plane0")
+    # Any suite2p plane*
+    candidates.extend(sorted((export_path / "suite2p").glob("plane*"))) if (export_path / "suite2p").exists() else None
+    # Stray plane0 directly under export_path (seen in some save_mat behaviors)
+    candidates.append(export_path / "plane0")
+
+    for cdir in [c for c in candidates if c]:
+        Fp = cdir / "F.npy"
+        Sp = cdir / "stat.npy"
+        if Fp.exists() and Sp.exists():
+            s2p_dir = cdir
+            s2p_files = [Fp, Sp]
+            try:
+                log_and_print(f"Detected Suite2p outputs in: {s2p_dir}")
+            except Exception:
+                pass
+            break
 
     if not zcorr_file.exists() or not f_anat_files:
         log_and_print(
@@ -180,7 +204,7 @@ def run_roi_zcorr(export_path, parameters):
 
     if cnmf_file.exists():
         extractor = "cnmf"
-    elif all(f.exists() for f in s2p_files):
+    elif s2p_dir is not None:
         extractor = "suite2p"
     else:
         log_and_print(
@@ -227,8 +251,8 @@ def run_roi_zcorr(export_path, parameters):
                 Fcorrected[i] = F[i] - Fz_rescaled[i]
 
         else:  # Suite2p
-            F = np.load(s2p_files[0])
-            stat = np.load(s2p_files[1], allow_pickle=True)
+            F = np.load(str(s2p_files[0]))
+            stat = np.load(str(s2p_files[1]), allow_pickle=True)
             n_neuron, n_frame = F.shape
             Fz = np.zeros((n_neuron, n_frame))
             Fz_rescaled = np.zeros_like(F)
