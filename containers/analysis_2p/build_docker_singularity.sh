@@ -58,18 +58,68 @@ fi
 # If the .env script exists, get the HPCC_IMAGE_REPO variable
 if [ -f "../../scripts/utils/.env" ]; then
     echo "Get server information from .env file."
-    while IFS='=' read -r key value; do
-        if [[ $key != \#* ]]; then
-            export "$key=$value"
+    # Read .env robustly: skip empty lines and comments, require '=' in the line
+    while IFS= read -r line || [ -n "$line" ]; do
+        # remove leading/trailing whitespace
+        line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        # skip empty lines
+        if [ -z "$line" ]; then
+            continue
         fi
+        # skip comments
+        case "$line" in
+            \#*) continue ;;
+        esac
+        # skip lines without an equals sign
+        if [[ "$line" != *"="* ]]; then
+            continue
+        fi
+        key="${line%%=*}"
+        value="${line#*=}"
+    # strip surrounding double or single quotes from value if present
+    value="${value%\"}"; value="${value#\"}"
+    value="${value%'}"; value="${value#'}"
+    # export the variable; allow expansion of references to previously exported vars
+    # use eval so values containing $VAR are expanded
+    eval "export $key=\"$value\""
     done < "../../scripts/utils/.env"
-    export SSH_HPCC_IMAGE_REPO="${SSH_TRANSFER_NODE}:${HPCC_IMAGE_REPO}"
+
+    # Only build SSH_HPCC_IMAGE_REPO if both components exist
+    if [ -n "${SSH_TRANSFER_NODE:-}" ] && [ -n "${HPCC_IMAGE_REPO:-}" ]; then
+        # base form: host:path
+        host_part="${SSH_TRANSFER_NODE}"
+        path_part="${HPCC_IMAGE_REPO}"
+        # add user@ if missing (use SSH_USER from .env or current $USER)
+        # if [[ "$host_part" != *"@"* ]]; then
+        #     ssh_user="${SSH_USER:-$USER}"
+        #     host_part="${ssh_user}@${host_part}"
+        # fi
+        # validate host doesn't contain slashes (common mistake when variables weren't expanded)
+        raw_host="${host_part%%@*}"
+        if [[ "$raw_host" == *"/"* ]]; then
+            echo "Warning: derived SSH host contains '/': $raw_host. Not setting SSH_HPCC_IMAGE_REPO"
+        else
+            export SSH_HPCC_IMAGE_REPO="${host_part}:${path_part}"
+        fi
+    else
+        echo "Warning: SSH_TRANSFER_NODE or HPCC_IMAGE_REPO not set from .env; not setting SSH_HPCC_IMAGE_REPO"
+    fi
 fi
 
 # check if hppc_image_repo variable exists
 if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
     echo "Copying Singularity image to HPCC."
-    rsync -aP analysis-2p_latest.sif "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
+    echo "Resolved SSH_HPCC_IMAGE_REPO=$SSH_HPCC_IMAGE_REPO"
+    # Show quick sanity checks
+    host_check="${SSH_HPCC_IMAGE_REPO%%:*}"
+    path_check="${SSH_HPCC_IMAGE_REPO#*:}"
+    echo "  host: $host_check"
+    echo "  path: $path_check"
+    if [[ "$host_check" == *"/"* ]]; then
+        echo "Aborting rsync: host contains '/'. Check .env variables."
+    else
+        rsync -aP analysis-2p_latest.sif "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
+    fi
 else
     echo "HPCC_IMAGE_REPO variable not set. Not copying to HPCC."
 fi
