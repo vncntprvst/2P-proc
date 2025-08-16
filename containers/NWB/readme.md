@@ -2,7 +2,7 @@
 
 Container image for converting 2P imaging data and associated processing results to [Neurodata Without Borders (NWB)](https://www.nwb.org/) files.
 
-This image includes `pynwb`, `neuroconv`, and the `nwbinspector` validator. The repository code is copied to `/code` and the default entrypoint runs `pipeline/nwb_conversion.py`.
+This image includes `pynwb`, `neuroconv`, and the `nwbinspector` validator. The conversion script is copied to `/code` and the default entrypoint runs `nwb_conversion.py`.
 
 #### Example usage
 * With Docker:
