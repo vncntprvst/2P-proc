@@ -9,7 +9,7 @@ rsync -avzP ../../readme.md context/
 rsync -avzP ../../LICENSE.md context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.5.1 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.5.2 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize and modules folder from the context folder
 rm -rf context/Mesmerize

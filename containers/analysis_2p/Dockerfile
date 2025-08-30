@@ -14,6 +14,19 @@ WORKDIR /code
 RUN uv pip install -r requirements.txt && \
     rm requirements.txt
 
+# Prebuild Matplotlib font cache in the image to avoid first-run delays
+# Default the config/cache dir inside the image; runtime can override MPLCONFIGDIR
+ENV MPLCONFIGDIR=/root/.config/matplotlib
+RUN mkdir -p "$MPLCONFIGDIR" && \
+    python - <<'PY'
+import matplotlib as mpl
+mpl.use('Agg')
+from matplotlib import font_manager
+# Trigger font scan/cache build
+_ = font_manager.fontManager.ttflist
+print('Prebuilt Matplotlib font cache at:', mpl.get_configdir())
+PY
+
 # Set CAIMAN_DATA environment variable
 ENV CAIMAN_DATA=/root/caiman_data
 # Set $CAIMAN_TEMP
