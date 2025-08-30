@@ -9,7 +9,7 @@ rsync -avzP ../../readme.md context/
 rsync -avzP ../../LICENSE.md context/
 
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.5.1 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.5.2 -f Dockerfile context --no-cache
 
 # Delete the Mesmerize and modules folder from the context folder
 rm -rf context/Mesmerize
@@ -19,8 +19,7 @@ rm -rf context/pipeline
 rm -f context/readme.md
 rm -f context/LICENSE.md
 
-# New versions are created with each release though GitHub Actions. 
-# Previous versions are kept for reference. 
+# v0.5.2: quick fix for dark mcorr_u8 and compare_og_mcorr, fix ops nframes detection not working when zcorrection not requested, with sidecar json file + robust fallbacks
 # v0.5.1: h5 and bin export + Suite2P extraction
 # v0.5.0: Updated to use the latest Mesmerize base image (overhauled the Dockerfile and reduced image size 3x), and added the modularized Analysis 2P pipeline. 
 # v0.3.+ ... v0.4.0: Generated through GH CI/CD pipeline.
