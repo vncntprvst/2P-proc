@@ -79,7 +79,7 @@ def to_uint8_robust(arr, p_lo=0.1, p_hi=99.9):
         vmax = vmin + 1.0  # fallback to avoid divide-by-zero
     arr = np.clip(arr, vmin, vmax)
     arr = (arr - vmin) * (255.0 / (vmax - vmin))
-    return arr.astype(np.uint8), float(vmin), float(vmax)
+    return arr.astype(np.uint8)
 
 def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
     """
