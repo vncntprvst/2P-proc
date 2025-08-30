@@ -50,6 +50,14 @@ from pipeline.utils.pipeline_utils import (
     load_caiman_memmap,
 )
 
+def to_uint8_robust(arr, p_lo=0.1, p_hi=99.9):
+    # Compute robust range on the array (handles negatives, ignores outliers)
+    vmin, vmax = np.percentile(arr, (p_lo, p_hi))
+    if vmax <= vmin:
+        vmax = vmin + 1.0  # fallback to avoid divide-by-zero
+    arr = np.clip(arr, vmin, vmax)
+    arr = (arr - vmin) * (255.0 / (vmax - vmin))
+    return arr.astype(np.uint8), float(vmin), float(vmax)
 
 def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
     """
@@ -75,7 +83,7 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
     if to_uint8:
         # Data is originally uint12, and is loaded as float 32, but is 16 bit range.
         scale_factor = 255 / (2**16-1)
-        mcorr_movie_ = (loaded_mcorr_movie * scale_factor).astype('uint8')
+        mcorr_movie_ = to_uint8_robust(loaded_mcorr_movie) #(loaded_mcorr_movie * scale_factor).astype('uint8')
     else:
         mcorr_movie_ = loaded_mcorr_movie.astype(np.uint16)
     
@@ -91,7 +99,7 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
             # Convert values to uint8
             if to_uint8:
                 scale_factor = 255 / (2**16-1)
-                original_movie_ = (original_movie * scale_factor).astype('uint8')
+                original_movie_ = to_uint8_robust(original_movie) #(original_movie * scale_factor).astype('uint8')
             else:
                 original_movie_ = original_movie.astype(np.uint16)
             # Set the path of the mp4 movie
