@@ -29,6 +29,7 @@ from libtiff import TIFF, libtiff_ctypes
 import numpy as np
 import warnings, contextlib
 import psutil
+import json
 # import dask.array as da
 
 # Couldn't suppress tiffffile warnings with warnings.filterwarnings('ignore'), so used this instead
@@ -318,6 +319,25 @@ def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-st
     print(f"Image shape: {reloaded_movie.shape[1:]}, \n\
         dtype: {reloaded_movie.dtype}, \n\
         range: {reloaded_movie.min()} - {reloaded_movie.max()}\n")
+
+    # Write a small JSON sidecar next to the concatenated movie
+    try:
+        nframes = int(reloaded_movie.shape[0])
+        Ly = int(reloaded_movie.shape[1])
+        Lx = int(reloaded_movie.shape[2])
+        sidecar = {
+            "nframes": nframes,
+            "Ly": Ly,
+            "Lx": Lx,
+            "dtype": str(reloaded_movie.dtype),
+            "source": "concatenate_tiff_to_bigtiff",
+        }
+        sidecar_path = Path(bigtiff_file).with_name(Path(bigtiff_file).name + ".json")
+        with open(sidecar_path, "w") as f:
+            json.dump(sidecar, f)
+        print(f"Wrote sidecar JSON: {sidecar_path}")
+    except Exception as e:
+        print(f"Warning: could not write sidecar JSON for {bigtiff_file}: {e}")
     
 def concatenate_tiff_to_hdf5(tiff_files, export_path):
     import caiman as cm
@@ -338,6 +358,24 @@ def concatenate_tiff_to_hdf5(tiff_files, export_path):
         
     m.save(cat_h5_file,to32=False)
     print(f"Concatenated Tiff saved to {cat_h5_file}")
+
+    # Write a small JSON sidecar next to the concatenated HDF5
+    try:
+        # caiman Movie has shape (T, Ly, Lx)
+        T, Ly, Lx = m.shape  # type: ignore[attr-defined]
+        sidecar = {
+            "nframes": int(T),
+            "Ly": int(Ly),
+            "Lx": int(Lx),
+            "dtype": "uint16",  # saved via to32=False above
+            "source": "concatenate_tiff_to_hdf5",
+        }
+        sidecar_path = Path(cat_h5_file).with_name(Path(cat_h5_file).name + ".json")
+        with open(sidecar_path, "w") as f:
+            json.dump(sidecar, f)
+        print(f"Wrote sidecar JSON: {sidecar_path}")
+    except Exception as e:
+        print(f"Warning: could not write sidecar JSON for {cat_h5_file}: {e}")
         
 def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method='bigtiff', keep=False, compression='lzw', scale_range=True):
     """ Concatenate a list of tiff files into a multi-page TIFF"""

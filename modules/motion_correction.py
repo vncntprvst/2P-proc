@@ -6,7 +6,7 @@ This module handles the motion correction workflow including:
 - Motion correction using CaImAn/Mesmerize
 - Z-motion correction (optional)
 - Movie output generation
-- File optimization and cleanup
+- File optimization
 
 Authors: Manuel Levy, Vincent Prevosto
 Date: 2024-07-22
@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.stats import mode
 from sklearn.linear_model import HuberRegressor
+import shutil
 
 # Import CaImAn and Mesmerize components
 import mesmerize_core as mc
@@ -49,6 +50,27 @@ from pipeline.utils.pipeline_utils import (
     memory_manager,
     load_caiman_memmap,
 )
+
+def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
+    """Copy concatenation sidecar JSON next to a converted movie.
+
+    Looks for sidecar written by bruker_concat_tif (cat_tiff_bt.tiff.json or
+    cat_tiff.h5.json) under export_dir, and writes a copy as
+    f"{dest_movie_path.name}.json" next to dest_movie_path.
+    """
+    try:
+        candidates = [
+            export_dir / "cat_tiff_bt.tiff.json",
+            export_dir / "cat_tiff.h5.json",
+        ]
+        src = next((p for p in candidates if p.exists()), None)
+        if src is None:
+            return
+        dst = dest_movie_path.with_name(dest_movie_path.name + ".json")
+        shutil.copy2(src, dst)
+        log_and_print(f"Copied sidecar JSON to {dst}")
+    except Exception as e:
+        log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level='warning')
 
 def to_uint8_robust(arr, p_lo=0.1, p_hi=99.9):
     # Compute robust range on the array (handles negatives, ignores outliers)
@@ -428,6 +450,8 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
     # plt.close(fig)
 
     adapter.close()
+    # Copy concatenation sidecar JSON next to the new file
+    _copy_concat_sidecar(Path(h5_path).parent, Path(h5_path))
     return Path(h5_path)
 
 def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, scale=None):
@@ -493,6 +517,8 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     log_and_print(f"Range across stream: min={running_min:.2f}, max={running_max:.2f}")
     adapter.close()
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
+    # Copy concatenation sidecar JSON next to the new file
+    _copy_concat_sidecar(Path(bin_path).parent, Path(bin_path))
     return Path(bin_path)
 
 def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, dtype_out='uint16', scale=None):
@@ -540,6 +566,9 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
 
     log_and_print(f"TIFF written: {tiff_path} (range min={running_min:.2f}, max={running_max:.2f})")
     adapter.close()
+
+    # Copy concatenation sidecar JSON next to the new file
+    _copy_concat_sidecar(Path(tiff_path).parent, Path(tiff_path))
 
     # # choose bin edges using running_min/running_max computed above
     # nbins = 100
