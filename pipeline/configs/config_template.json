@@ -26,27 +26,50 @@
         "Npixel_y": 765,
         "microns_per_pixel": 1.4542483660130718
     },
+    "paths": {
+        "concatenation_groups": [
+            1,
+            1,
+            1,
+            1
+        ],
+        "data_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-001",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-002",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-003",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1529-004"
+        ],
+        "export_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2/10022023/run1run2run3run4/suite2p"
+        ],
+        "zstack_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
+            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004"
+        ]
+    },
     "params_mcorr": {
         "method": "caiman",
         "main": {
             "strides": [
-                72,
-                72
-            ],
-            "overlaps": [
                 36,
                 36
+            ],
+            "overlaps": [
+                24,
+                24
             ],
             "max_shifts": [
                 12,
                 12
             ],
-            "max_deviation_rigid": 9,
+            "max_deviation_rigid": 6,
             "border_nan": "copy",
             "pw_rigid": true,
             "gSig_filt": null
         },
-        "save_mcorr_movie": false,
+        "save_mcorr_movie": "bin",
         "z_motion_correction": {
             "zstack_shift": {
                 "file_name": "zstack_shifted.tif",
@@ -77,7 +100,7 @@
     "params_extraction": {
         "method": "suite2p",
         "main": {
-            "fr": 15,
+            "fr": 20,
             "p": 0,
             "nb": 1,
             "merge_thr": 0.8,
@@ -104,29 +127,6 @@
     },
     "params_extra": {
         "cleanup": true
-    },
-    "paths": {
-        "concatenation_groups": [
-            1,
-            1,
-            1,
-            1
-        ],
-        "data_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-001",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-002",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-003",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1529-004"
-        ],
-        "export_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2/10022023/run1run2run3run4/suite2p"
-        ],
-        "zstack_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004"
-        ]
     },
     "logging": {
         "log_path": "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2",
