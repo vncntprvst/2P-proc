@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/suite2p:latest -t wanglabneuro/suite2p:v0.14.0 -f Dockerfile_s2p_stable .
+docker build -t wanglabneuro/suite2p:latest -t wanglabneuro/suite2p:v0.14.0 -f Dockerfile_s2p_stable context
 
 # Push to Docker registry
 docker push --all-tags wanglabneuro/suite2p
