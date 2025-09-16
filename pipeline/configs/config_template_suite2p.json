@@ -75,8 +75,6 @@
                 "beta": 8,
                 "step": 1,
                 "micron_per_pixel": 1.46,
-                "Nx": 765,
-                "Ny": 765,
                 "Nz": 41
             },
             "subtract_z_motion": true
