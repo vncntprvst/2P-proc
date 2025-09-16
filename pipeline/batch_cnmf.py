@@ -87,8 +87,14 @@ def main():
                 print(f"    - {p}")
         print("\n")
 
+        imaging_cfg = config.get("imaging", {})
+        params_extraction_cfg = json.loads(json.dumps(config.get("params_extraction", {})))
+        extraction_main = params_extraction_cfg.setdefault("main", {})
+        if "fr" not in extraction_main and "fr" in imaging_cfg:
+            extraction_main["fr"] = imaging_cfg["fr"]
+
         base_params = {
-            "params_extraction": config.get("params_extraction", {}),
+            "params_extraction": params_extraction_cfg,
             "params_extra": config.get("params_extra", {}),
         }
 

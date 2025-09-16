@@ -43,9 +43,6 @@
             "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2/10022023/run1run2run3run4/suite2p"
         ],
         "zstack_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004",
             "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004"
         ]
     },
@@ -82,25 +79,12 @@
                 "Ny": 765,
                 "Nz": 41
             },
-            "subtract_z_motion": true,
-            "parameter_definitions": {
-                "file_name": "File name of the zstack once shifted",
-                "Ch": "Channel number to use",
-                "alpha": "Angle of the objective, in degrees",
-                "beta": "Angle of the stage on which the subject sits, in degrees",
-                "step": "Step size of the zstack in micron",
-                "micron_per_pixel": "Micron per pixel",
-                "Nx": "Frame size in x (width), in pixels",
-                "Ny": "Frame size in y (height), in pixels",
-                "Nz": "Number of frames in z"
-            },
-            "description": "These parameters are used to re-align z-stack frames, to compensate for the shift induced by the angle between the objective and the sample, as the objective moves vertically."
+            "subtract_z_motion": true
         }
     },
     "params_extraction": {
         "method": "suite2p",
         "main": {
-            "fr": 20,
             "p": 0,
             "nb": 1,
             "merge_thr": 0.8,
