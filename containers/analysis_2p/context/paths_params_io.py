@@ -115,19 +115,30 @@ def get_extraction_method(config_file):
         data, _ = _load_config(config_file)
         method = data.get("params_extraction", {}).get("method", "")
         method = method.lower()
-        if method in ["caiman", "suite2p", "aind"]:
+        # Accept legacy 'caiman' naming for CNMF too
+        if method in ["cnmf", "suite2p", "aind", "caiman"]:
+            # Normalize 'caiman' to 'cnmf' for downstream logic
+            if method == "caiman":
+                return "cnmf"
             return method
         if method in ["none", ""]:
             return "none"
         print(
             f"Warning: Unknown extraction method '{method}' in {config_file}. Defaulting to 'caiman'."
         )
-        return "caiman"
+        return "cnmf"
     except Exception as e:
         raise ValueError(f"Error reading configuration file {config_file}: {e}")
 
 def get_suite2p_ops(config_file, export_path=None):
-    """Extract Suite2P ``ops`` parameters (``fs`` and ``tau``)."""
+    """Extract Suite2P ``ops`` parameters (fs, tau, dims, frames).
+
+    Tries the following for ``nframes`` in order:
+    - ``imaging.nframes`` from config
+    - number of frames in ``z_correlation.npz`` (if present)
+    - number of frames detected from exported movie in ``export_path``
+      (TIFF/HDF5), if available
+    """
 
     import json as json_module
 
@@ -136,6 +147,7 @@ def get_suite2p_ops(config_file, export_path=None):
         imaging_params = data.get("imaging", {})
         extraction_params = data.get("params_extraction", {}).get("main", {})
 
+        # Frames/Hz
         if "fr" in imaging_params:
             fs = imaging_params["fr"]
         elif "fs" in imaging_params:
@@ -143,32 +155,15 @@ def get_suite2p_ops(config_file, export_path=None):
         else:
             raise ValueError("No 'fr' or 'fs' found in imaging_params")
 
-        # Search for z_correlation.npz file in export_path,
-        if export_path is not None:
-            # print(f"Checking for z_correlation.npz in {export_path}")
-            zcorr_file = os.path.join(export_path, "z_correlation.npz")
-            if not os.path.exists(zcorr_file):
-                zcorr_file = None
-
-        nframes = imaging_params.get("nframes", None)
-        if nframes is None:
-            # if zcorr_file exists
-            if zcorr_file is not None:
-                import numpy as np
-                zcorr_data = np.load(zcorr_file)
-                nframes = int(zcorr_data['zcorr'].shape[1])
-            else:
-                # Don't set nframes if zcorr_file doesn't exist
-                nframes = 0
-        
+        # Dimensions
         Ly = imaging_params.get("Npixel_y", None)
         if Ly is None:
             raise ValueError("No 'Npixel_y' found in imaging_params")
-
         Lx = imaging_params.get("Npixel_x", None)
         if Lx is None:
             raise ValueError("No 'Npixel_x' found in imaging_params")
 
+        # Calcium decay time
         if "decay_time" in extraction_params:
             tau = extraction_params["decay_time"]
         elif "tau" in extraction_params:
@@ -176,10 +171,123 @@ def get_suite2p_ops(config_file, export_path=None):
         else:
             raise ValueError("No 'decay_time' or 'tau' found in params_extraction.main")
 
-        ops = {"nframes": nframes, "Ly": Ly, "Lx": Lx, "fs": fs, "tau": tau, "zcorr_file": zcorr_file}
+        # Optional z-corr file
+        zcorr_file = None
+        if export_path is not None:
+            candidate = os.path.join(export_path, "z_correlation.npz")
+            if os.path.exists(candidate):
+                zcorr_file = candidate
+
+        # Determine nframes
+        nframes = imaging_params.get("nframes", None)
+
+        # 0) Prefer sidecar JSON next to exported movies if available
+        if (nframes is None or int(nframes) <= 0) and export_path is not None:
+            sidecar_candidates = [
+                os.path.join(export_path, "mcorr_movie.tiff.json"),
+                os.path.join(export_path, "mcorr_u8.tiff.json"),
+                os.path.join(export_path, "mcorr_movie.h5.json"),
+                os.path.join(export_path, "mcorr_movie.bin.json"),
+                os.path.join(export_path, "cat_tiff_bt.tiff.json"),
+                os.path.join(export_path, "cat_tiff.h5.json"),
+            ]
+            for sc in sidecar_candidates:
+                if os.path.exists(sc):
+                    try:
+                        with open(sc, "r") as f:
+                            sc_data = json_module.load(f)
+                        nframes_sc = int(sc_data.get("nframes", 0))
+                        if nframes_sc > 0:
+                            nframes = nframes_sc
+                            break
+                    except Exception:
+                        pass
+        if nframes is None:
+            # 1) From z-corr if available
+            if zcorr_file is not None:
+                try:
+                    import numpy as np
+                    zcorr_data = np.load(zcorr_file)
+                    nframes = int(zcorr_data["zcorr"].shape[1])
+                except Exception:
+                    nframes = None
+
+        # 2) From exported movie if still unknown or zero
+        if (nframes is None or int(nframes) <= 0) and export_path is not None:
+            tiff_candidates = [
+                os.path.join(export_path, "mcorr_movie.tiff"),
+                os.path.join(export_path, "mcorr_u8.tiff"),
+            ]
+            h5_candidate = os.path.join(export_path, "mcorr_movie.h5")
+
+            # Try TIFF first
+            for tif_path in tiff_candidates:
+                if os.path.exists(tif_path):
+                    # Prefer tifffile if available; otherwise fall back to PIL
+                    nframes_tif = None
+                    try:
+                        import tifffile  # type: ignore
+                        with tifffile.TiffFile(tif_path) as tif:
+                            # len(pages) is robust for multipage TIFF/BigTIFF
+                            nframes_tif = int(len(tif.pages))
+                    except Exception:
+                        try:
+                            from PIL import Image  # type: ignore
+                            with Image.open(tif_path) as im:
+                                count = 0
+                                while True:
+                                    try:
+                                        im.seek(count)
+                                        count += 1
+                                    except EOFError:
+                                        break
+                            nframes_tif = int(count)
+                        except Exception:
+                            nframes_tif = None
+                    if nframes_tif is not None and nframes_tif > 0:
+                        nframes = nframes_tif
+                        break
+
+            # Try HDF5 if still unknown
+            if (nframes is None or int(nframes) <= 0) and os.path.exists(h5_candidate):
+                try:
+                    import h5py  # type: ignore
+                    with h5py.File(h5_candidate, "r") as f:
+                        if "data" in f:
+                            nframes = int(f["data"].shape[0])
+                        else:
+                            # Fallback: pick the first dataset we can find
+                            def first_dataset(g):
+                                for v in g.values():
+                                    if isinstance(v, h5py.Dataset):
+                                        return v
+                                    if isinstance(v, h5py.Group):
+                                        ds = first_dataset(v)
+                                        if ds is not None:
+                                            return ds
+                                return None
+
+                            ds = first_dataset(f)
+                            if ds is not None and ds.shape:
+                                nframes = int(ds.shape[0])
+                except Exception:
+                    pass
+
+        # Final fallback
+        if nframes is None:
+            nframes = 0
+
+        ops = {
+            "nframes": int(nframes),
+            "Ly": int(Ly),
+            "Lx": int(Lx),
+            "fs": float(fs),
+            "tau": float(tau),
+            "zcorr_file": zcorr_file,
+        }
         return json_module.dumps(ops)
     except Exception as e:
-        raise ValueError(f"Error reading configuration file {config_file}: {e}")
+        raise ValueError("Error reading configuration file {}: {}".format(config_file, e))
 
 def check_filesystem(data_path):
     # if it's a json file, open it and read the data paths

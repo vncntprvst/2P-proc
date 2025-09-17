@@ -197,6 +197,17 @@ def cleanup_files(batch_path, export_path):
     cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
     if cat_tiff_path.exists():
         cat_tiff_path.unlink()
+    # Remove concatenation sidecar JSONs if present
+    cat_sidecars = [
+        Path(export_path) / 'cat_tiff_bt.tiff.json',
+        Path(export_path) / 'cat_tiff.h5.json',
+    ]
+    for sc in cat_sidecars:
+        if sc.exists():
+            try:
+                sc.unlink()
+            except Exception:
+                pass
     log_and_print("Batch files deleted.\n")
 
 

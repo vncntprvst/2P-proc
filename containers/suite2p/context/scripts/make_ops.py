@@ -153,6 +153,17 @@ def main():
 
     args = parser.parse_args()
 
+    # Normalize optional path-like args that may come in as the literal string 'null'/'None'
+    def _normalize_optional_path(v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip().lower() in {"", "none", "null", "false"}:
+            return None
+        return v
+
+    args.reg_file = _normalize_optional_path(args.reg_file)
+    args.zcorr_file = _normalize_optional_path(args.zcorr_file)
+
     ops = suite2p.default_ops()
 
     extraction_only = (args.do_registration == 0)
@@ -260,8 +271,14 @@ def main():
 
     # Validate z-motion estimates file
     if args.zcorr_file is not None:
-        zcorr_data = np.load(args.zcorr_file)
-        ops['zpos'] = zcorr_data['zpos']
+        if os.path.exists(args.zcorr_file):
+            try:
+                zcorr_data = np.load(args.zcorr_file)
+                ops['zpos'] = zcorr_data['zpos']
+            except Exception as e:
+                log_and_print(f"Warning: failed to read zcorr_file '{args.zcorr_file}': {e}", level='warning')
+        else:
+            log_and_print(f"Warning: zcorr_file not found: '{args.zcorr_file}'. Proceeding without z-motion estimates.", level='warning')
 
     # Validate extraction-only configuration
     if extraction_only:
