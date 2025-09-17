@@ -1,6 +1,34 @@
 import json
 import argparse
 import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+
+def _detect_project_root() -> Optional[Path]:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "pipeline").exists():
+            return parent
+    return None
+
+
+PROJECT_ROOT = _detect_project_root()
+if PROJECT_ROOT and str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from pipeline.utils.config_loader import load_config as _load_config_impl
+except ImportError:
+    _load_config_impl = None
+
+
+def _load_config(path_file):
+    if _load_config_impl is not None:
+        return _load_config_impl(path_file)
+    with open(path_file) as f:
+        return json.load(f)
 
 def read_path_file(path_file, field_name='None'):
     data_paths = []
@@ -12,29 +40,20 @@ def read_path_file(path_file, field_name='None'):
     file_date = ''
     # If json format
     if path_file.endswith('.json'):
-        with open(path_file) as f:
-            # content = f.read()
-            # print(content)  # To check what is being read
-            data = json.load(f)
+        data = _load_config(path_file)
+        paths_section = data.get('paths', data)
         if field_name != 'None':
-            data_paths = data[field_name]
+            data_paths = paths_section.get(field_name, [])
         else:
-            data_paths = data['data_paths']
-            export_paths = data['export_paths']
-        if 'params_files' in data:
-            params_files = data['params_files']
-        if 'zstack_paths' in data:
-            zstack_paths = data['zstack_paths']
-        if 'z_params_files' in data:
-            z_params_files = data['z_params_files']
-        if 'subject' in data:
-            subject = data['subject']
-            # print('Subject: ' + subject)
-        if 'date' in data:
-            file_date = data['date']
-            # file_date = file_date.split('-')  # split the date string into a list [YYYY, MM, DD]
-            # file_date = file_date[2] + file_date[1] + file_date[0]  # rearrange to DDMMYYYY
-            # print('Date: ' + file_date)
+            data_paths = paths_section.get('data_paths', [])
+            export_paths = paths_section.get('export_paths', [])
+        params_files = paths_section.get('params_files', [])
+        zstack_paths = paths_section.get('zstack_paths', [])
+        z_params_files = paths_section.get('z_params_files', [])
+        subject = data.get('subject', '')
+        if isinstance(subject, dict):
+            subject = subject.get('name', '')
+        file_date = data.get('imaging', {}).get('date', data.get('date', ''))
 
     # If csv format
     else:
@@ -77,13 +96,12 @@ def check_filesystem(data_path):
     return filesystem
 
 def read_data_paths(file_path, field_name, shell_type='python'):
-    with open(file_path, "r") as f:
-        data = json.load(f)
-    
-    if field_name not in data:
-        return []  # Return empty list instead of printing messages
+    data = _load_config(file_path)
+    paths_section = data.get('paths', data)
+    if field_name not in paths_section:
+        return []
 
-    data_paths = data[field_name]
+    data_paths = paths_section[field_name]
 
     if shell_type == 'bash':
         return "\n".join(data_paths)  # Use newline delimiter for Bash

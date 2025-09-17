@@ -63,22 +63,33 @@ import cv2
 import argparse
 
 
-def _resolve_frame_dimensions(zshift_params, imaging_params=None):
-    """Return frame dimensions using z-shift params or imaging metadata."""
+def _resolve_zshift_geometry(zshift_params, imaging_params=None):
+    """Return frame dimensions and micron scaling from z-shift params or imaging metadata."""
     Nx = zshift_params.get('Nx')
     Ny = zshift_params.get('Ny')
+    micron_per_pixel = zshift_params.get('micron_per_pixel')
 
-    if (Nx is None or Ny is None) and imaging_params:
-        Nx = imaging_params.get('Npixel_x', Nx)
-        Ny = imaging_params.get('Npixel_y', Ny)
+    if imaging_params:
+        if Nx is None:
+            Nx = imaging_params.get('Npixel_x', Nx)
+        if Ny is None:
+            Ny = imaging_params.get('Npixel_y', Ny)
+        if micron_per_pixel is None:
+            micron_per_pixel = imaging_params.get('microns_per_pixel', micron_per_pixel)
 
     if Nx is None or Ny is None:
         raise KeyError(
-            "Missing frame dimensions for z-stack shift. "
-            "Provide 'Npixel_x' and 'Npixel_y' under imaging in the config."
+            "Missing frame dimensions for z-stack shift. Provide 'Npixel_x' and 'Npixel_y' "
+            "under imaging or keep them in params_mcorr.z_motion_correction.zstack_shift."
         )
 
-    return int(Nx), int(Ny)
+    if micron_per_pixel is None:
+        raise KeyError(
+            "Missing micron_per_pixel for z-stack shift. Provide 'microns_per_pixel' under imaging "
+            "or keep 'micron_per_pixel' in the zstack_shift block."
+        )
+
+    return int(Nx), int(Ny), float(micron_per_pixel)
 
 # Type checking imports (not loaded at runtime)
 if TYPE_CHECKING:
@@ -156,8 +167,7 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, im
     alpha = zshift_params['alpha']
     beta = zshift_params['beta']
     step = zshift_params['step']
-    micron_per_pixel = zshift_params['micron_per_pixel']
-    Nx, Ny = _resolve_frame_dimensions(zshift_params, imaging_params)
+    Nx, Ny, micron_per_pixel = _resolve_zshift_geometry(zshift_params, imaging_params)
     Nz = zshift_params['Nz']
 
     # Compute shifts in microns
@@ -1882,7 +1892,7 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
             z_parameters = json.load(file)
     
     # Retrieve the expected file name for the shifted z-stack.
-    z_shifted_file = z_parameters['zstack_shift']['file_name']
+    z_shifted_file = 'zstack_shifted.tif'# z_parameters['zstack_shift']['file_name']
     
     # Ensure zstack_path is a Path object.
     if isinstance(zstack_path, str):
@@ -1891,16 +1901,16 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     # --- Generate Shifted Z-stack ---
     try:
         # If the shifted z-stack file doesn't exist, generate it using the shift_zstack function.
-        if not os.path.exists(zstack_path / z_shifted_file) or recompute:
-            shift_zstack_path = shift_zstack(
-                z_parameters['zstack_shift'], 
-                zstack_path, 
-                z_shifted_file,
-                scale_range=scale_range,
-                imaging_params=parameters.get('imaging')
-            )
-        else:
-            shift_zstack_path = zstack_path / z_shifted_file
+        # if not os.path.exists(zstack_path / z_shifted_file) or recompute:
+        shift_zstack_path = shift_zstack(
+            z_parameters['zstack_shift'], 
+            zstack_path, 
+            z_shifted_file,
+            scale_range=scale_range,
+            imaging_params=parameters.get('imaging')
+        )
+        # else:
+        #     shift_zstack_path = zstack_path / z_shifted_file
     except Exception as e:
         print(f"Error in compute_zcorr - generate zstack_shifted: {e}")
         return None, None, None

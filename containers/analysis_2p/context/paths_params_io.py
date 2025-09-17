@@ -2,6 +2,27 @@ import argparse
 import json
 import os
 import logging
+import sys
+from pathlib import Path
+from typing import Optional
+
+
+def _detect_project_root() -> Optional[Path]:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "pipeline").exists():
+            return parent
+    return None
+
+
+PROJECT_ROOT = _detect_project_root()
+if PROJECT_ROOT and str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from pipeline.utils.config_loader import load_config as _load_config_impl
+except ImportError:  # Fallback when running inside legacy containers without the loader
+    _load_config_impl = None
 
 def is_logger_configured():
     return len(logging.root.handlers) > 0
@@ -18,15 +39,18 @@ def log_and_print(message, level='info'):
             logging.critical(message)
     print(message)
     
-def _load_config(path_file):
-    """Load a configuration or legacy path file as a dictionary."""
+def _raw_json(path_file):
     with open(path_file, "r") as f:
-        data = json.load(f)
+        return json.load(f)
 
-    # In the new format all path related entries are stored under the
-    # ``paths`` key.  Older path files stored them at the top level.  For
-    # backward compatibility we transparently expose a dict-like object
-    # containing those fields.
+
+def _load_config(path_file):
+    """Load a configuration file, resolving includes and env variables when possible."""
+    if _load_config_impl is not None:
+        data = _load_config_impl(path_file)
+    else:
+        data = _raw_json(path_file)
+
     paths = data.get("paths", data)
 
     return data, paths
