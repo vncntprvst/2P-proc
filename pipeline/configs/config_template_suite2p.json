@@ -1,17 +1,26 @@
 {
-    "experimenter":"First Last",
+    "__comment": "Fill in your experimental details below. Keys prefixed with __ are guidance and ignored by the pipeline.",
+    "_env": {
+        "__comment": "Set shared prefixes and identifiers once; reference them as ${VAR} later in the file.",
+        "DATA_ROOT": "/orcd/scratch/bcs/002/Vincent/Data",
+        "EXPORT_ROOT": "/orcd/scratch/bcs/002/Vincent/Analysis_2P",
+        "SUBJECT_ID": "C57_O1M2",
+        "SESSION_DATE": "10022023"
+    },
+    "experimenter":"FirstName LastName",
     "subject":{
-        "name":"subject",
-        "sex":"M/F/U",
-        "DOB":"DD-MM-YYYY",
-        "genotype":"Strain or Genotype",
-        "virus":"Virus.Name",
-        "reporter":"Reporter_Name",
-        "injection_date":"DD-MM-YYYY",
-        "area":"Brain_Area"
+        "__include": "subject_defaults.json",
+        "__comment": "Override only the fields that differ from your defaults.",
+        "name":"${SUBJECT_ID}"
     }, 
     "imaging": {
-        "date":"DDMMYYYY",
+        "date":"${SESSION_DATE}",
+        "__comment_experiment_type": "Matches Prairie user notes (e.g. objective x zoom x pixels).",
+        "__experiment_type_examples": [
+            "GC8m_16x_zoom1_765pi",
+            "GC8m_16x_zoom0.8_1024pi",
+            "GC8m_25x_zoom1_512pi"
+        ],
         "experiment_type": "GC8m_16x_zoom1_765pi",
         "run": [
             "run1"
@@ -24,29 +33,35 @@
         "fr": 20,
         "Npixel_x": 765,
         "Npixel_y": 765,
+        "__comment_microns_per_pixel": "Pulled from .xml or .env files (micronsPerPixel).",
         "microns_per_pixel": 1.4542483660130718
     },
     "paths": {
+        "__comment": "Use ${DATA_ROOT} and ${EXPORT_ROOT} to avoid repeating long prefixes. Hardcode SESSION_DATE if multiple dates.",
         "concatenation_groups": [
             1,
             1,
             1,
             1
         ],
+        "__comment_data_paths": "One entry per acquisition run.",
         "data_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-001",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-002",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1300-003",
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/TSeries-10022023-1529-004"
+            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1300-001",
+            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1300-002",
+            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1300-003",
+            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1529-004"
         ],
+        "__comment_export_paths": "Destination folders per group; auto-created if missing.",
         "export_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2/10022023/run1run2run3run4/suite2p"
+            "${EXPORT_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/run1run2run3run4/suite2p"
         ],
+        "__comment_zstack_paths": "Point to the raw z-stack directory. One per concatenation group or null (can be removed entirely if not used).",
         "zstack_paths": [
-            "/orcd/scratch/bcs/002/Vincent/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004"
+            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/ZSeries-${SESSION_DATE}-1300-004"
         ]
     },
     "params_mcorr": {
+        "__comment": "Motion correction parameters. Only 'caiman' is supported as method. Delete 'z_motion_correction' block entirely to skip z-motion correction.",
         "method": "caiman",
         "main": {
             "strides": [
@@ -81,6 +96,13 @@
         }
     },
     "params_extraction": {
+        "__comment": "ROI extraction method choices after motion correction.",
+        "__method_options": [
+            "suite2p",
+            "cnmf",
+            "aind",
+            "none"
+        ],
         "method": "suite2p",
         "main": {
             "decay_time": 0.15
@@ -90,7 +112,8 @@
         "cleanup": true
     },
     "logging": {
-        "log_path": "/orcd/scratch/bcs/002/Vincent/Analysis_2P/C57_O1M2",
+        "__comment": "Where pipeline log files are stored (defaults to export parent).",
+        "log_path": "${EXPORT_ROOT}/${SUBJECT_ID}",
         "log_level": "INFO"
     }
 }

@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from pipeline import pipeline_cnmf as preproc
+from pipeline.utils.config_loader import load_config
 
 
 def run_cnmf(data_path, params, mcorr_output=None):
@@ -41,8 +42,7 @@ def main():
     args = parser.parse_args()
 
     for cfg_path in args.config_file:
-        with open(cfg_path) as f:
-            config = json.load(f)
+        config = load_config(cfg_path)
 
         paths_cfg = config.get("paths", {})
         data_paths = paths_cfg.get("data_paths", [])
