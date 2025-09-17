@@ -30,17 +30,17 @@
             1
         ],
         "data_paths": [
-            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1300-001",
-            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1300-002",
-            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1300-003",
-            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/TSeries-${SESSION_DATE}-1529-004"
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1300-001",
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1300-002",
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1300-003",
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1529-004"
         ],
         "export_paths": [
-            "${EXPORT_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/run1run2run3run4/suite2p"
+            "EXPORT_ROOT/SUBJECT_ID/SESSION_DATE/run1run2run3run4/suite2p"
         ],
         "__comment_zstack_paths": "Point to the raw z-stack directory. One per concatenation group (one per data folder works too). If not used, can be removed entirely or left empty.",
         "zstack_paths": [
-            "${DATA_ROOT}/${SUBJECT_ID}/${SESSION_DATE}/ZSeries-${SESSION_DATE}-1300-004"
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/ZSeries-SESSION_DATE-1300-004"
         ]
     },
     "params_mcorr": {
@@ -72,7 +72,9 @@
                 "beta": 8,
                 "step": 1,
                 "Nz": 41
-            }
+            },
+            "__comment": "Set 'non_rigid' to true to compute f-anat non-rigid. If false, will only compute a rigid z-position.",
+            "non_rigid": false
         }
     },
     "params_extraction": {
@@ -114,7 +116,7 @@
     },
     "logging": {
         "__comment": "Where pipeline log files are stored (defaults to export parent).",
-        "log_path": "${EXPORT_ROOT}/${SUBJECT_ID}",
+        "log_path": "EXPORT_ROOT/SUBJECT_ID",
         "log_level": "INFO"
     }
 }
