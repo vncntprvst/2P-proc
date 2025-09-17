@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from pipeline import pipeline_cnmf as preproc
+from pipeline.utils.config_loader import load_config
 
 
 def run_cnmf(data_path, params, mcorr_output=None):
@@ -41,8 +42,7 @@ def main():
     args = parser.parse_args()
 
     for cfg_path in args.config_file:
-        with open(cfg_path) as f:
-            config = json.load(f)
+        config = load_config(cfg_path)
 
         paths_cfg = config.get("paths", {})
         data_paths = paths_cfg.get("data_paths", [])
@@ -87,8 +87,14 @@ def main():
                 print(f"    - {p}")
         print("\n")
 
+        imaging_cfg = config.get("imaging", {})
+        params_extraction_cfg = json.loads(json.dumps(config.get("params_extraction", {})))
+        extraction_main = params_extraction_cfg.setdefault("main", {})
+        if "fr" not in extraction_main and "fr" in imaging_cfg:
+            extraction_main["fr"] = imaging_cfg["fr"]
+
         base_params = {
-            "params_extraction": config.get("params_extraction", {}),
+            "params_extraction": params_extraction_cfg,
             "params_extra": config.get("params_extra", {}),
         }
 

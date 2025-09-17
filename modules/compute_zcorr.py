@@ -62,6 +62,24 @@ from skimage.registration import phase_cross_correlation
 import cv2
 import argparse
 
+
+def _resolve_frame_dimensions(zshift_params, imaging_params=None):
+    """Return frame dimensions using z-shift params or imaging metadata."""
+    Nx = zshift_params.get('Nx')
+    Ny = zshift_params.get('Ny')
+
+    if (Nx is None or Ny is None) and imaging_params:
+        Nx = imaging_params.get('Npixel_x', Nx)
+        Ny = imaging_params.get('Npixel_y', Ny)
+
+    if Nx is None or Ny is None:
+        raise KeyError(
+            "Missing frame dimensions for z-stack shift. "
+            "Provide 'Npixel_x' and 'Npixel_y' under imaging in the config."
+        )
+
+    return int(Nx), int(Ny)
+
 # Type checking imports (not loaded at runtime)
 if TYPE_CHECKING:
     from suite2p.registration import rigid
@@ -106,7 +124,7 @@ def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Return both the aligned images and the shifts
     return aligned_images, shifts
 
-def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
+def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, imaging_params=None):
 
     """
     Shift images in zstack by dx and dy to compensate for drift due to objective angle.
@@ -120,10 +138,10 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
         "beta": 6.5,
         "step": 1,
         "micron_per_pixel": 1.46,
-        "Nx": 765,
-        "Ny": 765,
         "Nz": 41
         }
+        Frame dimensions are taken from ``imaging_params`` when ``Nx``/``Ny``
+        are omitted.
     - zstack_in: Path to the folder containing the z-stack images.
         e.g. zstack_in='D:/Analysis_2P/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004'
     - z_shifted_file: Name of the output shifted z-stack file.
@@ -139,8 +157,7 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
     beta = zshift_params['beta']
     step = zshift_params['step']
     micron_per_pixel = zshift_params['micron_per_pixel']
-    Nx = zshift_params['Nx']
-    Ny = zshift_params['Ny']
+    Nx, Ny = _resolve_frame_dimensions(zshift_params, imaging_params)
     Nz = zshift_params['Nz']
 
     # Compute shifts in microns
@@ -1611,14 +1628,23 @@ def subtract_z_motion_neurons(components, fov_image, zpos, shifted_zstack_filena
 
     if not isinstance(zparams_path, dict):
         with open(zparams_path, 'r') as file:
-            params = json.load(file)
+            _ = json.load(file)
+
+    with Image.open(shifted_zstack_filename) as info_zstack:
+        Nz = info_zstack.n_frames
+        Nx = info_zstack.width
+        Ny = info_zstack.height
+        Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
+        for iz in range(Nz):
+            info_zstack.seek(iz)
+            Zstack[:, :, iz] = np.array(info_zstack)
 
     # Assuming spatial_components is a sparse matrix
     spatial_components_dense = spatial_components.toarray()
     ROI = [{} for _ in range(Nneuron)]
     for i_neuron in range(Nneuron):
         ind = np.where(spatial_components_dense[:, i_neuron] > 0)[0]
-        pix_y, pix_x = np.unravel_index(ind, (params['zstack_shift']['Nx'], params['zstack_shift']['Ny']))
+        pix_y, pix_x = np.unravel_index(ind, (Ny, Nx))
         ROI[i_neuron]['pix_x'] = pix_x
         ROI[i_neuron]['pix_y'] = pix_y
         ROI[i_neuron]['pix_w'] = np.full(len(ROI[i_neuron]['pix_x']), 1 / len(ROI[i_neuron]['pix_x']))
@@ -1629,13 +1655,6 @@ def subtract_z_motion_neurons(components, fov_image, zpos, shifted_zstack_filena
     Fz = np.zeros((Nneuron, Nframe))
     Fz_rescaled = np.zeros((Nneuron, Nframe))
     Fcorrected = np.zeros((Nneuron, Nframe))
-
-    info_zstack = Image.open(shifted_zstack_filename)
-    Nz = info_zstack.n_frames
-    Nx = info_zstack.width
-    Ny = info_zstack.height
-    Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
-    info_zstack.close()
 
     # Translate z-stack frames to minimize shift with mean of registered tseries frames
     zpos_0 = mode(zpos).mode
@@ -1877,7 +1896,8 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
                 z_parameters['zstack_shift'], 
                 zstack_path, 
                 z_shifted_file,
-                scale_range=scale_range
+                scale_range=scale_range,
+                imaging_params=parameters.get('imaging')
             )
         else:
             shift_zstack_path = zstack_path / z_shifted_file
