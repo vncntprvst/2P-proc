@@ -42,5 +42,9 @@ RUN echo ". $CONDA_DIR/etc/profile.d/conda.sh" >> /root/.profile && \
     conda init bash && conda activate suite2p && \
     echo "conda activate suite2p" >> ~/.bashrc
 
+# Copy scripts to /app/scripts
+RUN mkdir -p /app/scripts
+COPY scripts/* /app/scripts/
+
 # Set the entry point
 # ENTRYPOINT ["python", "-m", "suite2p"]
