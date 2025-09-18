@@ -198,11 +198,11 @@ def cleanup_files(batch_path, export_path):
     cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
     if cat_tiff_path.exists():
         cat_tiff_path.unlink()
-    # Remove mcorr_movie (tiff / bin / h5) if present
-    for ext in ['tiff', 'bin', 'h5']:
-        mcorr_movie_path = Path(export_path) / f'mcorr_movie.{ext}'
-        if mcorr_movie_path.exists():
-            mcorr_movie_path.unlink()
+    # NOTE: Do not remove the final motion-corrected movie here.
+    # Downstream steps (ops creation and extraction) may rely on
+    # `mcorr_movie.*` being present in the export directory.
+    # A separate cleanup step is run by the batch script during wrapping.
+    
     # Remove concatenation sidecar JSONs if present
     cat_sidecars = [
         Path(export_path) / 'cat_tiff_bt.tiff.json',

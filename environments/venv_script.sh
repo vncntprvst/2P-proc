@@ -20,8 +20,8 @@ else
     # echo "uv is already installed."
 fi
 
-uv venv a2P --python 3.10
-source a2P/bin/activate
+uv venv .a2P --python 3.10
+source .a2P/bin/activate
 
 # get latest pip setuptools and wheel
 uv pip install --upgrade setuptools wheel cython numpy
@@ -31,6 +31,10 @@ uv pip install "tensorflow>=2.12,<2.16" --no-deps
 uv pip install "torch>=2.0" --index-url https://download.pytorch.org/whl/cu118
 
 # install caiman
+# on cluster: 
+# module load gcc/12.2.0
+# export LD_LIBRARY_PATH=$(dirname $(dirname $(which gcc)))/lib64:$LD_LIBRARY_PATH
+
 uv pip install git+https://github.com/flatironinstitute/CaImAn.git
 caimanmanager install
 
@@ -41,4 +45,4 @@ uv pip install mesmerize-core
 uv pip install mesmerize-viz --prerelease=allow
 
 # install other dependencies
-uv pip install simplejpeg pylibtiff PyQt6 pyarrow plotly
+uv pip install simplejpeg pylibtiff PyQt6 pyarrow plotly imagecodecs
