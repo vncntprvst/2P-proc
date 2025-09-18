@@ -1,0 +1,122 @@
+{
+    "experimenter":"FirstName LastName",
+    "subject":{
+        "name":"SUBJECT_ID",
+        "sex":"M/F/U",
+        "DOB":"DD-MM-YYYY",
+        "genotype":"Strain or Genotype",
+        "virus":"Virus.Name",
+        "reporter":"Reporter_Name",
+        "injection_date":"DD-MM-YYYY",
+        "area":"Brain_Area"
+    }, 
+    "imaging": {
+        "date":"SESSION_DATE",
+        "objective": 16,
+        "numerical_zoom": 1,
+        "wavelength": 920,
+        "power": 530,
+        "depth": 160,
+        "fr": 20,
+        "Npixel_x": 765,
+        "Npixel_y": 765,
+        "microns_per_pixel": 1.4542483660130718
+    },
+    "paths": {
+        "concatenation_groups": [
+            1,
+            1,
+            1,
+            1
+        ],
+        "data_paths": [
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1300-001",
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1300-002",
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1300-003",
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-SESSION_DATE-1529-004"
+        ],
+        "export_paths": [
+            "EXPORT_ROOT/SUBJECT_ID/SESSION_DATE/run1run2run3run4/suite2p"
+        ],
+        "__comment_zstack_paths": "Point to the raw z-stack directory. One per concatenation group (one per data folder works too). If not used, can be removed entirely or left empty.",
+        "zstack_paths": [
+            "DATA_ROOT/SUBJECT_ID/SESSION_DATE/ZSeries-SESSION_DATE-1300-004"
+        ]
+    },
+    "params_mcorr": {
+        "__comment": "Motion correction parameters. Only 'caiman' is supported as method. Delete 'z_motion_correction' block entirely to skip z-motion correction.",
+        "method": "caiman",
+        "main": {
+            "strides": [
+                36,
+                36
+            ],
+            "overlaps": [
+                24,
+                24
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_mcorr_movie": "tiff",
+        "z_motion_correction": {
+            "zstack_shift": {
+                "Ch": 2,
+                "alpha": 22,
+                "beta": 8,
+                "step": 1,
+                "Nz": 41
+            },
+            "__comment": "Set 'non_rigid' to true to compute f-anat non-rigid. If false, will only compute a rigid z-position.",
+            "non_rigid": false
+        }
+    },
+    "params_extraction": {
+        "__comment": "ROI extraction method choices after motion correction.",
+        "__method_options": [
+            "suite2p",
+            "cnmf",
+            "aind",
+            "none"
+        ],
+        "method": "cnmf",
+        "main": {
+            "p": 0,
+            "nb": 1,
+            "merge_thr": 0.8,
+            "rf": 20,
+            "stride": 10,
+            "K": 8,
+            "gSig": [
+                5,
+                5
+            ],
+            "ssub": 1,
+            "tsub": 1,
+            "method_init": "greedy_roi",
+            "min_SNR": 3.0,
+            "SNR_lowest": 2.5,
+            "rval_thr": 0.85,
+            "rval_lowest": 0.2,
+            "use_cnn": true,
+            "min_cnn_thr": 0.95,
+            "cnn_lowest": 0.2,
+            "decay_time": 0.15
+        },
+        "refit": true
+    },
+    "params_extra": {
+        "cleanup": true
+    },
+    "logging": {
+        "__comment": "Where pipeline log files are stored (defaults to export parent).",
+        "log_path": "EXPORT_ROOT/SUBJECT_ID",
+        "log_level": "INFO"
+    }
+}

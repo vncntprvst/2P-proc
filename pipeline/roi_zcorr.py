@@ -2,7 +2,6 @@
 """Batch execution of ROI z-motion correction."""
 
 import argparse
-import json
 import logging
 import datetime
 import os
@@ -15,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from modules.motion_correction import run_roi_zcorr
+from pipeline.utils.config_loader import load_config
 
 
 def main():
@@ -23,8 +23,7 @@ def main():
     args = parser.parse_args()
 
     for cfg_path in args.config_file:
-        with open(cfg_path) as f:
-            config = json.load(f)
+        config = load_config(cfg_path)
 
         paths_cfg = config.get("paths", {})
         export_paths = paths_cfg.get("export_paths", [])

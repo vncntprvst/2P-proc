@@ -675,7 +675,7 @@ def main():
         # 1) Button to run locally    
         if run_method == "Run locally":
             if st.button(f"Run Pipeline Locally ({platform.node()})"):
-                cmd = ["python", f"{scripts_dir}/batch_mcorr.py", str(configs_dir / path_json_name)]
+                cmd = ["python", f"{code_dir}/pipeline/pipeline_mcorr.py", str(configs_dir / path_json_name)]
                 st.write(f"Running command locally: {' '.join(cmd)}")
                 try:
                     completed_proc = subprocess.run(cmd, capture_output=True, text=True)

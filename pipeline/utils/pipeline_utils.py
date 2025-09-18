@@ -194,9 +194,15 @@ def cleanup_files(batch_path, export_path):
                 log_and_print(f"Could not delete {batch_dir}: {e}")
     for pickle_file in Path(export_path).glob("batch_*.pickle"):
         pickle_file.unlink()
+    # Remove concatenated tiff if present
     cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
     if cat_tiff_path.exists():
         cat_tiff_path.unlink()
+    # Remove mcorr_movie (tiff / bin / h5) if present
+    for ext in ['tiff', 'bin', 'h5']:
+        mcorr_movie_path = Path(export_path) / f'mcorr_movie.{ext}'
+        if mcorr_movie_path.exists():
+            mcorr_movie_path.unlink()
     # Remove concatenation sidecar JSONs if present
     cat_sidecars = [
         Path(export_path) / 'cat_tiff_bt.tiff.json',

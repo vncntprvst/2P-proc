@@ -62,6 +62,35 @@ from skimage.registration import phase_cross_correlation
 import cv2
 import argparse
 
+
+def _resolve_zshift_geometry(zshift_params, imaging_params=None):
+    """Return frame dimensions and micron scaling from z-shift params or imaging metadata."""
+    Nx = zshift_params.get('Nx')
+    Ny = zshift_params.get('Ny')
+    micron_per_pixel = zshift_params.get('micron_per_pixel')
+
+    if imaging_params:
+        if Nx is None:
+            Nx = imaging_params.get('Npixel_x', Nx)
+        if Ny is None:
+            Ny = imaging_params.get('Npixel_y', Ny)
+        if micron_per_pixel is None:
+            micron_per_pixel = imaging_params.get('microns_per_pixel', micron_per_pixel)
+
+    if Nx is None or Ny is None:
+        raise KeyError(
+            "Missing frame dimensions for z-stack shift. Provide 'Npixel_x' and 'Npixel_y' "
+            "under imaging or keep them in params_mcorr.z_motion_correction.zstack_shift."
+        )
+
+    if micron_per_pixel is None:
+        raise KeyError(
+            "Missing micron_per_pixel for z-stack shift. Provide 'microns_per_pixel' under imaging "
+            "or keep 'micron_per_pixel' in the zstack_shift block."
+        )
+
+    return int(Nx), int(Ny), float(micron_per_pixel)
+
 # Type checking imports (not loaded at runtime)
 if TYPE_CHECKING:
     from suite2p.registration import rigid
@@ -106,7 +135,7 @@ def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Return both the aligned images and the shifts
     return aligned_images, shifts
 
-def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
+def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, imaging_params=None):
 
     """
     Shift images in zstack by dx and dy to compensate for drift due to objective angle.
@@ -120,10 +149,10 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
         "beta": 6.5,
         "step": 1,
         "micron_per_pixel": 1.46,
-        "Nx": 765,
-        "Ny": 765,
         "Nz": 41
         }
+        Frame dimensions are taken from ``imaging_params`` when ``Nx``/``Ny``
+        are omitted.
     - zstack_in: Path to the folder containing the z-stack images.
         e.g. zstack_in='D:/Analysis_2P/Data/C57_O1M2/10022023/ZSeries-10022023-1300-004'
     - z_shifted_file: Name of the output shifted z-stack file.
@@ -138,9 +167,7 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False):
     alpha = zshift_params['alpha']
     beta = zshift_params['beta']
     step = zshift_params['step']
-    micron_per_pixel = zshift_params['micron_per_pixel']
-    Nx = zshift_params['Nx']
-    Ny = zshift_params['Ny']
+    Nx, Ny, micron_per_pixel = _resolve_zshift_geometry(zshift_params, imaging_params)
     Nz = zshift_params['Nz']
 
     # Compute shifts in microns
@@ -1144,204 +1171,202 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
     return b
 
 
-def subtract_z_motion_lr_frames(F_func, F_anat):
-    """
-    Subtract the movement-induced changes from the functional movie using linear regression.
-    """
-    # Compute fit between F_anat_non_rigid and F_func using linear regression
-    print("Computing fit between F_anat_non_rigid and F_func using linear regression")
-    F_func_flattened = F_func.ravel()
-    F_anat_non_rigid_flattened = F_anat.ravel()
-    F_func_mean = np.mean(F_func_flattened)
-    F_anat_non_rigid_mean = np.mean(F_anat_non_rigid_flattened)
-    #  Use linregress to model F_func = slope * F_anat_non_rigid + intercept.
-    slope, intercept, r_value, _, _ = linregress(F_anat_non_rigid_flattened - F_anat_non_rigid_mean, F_func_flattened - F_func_mean)
-    z_motion_scaling_factors = {'slope': slope, 'intercept': intercept}
-    print(f"R^2 value between F_func and F_anat_non_rigid: {r_value**2}")
-    print(f"Slope: {slope}, Intercept: {intercept}")
+# def subtract_z_motion_lr_frames(F_func, F_anat):
+#     """
+#     Subtract the movement-induced changes from the functional movie using linear regression.
+#     """
+#     # Compute fit between F_anat_non_rigid and F_func using linear regression
+#     print("Computing fit between F_anat_non_rigid and F_func using linear regression")
+#     F_func_flattened = F_func.ravel()
+#     F_anat_non_rigid_flattened = F_anat.ravel()
+#     F_func_mean = np.mean(F_func_flattened)
+#     F_anat_non_rigid_mean = np.mean(F_anat_non_rigid_flattened)
+#     #  Use linregress to model F_func = slope * F_anat_non_rigid + intercept.
+#     slope, intercept, r_value, _, _ = linregress(F_anat_non_rigid_flattened - F_anat_non_rigid_mean, F_func_flattened - F_func_mean)
+#     z_motion_scaling_factors = {'slope': slope, 'intercept': intercept}
+#     print(f"R^2 value between F_func and F_anat_non_rigid: {r_value**2}")
+#     print(f"Slope: {slope}, Intercept: {intercept}")
     
-    # Rescale and subtract the movement-induced changes from F_func
-    print("Rescaling and subtracting the movement-induced changes from F_func")
-    # We do not add intercept here, because that would bring the mean of F_corrected to 0, which is not desired when computing dF/F later. 
-    # Instead, we subtract the mean of F_anat_non_rigid, which is a better approach.
-    F_anat_non_rigid_adjusted = slope * (F_anat - np.mean(F_anat, axis=0))
-    F_corrected = F_func - F_anat_non_rigid_adjusted
-    print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
-    # Clip F_corrected to uint16 range
-    F_corrected = np.clip(F_corrected, 0, 2**16-1)
+#     # Rescale and subtract the movement-induced changes from F_func
+#     print("Rescaling and subtracting the movement-induced changes from F_func")
+#     # We do not add intercept here, because that would bring the mean of F_corrected to 0, which is not desired when computing dF/F later. 
+#     # Instead, we subtract the mean of F_anat_non_rigid, which is a better approach.
+#     F_anat_non_rigid_adjusted = slope * (F_anat - np.mean(F_anat, axis=0))
+#     F_corrected = F_func - F_anat_non_rigid_adjusted
+#     print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
+#     # Clip F_corrected to uint16 range
+#     F_corrected = np.clip(F_corrected, 0, 2**16-1)
 
-    return F_corrected, z_motion_scaling_factors
+#     return F_corrected, z_motion_scaling_factors
 
-def subtract_z_motion_hr_frames(F_func, F_anat, smoothing_factor=1):
+# def subtract_z_motion_hr_frames(F_func, F_anat, smoothing_factor=1):
     
-    # Get the dimensions of the F_func and F_anat movies (must be the same)
-    Nframe, Ny, Nx = F_func.shape
+#     # Get the dimensions of the F_func and F_anat movies (must be the same)
+#     Nframe, Ny, Nx = F_func.shape
     
-    if Nframe != F_anat.shape[0]:
-        raise ValueError("The number of frames in the functional and anatomical movies must be the same.")
+#     if Nframe != F_anat.shape[0]:
+#         raise ValueError("The number of frames in the functional and anatomical movies must be the same.")
     
-    # Smooth the F_func and F_anat movies in x and y but not T
-    F_func = gaussian_filter(F_func, sigma=[0, smoothing_factor, smoothing_factor])
-    F_anat = gaussian_filter(F_anat, sigma=[0, smoothing_factor, smoothing_factor])
+#     # Smooth the F_func and F_anat movies in x and y but not T
+#     F_func = gaussian_filter(F_func, sigma=[0, smoothing_factor, smoothing_factor])
+#     F_anat = gaussian_filter(F_anat, sigma=[0, smoothing_factor, smoothing_factor])
     
-    # # Reshape the "functional" fluorescence movie
-    # F_func = F_func.reshape(Nframe, Ny * Nx).T
+#     # # Reshape the "functional" fluorescence movie
+#     # F_func = F_func.reshape(Nframe, Ny * Nx).T
         
-    # # Get the average image of the functional fluorescence movie
-    # F_func_mean = np.mean(F_func, axis=1)
+#     # # Get the average image of the functional fluorescence movie
+#     # F_func_mean = np.mean(F_func, axis=1)
     
-    # # Reshape the "anatomical" fluorescence movie
-    # F_anat = F_anat.reshape(Nframe, Ny * Nx).T
+#     # # Reshape the "anatomical" fluorescence movie
+#     # F_anat = F_anat.reshape(Nframe, Ny * Nx).T
 
-    # # Get the average image of the z-stack movie
-    # F_anat_mean = np.mean(F_anat, axis=1)
+#     # # Get the average image of the z-stack movie
+#     # F_anat_mean = np.mean(F_anat, axis=1)
     
-    F_func_flattened = F_func.ravel()
-    F_anat_flattened = F_anat.ravel()
-    F_func_mean = np.mean(F_func_flattened)
-    F_anat_mean = np.mean(F_anat_flattened)
+#     F_func_flattened = F_func.ravel()
+#     F_anat_flattened = F_anat.ravel()
+#     F_func_mean = np.mean(F_func_flattened)
+#     F_anat_mean = np.mean(F_anat_flattened)
     
-    # Fit a linear regression model between the non-rigid F_anat and the F_func movie, using fit_huber_regressor_on_region
-    with tqdm(total=1, desc='Fitting regressors on frames to find z motion scaling factors') as pbar:
-            z_motion_scaling_factors = fit_huber_regressor_on_region(F_anat_flattened, F_anat_mean, F_func_flattened, F_func_mean, pbar)  
+#     # Fit a linear regression model between the non-rigid F_anat and the F_func movie, using fit_huber_regressor_on_region
+#     with tqdm(total=1, desc='Fitting regressors on frames to find z motion scaling factors') as pbar:
+#             z_motion_scaling_factors = fit_huber_regressor_on_region(F_anat_flattened, F_anat_mean, F_func_flattened, F_func_mean, pbar)  
     
-    z_motion_scaling_factors = np.array(z_motion_scaling_factors).astype(np.float32)
-    print(f"z_motion_scaling_factors: {z_motion_scaling_factors}")
+#     z_motion_scaling_factors = np.array(z_motion_scaling_factors).astype(np.float32)
+#     print(f"z_motion_scaling_factors: {z_motion_scaling_factors}")
     
-    # Rescale and subtract the movement-induced changes from the original F matrix
-    F_anat_rescaled = z_motion_scaling_factors * (F_anat - F_anat_mean)
-    # F_anat_rescaled = z_motion_scaling_factors * (F_anat_flattened - F_anat_mean)   
+#     # Rescale and subtract the movement-induced changes from the original F matrix
+#     F_anat_rescaled = z_motion_scaling_factors * (F_anat - F_anat_mean)
+#     # F_anat_rescaled = z_motion_scaling_factors * (F_anat_flattened - F_anat_mean)   
     
-    # Subtract the rescaled F_anat from the F_func movie
-    print("Rescaling and subtracting the movement-induced changes from F_func")
-    F_corrected = F_func - F_anat_rescaled
-    # Fcorrected = F_func_flattened - F_anat_rescaled
-    # Fcorrected = Fcorrected.reshape(F_func.shape)
+#     # Subtract the rescaled F_anat from the F_func movie
+#     print("Rescaling and subtracting the movement-induced changes from F_func")
+#     F_corrected = F_func - F_anat_rescaled
+#     # Fcorrected = F_func_flattened - F_anat_rescaled
+#     # Fcorrected = Fcorrected.reshape(F_func.shape)
     
-    print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
-    # Clip F_corrected to uint16 range
-    F_corrected = np.clip(F_corrected, 0, 2**16-1)
+#     print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
+#     # Clip F_corrected to uint16 range
+#     F_corrected = np.clip(F_corrected, 0, 2**16-1)
     
-    # # # Compute R^2 of the correction by frames
-    # # # 1   –   ( sum(Vcorr2)    /   sum( (Vfunc - <Vfunc>)2 ))
-    # # # Sum of squares of the residuals
-    # # sum_resid = np.sum((F_func - F_func_mean) ** 2)
-    # # # Sum of squares of the corrected values
-    # # sum_corrected = np.sum(F_corrected ** 2)
-    # # # Compute the R^2 value
-    # # R2 = 1 - sum_corrected / sum_resid
+#     # # # Compute R^2 of the correction by frames
+#     # # # 1   –   ( sum(Vcorr2)    /   sum( (Vfunc - <Vfunc>)2 ))
+#     # # # Sum of squares of the residuals
+#     # # sum_resid = np.sum((F_func - F_func_mean) ** 2)
+#     # # # Sum of squares of the corrected values
+#     # # sum_corrected = np.sum(F_corrected ** 2)
+#     # # # Compute the R^2 value
+#     # # R2 = 1 - sum_corrected / sum_resid
     
-    # # Compute the sum of squared residuals
-    # sum_res = np.sum(((F_func - F_func_mean) - F_anat_rescaled) ** 2, axis=0)
-    # # Compute the total sum of squares
-    # sum_tot = np.sum((F_func - F_func_mean) ** 2, axis=0)
-    # # Compute the R^2 map
-    # r_square_map = 1 - sum_res / sum_tot
+#     # # Compute the sum of squared residuals
+#     # sum_res = np.sum(((F_func - F_func_mean) - F_anat_rescaled) ** 2, axis=0)
+#     # # Compute the total sum of squares
+#     # sum_tot = np.sum((F_func - F_func_mean) ** 2, axis=0)
+#     # # Compute the R^2 map
+#     # r_square_map = 1 - sum_res / sum_tot
 
-    return F_corrected, z_motion_scaling_factors
+#     return F_corrected, z_motion_scaling_factors
 
+# def subtract_z_motion_hr_pixels(F_func, F_anat):
+#     """
+#     Subtract the movement-induced changes from the functional movie using pixel-wise subtraction.
+#     """
+#     # Get the dimensions of the F_func and F_anat movies (must be the same)
+#     Nframe, Ny, Nx = F_func.shape
 
-def subtract_z_motion_hr_pixels(F_func, F_anat):
-    """
-    Subtract the movement-induced changes from the functional movie using pixel-wise subtraction.
-    """
-    # Get the dimensions of the F_func and F_anat movies (must be the same)
-    Nframe, Ny, Nx = F_func.shape
-
-    # Reshape the "functional" fluorescence movie
-    F_func = F_func.reshape(Nframe, Ny * Nx).T
+#     # Reshape the "functional" fluorescence movie
+#     F_func = F_func.reshape(Nframe, Ny * Nx).T
         
-    # Get the average image of the functional fluorescence movie
-    F_func_mean = np.mean(F_func, axis=1)
+#     # Get the average image of the functional fluorescence movie
+#     F_func_mean = np.mean(F_func, axis=1)
     
-    # Reshape the "anatomical" fluorescence movie
-    F_anat = F_anat.reshape(Nframe, Ny * Nx).T
+#     # Reshape the "anatomical" fluorescence movie
+#     F_anat = F_anat.reshape(Nframe, Ny * Nx).T
 
-    # Get the average image of the z-stack movie
-    F_anat_mean = np.mean(F_anat, axis=1)
+#     # Get the average image of the z-stack movie
+#     F_anat_mean = np.mean(F_anat, axis=1)
 
-    # Fit a linear regression model between the non-rigid F_anat and the F_func movie
-    z_motion_scaling_factors = Parallel(n_jobs=-1)(delayed(fit_huber_regressor)
-                                                    (i_pixel, F_anat, F_anat_mean, F_func, F_func_mean)
-                                                    for i_pixel in tqdm(range(Ny * Nx),
-                                                    desc='Fitting regressors to find z motion scaling factors'))
+#     # Fit a linear regression model between the non-rigid F_anat and the F_func movie
+#     z_motion_scaling_factors = Parallel(n_jobs=-1)(delayed(fit_huber_regressor)
+#                                                     (i_pixel, F_anat, F_anat_mean, F_func, F_func_mean)
+#                                                     for i_pixel in tqdm(range(Ny * Nx),
+#                                                     desc='Fitting regressors to find z motion scaling factors'))
         
-    # # Subtract mean values before passing to the regressor
-    # F_anat_adjusted = [F_anat[i_pixel, :] - F_anat_mean[i_pixel] for i_pixel in range(Ny * Nx)]
-    # F_func_adjusted = [F_func[i_pixel, :] - F_func_mean[i_pixel] for i_pixel in range(Ny * Nx)]
+#     # # Subtract mean values before passing to the regressor
+#     # F_anat_adjusted = [F_anat[i_pixel, :] - F_anat_mean[i_pixel] for i_pixel in range(Ny * Nx)]
+#     # F_func_adjusted = [F_func[i_pixel, :] - F_func_mean[i_pixel] for i_pixel in range(Ny * Nx)]
 
-    # # Fit a linear regression model between the non-rigid F_anat and the F_func movie
-    # z_motion_scaling_factors = Parallel(n_jobs=-1)(delayed(fit_huber_regressor)
-    #                                                 (F_anat_adjusted[i], F_func_adjusted[i])
-    #                                                 for i in tqdm(range(Ny * Nx),
-    #                                                 desc='Fitting regressors to find z motion scaling factors'))
-    # Run as regular loop for debugging purposes: 
-    # z_motion_scaling_factors = [fit_huber_regressor(F_anat_adjusted[i], F_func_adjusted[i]) for i in range(Ny * Nx)]
+#     # # Fit a linear regression model between the non-rigid F_anat and the F_func movie
+#     # z_motion_scaling_factors = Parallel(n_jobs=-1)(delayed(fit_huber_regressor)
+#     #                                                 (F_anat_adjusted[i], F_func_adjusted[i])
+#     #                                                 for i in tqdm(range(Ny * Nx),
+#     #                                                 desc='Fitting regressors to find z motion scaling factors'))
+#     # Run as regular loop for debugging purposes: 
+#     # z_motion_scaling_factors = [fit_huber_regressor(F_anat_adjusted[i], F_func_adjusted[i]) for i in range(Ny * Nx)]
 
-    # Change the list to a numpy array and cast to float32
-    z_motion_scaling_factors = np.array(z_motion_scaling_factors).astype(np.float32)
-    # np.save(export_dir / 'z_motion_scaling_factors_hr_pixels.npy', z_motion_scaling_factors)
-    # Kill all LokyProcess workers (Windows only)
-    if os.name == 'nt':
-        for p in multiprocessing.active_children():
-            if 'LokyProcess' in p.name:
-                p.terminate()
+#     # Change the list to a numpy array and cast to float32
+#     z_motion_scaling_factors = np.array(z_motion_scaling_factors).astype(np.float32)
+#     # np.save(export_dir / 'z_motion_scaling_factors_hr_pixels.npy', z_motion_scaling_factors)
+#     # Kill all LokyProcess workers (Windows only)
+#     if os.name == 'nt':
+#         for p in multiprocessing.active_children():
+#             if 'LokyProcess' in p.name:
+#                 p.terminate()
 
-    # Rescale and subtract the movement-induced changes from the original F matrix
-    F_anat_rescaled = z_motion_scaling_factors[:, np.newaxis] * (F_anat - F_anat_mean[:, np.newaxis])
-    Fcorrected = F_func - F_anat_rescaled
+#     # Rescale and subtract the movement-induced changes from the original F matrix
+#     F_anat_rescaled = z_motion_scaling_factors[:, np.newaxis] * (F_anat - F_anat_mean[:, np.newaxis])
+#     Fcorrected = F_func - F_anat_rescaled
 
-    # Reshape the corrected F matrix to the original shape
-    Fcorrected = Fcorrected.T.reshape(Nframe, Ny, Nx)
-    Fcorrected = np.clip(Fcorrected, 0, 2**16-1)
+#     # Reshape the corrected F matrix to the original shape
+#     Fcorrected = Fcorrected.T.reshape(Nframe, Ny, Nx)
+#     Fcorrected = np.clip(Fcorrected, 0, 2**16-1)
     
-    # print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
+#     # print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
        
-    # # Compute R^2 of the correction for each pixel
-    # # # 1   –   ( sum(Fxycorr(t)2)xyt    /   sum( (Fxyfunc(t) - <Fxyfunc(t)>t)2 )xyt )
-    # # # Total sum of squares, proportional to the variance of the data. We use the residuals of F_func when we remove the mean of F_func)
-    # # sum_tot = np.sum((F_func - F_func_mean[:, np.newaxis]) ** 2)
-    # # # Sum of squares of the corrected values residuals (meaning residuals of F_func when we remove the corrected F_anat)
-    # # sum_res = np.sum(Fcorrected ** 2)
-    # # # sum_res = np.sum((F_func - Fcorrected.T.reshape(Nframe, Ny * Nx).T) ** 2)
-    # # # Compute the R^2 value
-    # # R2 = 1 - sum_res / sum_tot
+#     # # Compute R^2 of the correction for each pixel
+#     # # # 1   –   ( sum(Fxycorr(t)2)xyt    /   sum( (Fxyfunc(t) - <Fxyfunc(t)>t)2 )xyt )
+#     # # # Total sum of squares, proportional to the variance of the data. We use the residuals of F_func when we remove the mean of F_func)
+#     # # sum_tot = np.sum((F_func - F_func_mean[:, np.newaxis]) ** 2)
+#     # # # Sum of squares of the corrected values residuals (meaning residuals of F_func when we remove the corrected F_anat)
+#     # # sum_res = np.sum(Fcorrected ** 2)
+#     # # # sum_res = np.sum((F_func - Fcorrected.T.reshape(Nframe, Ny * Nx).T) ** 2)
+#     # # # Compute the R^2 value
+#     # # R2 = 1 - sum_res / sum_tot
     
-    # #     R2 = 1 – sum((Fxyfunc(t) - <Fxyfunc(t)>t) - bxy * (Fxyanat(t) - <Fxyanat(t)>t))^2)
-    # # / sum((Fxyfunc(t) - <Fxyfunc(t)>t)^2)
+#     # #     R2 = 1 – sum((Fxyfunc(t) - <Fxyfunc(t)>t) - bxy * (Fxyanat(t) - <Fxyanat(t)>t))^2)
+#     # # / sum((Fxyfunc(t) - <Fxyfunc(t)>t)^2)
 
-    # # Compute the sum of squared residuals
-    # sum_res = np.sum(((F_func - F_func_mean[:, np.newaxis] ) - F_anat_rescaled) ** 2, axis=1)
-    # # Compute the total sum of squares
-    # sum_tot = np.sum((F_func - F_func_mean[:, np.newaxis]) ** 2, axis=1)
-    # # Compute the R^2 map
-    # r_square_map = 1 - sum_res / sum_tot
-    # # re-shape r_square_map to the original shape
-    # r_square_map = r_square_map.reshape(Ny, Nx)
+#     # # Compute the sum of squared residuals
+#     # sum_res = np.sum(((F_func - F_func_mean[:, np.newaxis] ) - F_anat_rescaled) ** 2, axis=1)
+#     # # Compute the total sum of squares
+#     # sum_tot = np.sum((F_func - F_func_mean[:, np.newaxis]) ** 2, axis=1)
+#     # # Compute the R^2 map
+#     # r_square_map = 1 - sum_res / sum_tot
+#     # # re-shape r_square_map to the original shape
+#     # r_square_map = r_square_map.reshape(Ny, Nx)
     
-    # # print("sum_res shape:", sum_res.shape)
-    # # print("sum_tot shape:", sum_tot.shape)
-    # # print("r_square_map shape:", r_square_map.shape)
+#     # # print("sum_res shape:", sum_res.shape)
+#     # # print("sum_tot shape:", sum_tot.shape)
+#     # # print("r_square_map shape:", r_square_map.shape)
     
-    # # Print the formulas
-    # # print("Sum of squared residuals: sum_res = ∑ [ (F_func - F_func_mean) - z_motion_scaling_factors * (F_anat - F_anat_mean) ]^2")
-    # # print("Total sum of squares: sum_tot = ∑ (F_func - F_func_mean)^2")
-    # # print(f"R² map: r_square_map = 1 - sum_res / sum_tot")
+#     # # Print the formulas
+#     # # print("Sum of squared residuals: sum_res = ∑ [ (F_func - F_func_mean) - z_motion_scaling_factors * (F_anat - F_anat_mean) ]^2")
+#     # # print("Total sum of squares: sum_tot = ∑ (F_func - F_func_mean)^2")
+#     # # print(f"R² map: r_square_map = 1 - sum_res / sum_tot")
     
-    # # # Compute correlation coefficient between F_func and F_anat
-    # # # Compute the correlation coefficient for each pixel over time
-    # # corr_coef = np.array([np.corrcoef(F_func[i_pix], F_anat[i_pix])[0, 1] for i_pix in range(Ny * Nx)])
-    # # # Reshape the correlation coefficients back to the original 2D shape (y, x)
-    # # corr_coef_map = corr_coef.reshape(Ny, Nx)
+#     # # # Compute correlation coefficient between F_func and F_anat
+#     # # # Compute the correlation coefficient for each pixel over time
+#     # # corr_coef = np.array([np.corrcoef(F_func[i_pix], F_anat[i_pix])[0, 1] for i_pix in range(Ny * Nx)])
+#     # # # Reshape the correlation coefficients back to the original 2D shape (y, x)
+#     # # corr_coef_map = corr_coef.reshape(Ny, Nx)
     
-    # #   Save corr_coef_map as a png image
-    # #  Reshape z_motion_scaling_factors
-    # z_motion_scaling_factors_map = z_motion_scaling_factors.reshape(Ny, Nx)
+#     # #   Save corr_coef_map as a png image
+#     # #  Reshape z_motion_scaling_factors
+#     # z_motion_scaling_factors_map = z_motion_scaling_factors.reshape(Ny, Nx)
     
-    # fov_image = np.mean(F_func.T.reshape(Nframe, Ny, Nx), axis=0)
+#     # fov_image = np.mean(F_func.T.reshape(Nframe, Ny, Nx), axis=0)
 
-    return Fcorrected, z_motion_scaling_factors
-
+#     return Fcorrected, z_motion_scaling_factors
 
 def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, mcorr_params, 
                               subtract_method='huber_regression_pixels', 
@@ -1600,234 +1625,236 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 
     return F_corrected, z_motion_scaling_factors
 
-def subtract_z_motion_neurons(components, fov_image, zpos, shifted_zstack_filename, zparams_path):
-    """
-    Subtract z motion from the fluorescence traces of neurons.
-    """
+# def subtract_z_motion_neurons(components, fov_image, zpos, shifted_zstack_filename, zparams_path):
+#     """
+#     Subtract z motion from the fluorescence traces of neurons.
+#     """
     
-    F=components.C
-    spatial_components=components.A
-    Nneuron, Nframe = F.shape
+#     F=components.C
+#     spatial_components=components.A
+#     Nneuron, Nframe = F.shape
 
-    if not isinstance(zparams_path, dict):
-        with open(zparams_path, 'r') as file:
-            params = json.load(file)
+#     if not isinstance(zparams_path, dict):
+#         with open(zparams_path, 'r') as file:
+#             _ = json.load(file)
 
-    # Assuming spatial_components is a sparse matrix
-    spatial_components_dense = spatial_components.toarray()
-    ROI = [{} for _ in range(Nneuron)]
-    for i_neuron in range(Nneuron):
-        ind = np.where(spatial_components_dense[:, i_neuron] > 0)[0]
-        pix_y, pix_x = np.unravel_index(ind, (params['zstack_shift']['Nx'], params['zstack_shift']['Ny']))
-        ROI[i_neuron]['pix_x'] = pix_x
-        ROI[i_neuron]['pix_y'] = pix_y
-        ROI[i_neuron]['pix_w'] = np.full(len(ROI[i_neuron]['pix_x']), 1 / len(ROI[i_neuron]['pix_x']))
+#     with Image.open(shifted_zstack_filename) as info_zstack:
+#         Nz = info_zstack.n_frames
+#         Nx = info_zstack.width
+#         Ny = info_zstack.height
+#         Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
+#         for iz in range(Nz):
+#             info_zstack.seek(iz)
+#             Zstack[:, :, iz] = np.array(info_zstack)
 
-    F0 = np.zeros(Nneuron)
-    Fz0 = np.zeros(Nneuron)
-    b = np.zeros(Nneuron)
-    Fz = np.zeros((Nneuron, Nframe))
-    Fz_rescaled = np.zeros((Nneuron, Nframe))
-    Fcorrected = np.zeros((Nneuron, Nframe))
+#     # Assuming spatial_components is a sparse matrix
+#     spatial_components_dense = spatial_components.toarray()
+#     ROI = [{} for _ in range(Nneuron)]
+#     for i_neuron in range(Nneuron):
+#         ind = np.where(spatial_components_dense[:, i_neuron] > 0)[0]
+#         pix_y, pix_x = np.unravel_index(ind, (Ny, Nx))
+#         ROI[i_neuron]['pix_x'] = pix_x
+#         ROI[i_neuron]['pix_y'] = pix_y
+#         ROI[i_neuron]['pix_w'] = np.full(len(ROI[i_neuron]['pix_x']), 1 / len(ROI[i_neuron]['pix_x']))
 
-    info_zstack = Image.open(shifted_zstack_filename)
-    Nz = info_zstack.n_frames
-    Nx = info_zstack.width
-    Ny = info_zstack.height
-    Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
-    info_zstack.close()
+#     F0 = np.zeros(Nneuron)
+#     Fz0 = np.zeros(Nneuron)
+#     b = np.zeros(Nneuron)
+#     Fz = np.zeros((Nneuron, Nframe))
+#     Fz_rescaled = np.zeros((Nneuron, Nframe))
+#     Fcorrected = np.zeros((Nneuron, Nframe))
 
-    # Translate z-stack frames to minimize shift with mean of registered tseries frames
-    zpos_0 = mode(zpos).mode
-    Zstack_0 = Zstack[ :, :,zpos_0]
-    # Perform image registration
-    shift, error, _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=10)
+#     # Translate z-stack frames to minimize shift with mean of registered tseries frames
+#     zpos_0 = mode(zpos).mode
+#     Zstack_0 = Zstack[ :, :,zpos_0]
+#     # Perform image registration
+#     shift, error, _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=10)
 
-    # Create the transformation matrix (for translation only)
-    tform = np.eye(3)
-    tform[0, 2] = -shift[1]  # x translation
-    tform[1, 2] = -shift[0]  # y translation
+#     # Create the transformation matrix (for translation only)
+#     tform = np.eye(3)
+#     tform[0, 2] = -shift[1]  # x translation
+#     tform[1, 2] = -shift[0]  # y translation
 
-    for iz in range(Nz):
-        Zstack[:, :, iz] = warp(Zstack[:, :, iz], tform)
+#     for iz in range(Nz):
+#         Zstack[:, :, iz] = warp(Zstack[:, :, iz], tform)
 
-        # Make a movie of the z-stack frames that best fit the registered tseries frames
-    F810_t = Zstack[:, :, zpos]
+#         # Make a movie of the z-stack frames that best fit the registered tseries frames
+#     F810_t = Zstack[:, :, zpos]
 
-    # Apply the cell masks on this movie and find the movement-induced changes
-    # in fluorescence of each cell predicted from z changes, then rescale and
-    # subtract them from the original F matrix
-    for i_neuron in range(Nneuron):
-        F0[i_neuron] = np.mean(F[i_neuron, :])
-        for i_pix in range(len(ROI[i_neuron]['pix_x'])):
-            Fz[i_neuron, :] += ROI[i_neuron]['pix_w'][i_pix] * F810_t[ROI[i_neuron]['pix_y'][i_pix], ROI[i_neuron]['pix_x'][i_pix], :]
-        Fz0[i_neuron] = np.mean(Fz[i_neuron, :])
+#     # Apply the cell masks on this movie and find the movement-induced changes
+#     # in fluorescence of each cell predicted from z changes, then rescale and
+#     # subtract them from the original F matrix
+#     for i_neuron in range(Nneuron):
+#         F0[i_neuron] = np.mean(F[i_neuron, :])
+#         for i_pix in range(len(ROI[i_neuron]['pix_x'])):
+#             Fz[i_neuron, :] += ROI[i_neuron]['pix_w'][i_pix] * F810_t[ROI[i_neuron]['pix_y'][i_pix], ROI[i_neuron]['pix_x'][i_pix], :]
+#         Fz0[i_neuron] = np.mean(Fz[i_neuron, :])
 
-        huber = HuberRegressor(fit_intercept=False)
-        huber.fit(Fz[i_neuron, :].reshape(-1, 1) - Fz0[i_neuron], F[i_neuron, :] - F0[i_neuron])
-        b[i_neuron] = huber.coef_[0]
+#         huber = HuberRegressor(fit_intercept=False)
+#         huber.fit(Fz[i_neuron, :].reshape(-1, 1) - Fz0[i_neuron], F[i_neuron, :] - F0[i_neuron])
+#         b[i_neuron] = huber.coef_[0]
 
-        Fz_rescaled[i_neuron, :] = b[i_neuron] * (Fz[i_neuron, :] - Fz0[i_neuron])
-        Fcorrected[i_neuron, :] = F[i_neuron, :] - Fz_rescaled[i_neuron, :]
+#         Fz_rescaled[i_neuron, :] = b[i_neuron] * (Fz[i_neuron, :] - Fz0[i_neuron])
+#         Fcorrected[i_neuron, :] = F[i_neuron, :] - Fz_rescaled[i_neuron, :]
 
-    # If z is >+5um or <-5um away from mode, then replace F by NaN and interpolate linearly from non missing values
-    missing_F = np.abs(zpos - zpos_0) > 5
-    if np.any(missing_F):
-        Fcorrected[:, missing_F] = np.nan
-        Fcorrected = pd.DataFrame(Fcorrected).interpolate(method='linear', axis=1, limit_direction='both').values
+#     # If z is >+5um or <-5um away from mode, then replace F by NaN and interpolate linearly from non missing values
+#     missing_F = np.abs(zpos - zpos_0) > 5
+#     if np.any(missing_F):
+#         Fcorrected[:, missing_F] = np.nan
+#         Fcorrected = pd.DataFrame(Fcorrected).interpolate(method='linear', axis=1, limit_direction='both').values
 
-    Fz_scale_factor = np.mean(b)
+#     Fz_scale_factor = np.mean(b)
 
-    # Plotting and visualization
-    # fig_z_drift = plt.figure()
-    # plt.plot(zpos)
-    # plt.xlabel('frames')
-    # plt.ylabel('z')
+#     # Plotting and visualization
+#     # fig_z_drift = plt.figure()
+#     # plt.plot(zpos)
+#     # plt.xlabel('frames')
+#     # plt.ylabel('z')
 
-    # x,y,t  
-    return  Fcorrected, Fz_scale_factor
+#     # x,y,t  
+#     return  Fcorrected, Fz_scale_factor
 
-def subtract_z_motion_pixels(movie_mmap_path, zpos, zstack_filepath, n_jobs=-1):
-    """
-    Fit a Huber regressor to find the scaling factor for each pixel. 
-    Subtract the movement-induced changes from the original F matrix per pixel.
-    """
-    # Load the movie
-    movie_16bit, dims, T = load_memmap(movie_mmap_path)
-    pixels = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
-    Nframe, Ny, Nx = pixels.shape
+# def subtract_z_motion_pixels(movie_mmap_path, zpos, zstack_filepath, n_jobs=-1):
+#     """
+#     Fit a Huber regressor to find the scaling factor for each pixel. 
+#     Subtract the movement-induced changes from the original F matrix per pixel.
+#     """
+#     # Load the movie
+#     movie_16bit, dims, T = load_memmap(movie_mmap_path)
+#     pixels = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
+#     Nframe, Ny, Nx = pixels.shape
     
-    # Load the FOV file
-    mcorr_batch_dir = movie_mmap_path.parent
-    fov_file_path = Path.joinpath(mcorr_batch_dir, f"{mcorr_batch_dir.stem}_mean_projection.npy")
-    fov_image = np.load(fov_file_path)
+#     # Load the FOV file
+#     mcorr_batch_dir = movie_mmap_path.parent
+#     fov_file_path = Path.joinpath(mcorr_batch_dir, f"{mcorr_batch_dir.stem}_mean_projection.npy")
+#     fov_image = np.load(fov_file_path)
     
-    # Load the z-stack
-    info_zstack = Image.open(zstack_filepath)
-    Nz = info_zstack.n_frames
-    Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
-    for iz in range(Nz):
-        info_zstack.seek(iz)
-        Zstack[:, :, iz] = np.array(info_zstack)
-    info_zstack.close()        
-    # TODO: check why on Windows F_anat bit depth is 8 and not 16
+#     # Load the z-stack
+#     info_zstack = Image.open(zstack_filepath)
+#     Nz = info_zstack.n_frames
+#     Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
+#     for iz in range(Nz):
+#         info_zstack.seek(iz)
+#         Zstack[:, :, iz] = np.array(info_zstack)
+#     info_zstack.close()        
+#     # TODO: check why on Windows F_anat bit depth is 8 and not 16
 
-    # Flip Zstack up-down to match the orientation of the movie
-    Zstack = np.flip(Zstack, axis=0)
+#     # Flip Zstack up-down to match the orientation of the movie
+#     Zstack = np.flip(Zstack, axis=0)
 
-    # Reshape the "functional" fluorescence movie
-    F_func = pixels.reshape(Nframe, Ny * Nx).T
+#     # Reshape the "functional" fluorescence movie
+#     F_func = pixels.reshape(Nframe, Ny * Nx).T
         
-    # Get the average image of the functional fluorescence movie
-    F_func_mean = np.mean(F_func, axis=1)
+#     # Get the average image of the functional fluorescence movie
+#     F_func_mean = np.mean(F_func, axis=1)
     
-    # Translate zstack frames to minimize shift with mean of registered tseries frames
-    zpos_0 = mode(zpos).mode
-    Zstack_0 = Zstack[:, :, zpos_0]
+#     # Translate zstack frames to minimize shift with mean of registered tseries frames
+#     zpos_0 = mode(zpos).mode
+#     Zstack_0 = Zstack[:, :, zpos_0]
     
-    # Perform image registration
-    shift, _ , _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=10)
+#     # Perform image registration
+#     shift, _ , _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=10)
     
-    # Create the transformation matrix (for translation only)
-    tform = np.eye(3)
-    tform[0, 2] = -shift[1]
-    tform[1, 2] = -shift[0]
+#     # Create the transformation matrix (for translation only)
+#     tform = np.eye(3)
+#     tform[0, 2] = -shift[1]
+#     tform[1, 2] = -shift[0]
 
-    # Translate z-stack frames to minimize shift with mean of registered tseries frames (FOV)
-    for iz in range(Nz):
-        Zstack[:, :, iz] = warp(Zstack[:, :, iz], tform)
+#     # Translate z-stack frames to minimize shift with mean of registered tseries frames (FOV)
+#     for iz in range(Nz):
+#         Zstack[:, :, iz] = warp(Zstack[:, :, iz], tform)
 
-    # Make a movie of the z-stack frames that follows zcorr (movement in depth)
-    F_anat = Zstack[:, :, zpos]
+#     # Make a movie of the z-stack frames that follows zcorr (movement in depth)
+#     F_anat = Zstack[:, :, zpos]
 
-    # Reshape the "anatomical" fluorescence movie
-    F_anat = F_anat.reshape(Ny * Nx, Nframe)
+#     # Reshape the "anatomical" fluorescence movie
+#     F_anat = F_anat.reshape(Ny * Nx, Nframe)
 
-    # Get the average image of the z-stack movie
-    F_anat_mean = np.mean(F_anat, axis=1)
+#     # Get the average image of the z-stack movie
+#     F_anat_mean = np.mean(F_anat, axis=1)
         
-    # Fit a Huber regressor to find the scaling factor
-    # with Parallel(n_jobs=n_jobs) as parallel:
-    #     z_motion_scaling_factors = parallel(
-    #         delayed(fit_huber_regressor)(
-    #             i_pixel, 
-    #             F_anat, 
-    #             F_anat_mean, 
-    #             F_func, 
-    #             F_func_mean
-    #         ) 
-    #         for i_pixel in tqdm(
-    #             range(Nx * Ny), 
-    #             desc='Fitting regressors to find z motion scaling factors'
-    #         )
-    #     )
-    # # Close and join workers
-    # parallel._backend.terminate()
+#     # Fit a Huber regressor to find the scaling factor
+#     # with Parallel(n_jobs=n_jobs) as parallel:
+#     #     z_motion_scaling_factors = parallel(
+#     #         delayed(fit_huber_regressor)(
+#     #             i_pixel, 
+#     #             F_anat, 
+#     #             F_anat_mean, 
+#     #             F_func, 
+#     #             F_func_mean
+#     #         ) 
+#     #         for i_pixel in tqdm(
+#     #             range(Nx * Ny), 
+#     #             desc='Fitting regressors to find z motion scaling factors'
+#     #         )
+#     #     )
+#     # # Close and join workers
+#     # parallel._backend.terminate()
 
-    z_motion_scaling_factors = Parallel(n_jobs=n_jobs)(delayed(fit_huber_regressor)(i_pixel, F_anat, F_anat_mean, F_func, F_func_mean) for i_pixel in tqdm(range(Ny * Nx), desc='Fitting regressors to find z motion scaling factors'))
+#     z_motion_scaling_factors = Parallel(n_jobs=n_jobs)(delayed(fit_huber_regressor)(i_pixel, F_anat, F_anat_mean, F_func, F_func_mean) for i_pixel in tqdm(range(Ny * Nx), desc='Fitting regressors to find z motion scaling factors'))
                    
-    # Change the list to a numpy array and cast to float32
-    z_motion_scaling_factors = np.array(z_motion_scaling_factors)
-    z_motion_scaling_factors = z_motion_scaling_factors.astype(np.float32)
+#     # Change the list to a numpy array and cast to float32
+#     z_motion_scaling_factors = np.array(z_motion_scaling_factors)
+#     z_motion_scaling_factors = z_motion_scaling_factors.astype(np.float32)
 
-    # Kill all LokyProcess workers (Windows only)
-    if os.name == 'nt':
-        for p in multiprocessing.active_children():
-            if 'LokyProcess' in p.name:
-                p.terminate()
+#     # Kill all LokyProcess workers (Windows only)
+#     if os.name == 'nt':
+#         for p in multiprocessing.active_children():
+#             if 'LokyProcess' in p.name:
+#                 p.terminate()
 
-    # Rescale and subtract the movement-induced changes from the original F matrix
-    F_anat_rescaled = z_motion_scaling_factors[:, np.newaxis] * (F_anat - F_anat_mean[:, np.newaxis])
-    Fcorrected = F_func - F_anat_rescaled
-    Fcorrected = np.clip(Fcorrected, 0, 2**16-1)
+#     # Rescale and subtract the movement-induced changes from the original F matrix
+#     F_anat_rescaled = z_motion_scaling_factors[:, np.newaxis] * (F_anat - F_anat_mean[:, np.newaxis])
+#     Fcorrected = F_func - F_anat_rescaled
+#     Fcorrected = np.clip(Fcorrected, 0, 2**16-1)
 
-    # If z is >+5um or <-5um away from mode, then replace F by NaN and interpolate linearly from non missing values
-    missing_F = np.abs(zpos - zpos_0) > 5
-    if np.any(missing_F):
-        Fcorrected[:, missing_F] = np.nan
-        Fcorrected = pd.DataFrame(Fcorrected).interpolate(method='linear', axis=1, limit_direction='both').values
-        # TODO: check that it only interpolates NaNs
+#     # If z is >+5um or <-5um away from mode, then replace F by NaN and interpolate linearly from non missing values
+#     missing_F = np.abs(zpos - zpos_0) > 5
+#     if np.any(missing_F):
+#         Fcorrected[:, missing_F] = np.nan
+#         Fcorrected = pd.DataFrame(Fcorrected).interpolate(method='linear', axis=1, limit_direction='both').values
+#         # TODO: check that it only interpolates NaNs
         
-    # Reshape Fcorrected to the original shape
-    F_func_reshaped = F_func.T.reshape(Nframe, Ny, Nx)
-    F_anat_rescaled_reshaped = F_anat_rescaled.T.reshape(Nframe, Ny, Nx)
-    min_Fars = np.min(F_anat_rescaled_reshaped)
-    max_Fars = np.max(F_anat_rescaled_reshaped)
-    F_anat_rescaled_reshaped = (F_anat_rescaled_reshaped - min_Fars) / (max_Fars - min_Fars) * (2**16-1)
-    Fcorrected_reshaped = Fcorrected.T.reshape(Nframe, Ny, Nx)
-    Fcorrected_reshaped = np.clip(Fcorrected_reshaped, 0, 2**16-1)
-    F_anat_reshaped = F_anat.T.reshape(Nframe, Ny, Nx)
+#     # Reshape Fcorrected to the original shape
+#     F_func_reshaped = F_func.T.reshape(Nframe, Ny, Nx)
+#     F_anat_rescaled_reshaped = F_anat_rescaled.T.reshape(Nframe, Ny, Nx)
+#     min_Fars = np.min(F_anat_rescaled_reshaped)
+#     max_Fars = np.max(F_anat_rescaled_reshaped)
+#     F_anat_rescaled_reshaped = (F_anat_rescaled_reshaped - min_Fars) / (max_Fars - min_Fars) * (2**16-1)
+#     Fcorrected_reshaped = Fcorrected.T.reshape(Nframe, Ny, Nx)
+#     Fcorrected_reshaped = np.clip(Fcorrected_reshaped, 0, 2**16-1)
+#     F_anat_reshaped = F_anat.T.reshape(Nframe, Ny, Nx)
 
-    # Save an excerpt of the corrected F matrix to a video file
-    # Take only the first 80 frames
-    F_anat_reshaped_excerpt = F_anat_reshaped[:80]
-    Fcorrected_reshaped_excerpt = Fcorrected_reshaped[:80]
-    F_anat_rescaled_reshaped_excerpt = F_anat_rescaled_reshaped[:80]
-    F_func_reshaped_excerpt = F_func_reshaped[:80]
+#     # Save an excerpt of the corrected F matrix to a video file
+#     # Take only the first 80 frames
+#     F_anat_reshaped_excerpt = F_anat_reshaped[:80]
+#     Fcorrected_reshaped_excerpt = Fcorrected_reshaped[:80]
+#     F_anat_rescaled_reshaped_excerpt = F_anat_rescaled_reshaped[:80]
+#     F_func_reshaped_excerpt = F_func_reshaped[:80]
     
-    # Assign data type to uint16
-    F_func_reshaped_excerpt = F_func_reshaped_excerpt.astype(np.uint16)
-    F_anat_rescaled_reshaped_excerpt = F_anat_rescaled_reshaped_excerpt.astype(np.uint16)
-    Fcorrected_reshaped_excerpt = Fcorrected_reshaped_excerpt.astype(np.uint16)
-    F_anat_reshaped_excerpt = F_anat_reshaped_excerpt.astype(np.uint16)
+#     # Assign data type to uint16
+#     F_func_reshaped_excerpt = F_func_reshaped_excerpt.astype(np.uint16)
+#     F_anat_rescaled_reshaped_excerpt = F_anat_rescaled_reshaped_excerpt.astype(np.uint16)
+#     Fcorrected_reshaped_excerpt = Fcorrected_reshaped_excerpt.astype(np.uint16)
+#     F_anat_reshaped_excerpt = F_anat_reshaped_excerpt.astype(np.uint16)
     
-    # Concatenate horizontally
-    top = np.concatenate((F_func_reshaped_excerpt, F_anat_reshaped_excerpt), axis=2)
-    bottom = np.concatenate((F_anat_rescaled_reshaped_excerpt, Fcorrected_reshaped_excerpt), axis=2)
+#     # Concatenate horizontally
+#     top = np.concatenate((F_func_reshaped_excerpt, F_anat_reshaped_excerpt), axis=2)
+#     bottom = np.concatenate((F_anat_rescaled_reshaped_excerpt, Fcorrected_reshaped_excerpt), axis=2)
     
-    # Concatenate vertically
-    F_concat = np.concatenate((top, bottom), axis=1)
+#     # Concatenate vertically
+#     F_concat = np.concatenate((top, bottom), axis=1)
     
-    # Save the concatenated array to a video file
-    F_concat_img = Image.fromarray(F_concat[0])
-    F_concat_img.save(movie_mmap_path.parent.parent / "F_concat.tif", save_all=True, append_images=[Image.fromarray(F_concat[i]) for i in range(1, 80)])
+#     # Save the concatenated array to a video file
+#     F_concat_img = Image.fromarray(F_concat[0])
+#     F_concat_img.save(movie_mmap_path.parent.parent / "F_concat.tif", save_all=True, append_images=[Image.fromarray(F_concat[i]) for i in range(1, 80)])
     
-    # clean up            
-    del pixels, movie_16bit
-    gc.collect()
+#     # clean up            
+#     del pixels, movie_16bit
+#     gc.collect()
 
-    # Return the corrected F matrix and the scaling factor
-    return Fcorrected_reshaped, z_motion_scaling_factors
+#     # Return the corrected F matrix and the scaling factor
+#     return Fcorrected_reshaped, z_motion_scaling_factors
 
 def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     """
@@ -1863,7 +1890,7 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
             z_parameters = json.load(file)
     
     # Retrieve the expected file name for the shifted z-stack.
-    z_shifted_file = z_parameters['zstack_shift']['file_name']
+    z_shifted_file = 'zstack_shifted.tif'# z_parameters['zstack_shift']['file_name']
     
     # Ensure zstack_path is a Path object.
     if isinstance(zstack_path, str):
@@ -1872,15 +1899,16 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     # --- Generate Shifted Z-stack ---
     try:
         # If the shifted z-stack file doesn't exist, generate it using the shift_zstack function.
-        if not os.path.exists(zstack_path / z_shifted_file) or recompute:
-            shift_zstack_path = shift_zstack(
-                z_parameters['zstack_shift'], 
-                zstack_path, 
-                z_shifted_file,
-                scale_range=scale_range
-            )
-        else:
-            shift_zstack_path = zstack_path / z_shifted_file
+        # if not os.path.exists(zstack_path / z_shifted_file) or recompute:
+        shift_zstack_path = shift_zstack(
+            z_parameters['zstack_shift'], 
+            zstack_path, 
+            z_shifted_file,
+            scale_range=scale_range,
+            imaging_params=parameters.get('imaging')
+        )
+        # else:
+        #     shift_zstack_path = zstack_path / z_shifted_file
     except Exception as e:
         print(f"Error in compute_zcorr - generate zstack_shifted: {e}")
         return None, None, None
@@ -1898,66 +1926,40 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
         print(f"Error in compute_zcorr - compute z-correlation: {e}")
         return None, None, None
     
-    # --- Perform Z-motion Subtraction (if specified) ---
+    # --- Compute non-rigid z-motion computation if specified ---
     try:
-        if 'subtract_z_motion' in z_parameters:
-            subtract_z_motion = z_parameters['subtract_z_motion']
+        compute_non_rigid = z_parameters.get('non_rigid', None)
+        if compute_non_rigid is None and 'subtract_z_motion' in z_parameters:
+            legacy_value = z_parameters['subtract_z_motion']
+            if isinstance(legacy_value, str):
+                compute_non_rigid = legacy_value.lower() not in ('false', '0', 'none')
+            else:
+                compute_non_rigid = bool(legacy_value)
+
+        if compute_non_rigid is not None:
             
             # Initialize variables for the z-motion subtraction results.
             zcorr_movie = None
             z_motion_scaling_factors = None
             movie_path = None      
-    
-            # Check if the subtraction flag is a boolean.
-            if isinstance(subtract_z_motion, bool):
-                if subtract_z_motion:
-                    # Use the specified subtraction method if provided.
-                    if 'subtract_method' in z_parameters:
-                        subtract_method = z_parameters['subtract_method']
-                        print(f"Z-motion subtraction method: {subtract_method}")
-                    else:
-                        subtract_method = None
-                        print("No subtraction method selected. Computing non-rigid F_anat but not F_func corrected.")
-                    
-                    # Perform z-motion subtraction on patches (default method)
-                    if not os.path.exists(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy"):
-                        zcorr_movie, z_motion_scaling_factors = subtract_z_motion_patches(
-                            mcorr_movie_path,
-                            zstack_path / z_shifted_file,
-                            z_correlation,
-                            parameters['params_mcorr']['main'],
-                            subtract_method=subtract_method,
-                            save_tiffs=True
-                        )
-                        # Save the scaling factors if they have been computed.
-                        if z_motion_scaling_factors is not None:
-                            np.save(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy", z_motion_scaling_factors)
-                    else:
-                        print("Z-motion subtraction already performed.")
-                else:
-                    print("No z-motion subtraction requested.")
-                    
-            # If the subtraction parameter is provided as a string, select the appropriate method.
-            elif isinstance(subtract_z_motion, str):
-                if subtract_z_motion == 'pixels':
-                    # Perform pixel-based z-motion subtraction.
-                    if not os.path.exists(mesmerize_path / "pixels_z_motion_scaling_factors.npy"):
-                        zcorr_movie, z_motion_scaling_factors = subtract_z_motion_pixels(
-                            mcorr_movie_path, 
-                            z_correlation, 
-                            shift_zstack_path
-                        )
-                        # Save the scaling factors.
-                        np.save(mesmerize_path / "pixels_z_motion_scaling_factors.npy", z_motion_scaling_factors)
-                    else:
-                        print("Z-motion subtraction already performed.")
-                
-                elif subtract_z_motion == 'neurons':
-                    print("Subtracting z motion from neurons is no longer supported.")
-                           
-            else:
-                print("No z-motion subtraction method specified.")
 
+            if compute_non_rigid:
+                # Compute non-rigid functional-anatomical correlation
+                if not os.path.exists(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy"):
+                    zcorr_movie, z_motion_scaling_factors = subtract_z_motion_patches(
+                        mcorr_movie_path,
+                        zstack_path / z_shifted_file,
+                        z_correlation,
+                        parameters['params_mcorr']['main'],
+                        subtract_method=None,
+                        save_tiffs=True
+                    )
+                    # Save the scaling factors if they have been computed.
+                    if z_motion_scaling_factors is not None:
+                        np.save(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy", z_motion_scaling_factors)
+                else:
+                    print("Z-motion subtraction already performed.")
+                    
             # --- Save Corrected Movie ---
             # If a corrected movie has been generated, save it to a memmap file.
             if zcorr_movie is not None:
