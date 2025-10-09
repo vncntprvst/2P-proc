@@ -374,7 +374,7 @@ def convert_to_bigtiff(input_file, output_file, compression='lzw', scale_range=F
 
     # print(f"BigTIFF file saved as {output_file}")
         
-def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-step', compression='lzw', scale_range=False):
+def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-step', compression='lzw', scale_range=False, data_path=None):
     """ Concatenate a list of tiff files into a multi-page BigTIFF""" 
     if os.path.isdir(export_path):
         # Define output file path
@@ -449,8 +449,12 @@ def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-st
         print(f"Wrote sidecar JSON: {sidecar_path}")
         
         # Try to extract XML metadata and add to sidecar
-        # Look for XML file in the parent directory (same name as folder)
-        xml_file = Path(bigtiff_file).parent.parent / (Path(bigtiff_file).parent.name + ".xml")
+        # Look for XML file in the original data directory (same name as folder)
+        if data_path is not None:
+            xml_file = Path(data_path) / (Path(data_path).name + ".xml")
+        else:
+            # Fallback: look in the same directory as the concatenated file
+            xml_file = Path(bigtiff_file).parent / (Path(bigtiff_file).parent.name + ".xml")
         if xml_file.exists():
             extract_xml_metadata(xml_file, sidecar_path)
         else:
@@ -459,7 +463,7 @@ def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-st
     except Exception as e:
         print(f"Warning: could not write sidecar JSON for {bigtiff_file}: {e}")
     
-def concatenate_tiff_to_hdf5(tiff_files, export_path):
+def concatenate_tiff_to_hdf5(tiff_files, export_path, data_path=None):
     import caiman as cm
     
     # Check if the export path is a directory
@@ -496,8 +500,12 @@ def concatenate_tiff_to_hdf5(tiff_files, export_path):
         print(f"Wrote sidecar JSON: {sidecar_path}")
         
         # Try to extract XML metadata and add to sidecar
-        # Look for XML file in the parent directory (same name as folder)
-        xml_file = Path(cat_h5_file).parent.parent / (Path(cat_h5_file).parent.name + ".xml")
+        # Look for XML file in the original data directory (same name as folder)
+        if data_path is not None:
+            xml_file = Path(data_path) / (Path(data_path).name + ".xml")
+        else:
+            # Fallback: look in the same directory as the concatenated file
+            xml_file = Path(cat_h5_file).parent / (Path(cat_h5_file).parent.name + ".xml")
         if xml_file.exists():
             extract_xml_metadata(xml_file, sidecar_path)
         else:
@@ -547,9 +555,9 @@ def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method=
     
     # Concatenate the tiff files, according to the method
     if method == 'bigtiff':
-        concatenate_tiff_to_bigtiff(tiff_files, export_path, compression=compression, scale_range=scale_range)
+        concatenate_tiff_to_bigtiff(tiff_files, export_path, compression=compression, scale_range=scale_range, data_path=input_paths[0])
     elif method == 'hdf5':
-        concatenate_tiff_to_hdf5(tiff_files, export_path)
+        concatenate_tiff_to_hdf5(tiff_files, export_path, data_path=input_paths[0])
 
     # Calculate the elapsed time
     elapsed_time = time.time() - start_time
