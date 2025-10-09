@@ -30,7 +30,118 @@ import numpy as np
 import warnings, contextlib
 import psutil
 import json
+import xml.etree.ElementTree as ET
+from datetime import datetime
 # import dask.array as da
+
+def extract_xml_metadata(xml_file_path, sidecar_path):
+    """
+    Extract imaging metadata from PVScan XML file and add to sidecar JSON.
+    
+    Args:
+        xml_file_path: Path to the XML file (same name as folder)
+        sidecar_path: Path to existing sidecar JSON file
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Parse XML file
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+        
+        # Extract metadata
+        metadata = {}
+        
+        # Find PVStateShard
+        pv_state = root.find('.//PVStateShard')
+        if pv_state is not None:
+            # Extract frame period and calculate frame rate
+            frame_period_elem = pv_state.find('.//PVStateValue[@key="framePeriod"]')
+            if frame_period_elem is not None:
+                frame_period = float(frame_period_elem.get('value'))
+                fr = round(1 / frame_period, 1)  # Convert to Hz
+                metadata['fr'] = fr
+            
+            # Extract optical zoom
+            zoom_elem = pv_state.find('.//PVStateValue[@key="opticalZoom"]')
+            if zoom_elem is not None:
+                metadata['numerical_zoom'] = float(zoom_elem.get('value'))
+            
+            # Extract objective lens
+            obj_elem = pv_state.find('.//PVStateValue[@key="objectiveLens"]')
+            if obj_elem is not None:
+                obj_value = obj_elem.get('value')
+                # Extract numeric value from "16X" format
+                obj_num = ''.join(filter(str.isdigit, obj_value))
+                if obj_num:
+                    metadata['objective'] = int(obj_num)
+            
+            # Extract laser power (imaging channel)
+            laser_power_elem = pv_state.find('.//PVStateValue[@key="laserPower"]')
+            if laser_power_elem is not None:
+                imaging_power = laser_power_elem.find('.//IndexedValue[@index="0"]')
+                if imaging_power is not None:
+                    metadata['power'] = round(float(imaging_power.get('value')), 1)
+            
+            # Extract laser wavelength
+            wavelength_elem = pv_state.find('.//PVStateValue[@key="laserWavelength"]')
+            if wavelength_elem is not None:
+                wavelength = wavelength_elem.find('.//IndexedValue[@index="0"]')
+                if wavelength is not None:
+                    metadata['wavelength'] = int(wavelength.get('value'))
+            
+            # Extract Z position (Z Focus)
+            position_elem = pv_state.find('.//PVStateValue[@key="positionCurrent"]')
+            if position_elem is not None:
+                # Find Z axis subindexed values
+                z_axis = position_elem.find('.//SubindexedValues[@index="ZAxis"]')
+                if z_axis is not None:
+                    z_focus = z_axis.find('.//SubindexedValue[@subindex="0"]')
+                    if z_focus is not None and z_focus.get('description') == 'Z Focus':
+                        metadata['depth'] = round(float(z_focus.get('value')), 0)
+            
+            # Extract microns per pixel
+            microns_elem = pv_state.find('.//PVStateValue[@key="micronsPerPixel"]')
+            if microns_elem is not None:
+                x_microns = microns_elem.find('.//IndexedValue[@index="XAxis"]')
+                if x_microns is not None:
+                    metadata['microns_per_pixel'] = round(float(x_microns.get('value')), 2)
+            
+            # Extract pixels per line and lines per frame
+            pixels_elem = pv_state.find('.//PVStateValue[@key="pixelsPerLine"]')
+            lines_elem = pv_state.find('.//PVStateValue[@key="linesPerFrame"]')
+            if pixels_elem is not None and lines_elem is not None:
+                metadata['Npixel_x'] = int(pixels_elem.get('value'))
+                metadata['Npixel_y'] = int(lines_elem.get('value'))
+        
+        # Extract date from PVScan
+        date_attr = root.get('date')
+        if date_attr:
+            # Convert "1/26/2024 5:26:15 PM" to "01262024" format
+            try:
+                date_obj = datetime.strptime(date_attr, "%m/%d/%Y %I:%M:%S %p")
+                metadata['date'] = date_obj.strftime("%m%d%Y")
+            except:
+                metadata['date'] = date_attr
+        
+        # Load existing sidecar JSON
+        with open(sidecar_path, 'r') as f:
+            sidecar = json.load(f)
+        
+        # Add imaging metadata
+        sidecar['imaging'] = metadata
+        
+        # Save updated sidecar
+        with open(sidecar_path, 'w') as f:
+            json.dump(sidecar, f, indent=2)
+        
+        print(f"Updated sidecar JSON with imaging metadata: {sidecar_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Warning: could not extract XML metadata: {e}")
+        return False
 
 # Couldn't suppress tiffffile warnings with warnings.filterwarnings('ignore'), so used this instead
 @contextlib.contextmanager
@@ -336,6 +447,15 @@ def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-st
         with open(sidecar_path, "w") as f:
             json.dump(sidecar, f)
         print(f"Wrote sidecar JSON: {sidecar_path}")
+        
+        # Try to extract XML metadata and add to sidecar
+        # Look for XML file in the parent directory (same name as folder)
+        xml_file = Path(bigtiff_file).parent.parent / (Path(bigtiff_file).parent.name + ".xml")
+        if xml_file.exists():
+            extract_xml_metadata(xml_file, sidecar_path)
+        else:
+            print(f"XML file not found: {xml_file}")
+            
     except Exception as e:
         print(f"Warning: could not write sidecar JSON for {bigtiff_file}: {e}")
     
@@ -374,6 +494,15 @@ def concatenate_tiff_to_hdf5(tiff_files, export_path):
         with open(sidecar_path, "w") as f:
             json.dump(sidecar, f)
         print(f"Wrote sidecar JSON: {sidecar_path}")
+        
+        # Try to extract XML metadata and add to sidecar
+        # Look for XML file in the parent directory (same name as folder)
+        xml_file = Path(cat_h5_file).parent.parent / (Path(cat_h5_file).parent.name + ".xml")
+        if xml_file.exists():
+            extract_xml_metadata(xml_file, sidecar_path)
+        else:
+            print(f"XML file not found: {xml_file}")
+            
     except Exception as e:
         print(f"Warning: could not write sidecar JSON for {cat_h5_file}: {e}")
         
