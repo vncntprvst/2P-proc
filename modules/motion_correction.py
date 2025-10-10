@@ -84,15 +84,17 @@ def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
             plane0_dir = export_dir / "suite2p" / "plane0"
             plane0_dir.mkdir(parents=True, exist_ok=True)
             
-            # Save extracted_parameters.json
-            extracted_params_path = plane0_dir / "extracted_parameters.json"
+            # Save as sidecar filename in plane0 folder
+            sidecar_filename = Path(src).stem  # Gets filename without extension
+            extracted_params_path = plane0_dir / f"{sidecar_filename}.json"
             with open(extracted_params_path, 'w') as f:
                 json.dump(sidecar_data, f, indent=2)
             
-            log_and_print(f"Created extracted_parameters.json in {extracted_params_path}")
+            log_and_print(f"Created {sidecar_filename}.json in {extracted_params_path}")
             
         except Exception as e:
-            log_and_print(f"Warning: failed to create extracted_parameters.json: {e}", level='warning')
+            sidecar_filename = Path(src).stem if 'src' in locals() else "sidecar"
+            log_and_print(f"Warning: failed to create {sidecar_filename}.json: {e}", level='warning')
             
     except Exception as e:
         log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level='warning')
