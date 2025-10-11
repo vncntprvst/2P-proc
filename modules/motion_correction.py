@@ -73,28 +73,37 @@ def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
         shutil.copy2(src, dst)
         log_and_print(f"Copied sidecar JSON to {dst}")
         
-        # Create extracted_parameters.json in plane0 folder
+        # Move XML parameter files to plane0 folder
         try:
-            # Load the sidecar content
-            import json
-            with open(src, 'r') as f:
-                sidecar_data = json.load(f)
-            
             # Create plane0 directory if it doesn't exist
             plane0_dir = export_dir / "suite2p" / "plane0"
             plane0_dir.mkdir(parents=True, exist_ok=True)
             
-            # Save as sidecar filename in plane0 folder
-            sidecar_filename = Path(src).stem  # Gets filename without extension
-            extracted_params_path = plane0_dir / f"{sidecar_filename}.json"
-            with open(extracted_params_path, 'w') as f:
-                json.dump(sidecar_data, f, indent=2)
+            # Find all XML parameter files (*_imaging_params.json)
+            import glob
+            xml_param_files = glob.glob(str(export_dir / "*_imaging_params.json"))
             
-            log_and_print(f"Created {sidecar_filename}.json in {extracted_params_path}")
+            moved_count = 0
+            for param_file in xml_param_files:
+                try:
+                    param_file_path = Path(param_file)
+                    dest_path = plane0_dir / param_file_path.name
+                    
+                    # Move the file
+                    shutil.move(str(param_file_path), str(dest_path))
+                    log_and_print(f"Moved XML parameters: {param_file_path.name} -> {dest_path}")
+                    moved_count += 1
+                    
+                except Exception as e:
+                    log_and_print(f"Warning: failed to move {param_file_path.name}: {e}", level='warning')
+            
+            if moved_count > 0:
+                log_and_print(f"Moved {moved_count} XML parameter files to {plane0_dir}")
+            else:
+                log_and_print("No XML parameter files found to move")
             
         except Exception as e:
-            sidecar_filename = Path(src).stem if 'src' in locals() else "sidecar"
-            log_and_print(f"Warning: failed to create {sidecar_filename}.json: {e}", level='warning')
+            log_and_print(f"Warning: failed to move XML parameter files: {e}", level='warning')
             
     except Exception as e:
         log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level='warning')

@@ -34,7 +34,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 # import dask.array as da
 
-def extract_xml_metadata(xml_file_path, sidecar_path):
+def extract_xml_metadata_to_sidecar_to_sidecar(xml_file_path, sidecar_path):
     """
     Extract imaging metadata from PVScan XML file and add to sidecar JSON.
     
@@ -142,6 +142,124 @@ def extract_xml_metadata(xml_file_path, sidecar_path):
     except Exception as e:
         print(f"Warning: could not extract XML metadata: {e}")
         return False
+
+def extract_xml_metadata_to_sidecar_for_run(run_folder_path, output_dir):
+    """
+    Extract imaging metadata from PVScan XML file for a single run and save as separate JSON.
+    
+    Args:
+        run_folder_path: Path to the run folder containing XML file
+        output_dir: Directory where to save the extracted parameters JSON
+        
+    Returns:
+        str or None: Path to created JSON file if successful, None otherwise
+    """
+    try:
+        # Look for XML file in the run folder
+        xml_file = Path(run_folder_path) / (Path(run_folder_path).name + ".xml")
+        
+        if not xml_file.exists():
+            print(f"XML file not found for run: {xml_file}")
+            return None
+        
+        # Parse XML file
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+        
+        # Extract metadata
+        metadata = {}
+        
+        # Find PVStateShard
+        pv_state = root.find('.//PVStateShard')
+        if pv_state is not None:
+            # Extract frame period and calculate frame rate
+            frame_period_elem = pv_state.find('.//PVStateValue[@key="framePeriod"]')
+            if frame_period_elem is not None:
+                frame_period = float(frame_period_elem.get('value'))
+                fr = round(1 / frame_period, 1)  # Convert to Hz
+                metadata['fr'] = fr
+            
+            # Extract optical zoom
+            zoom_elem = pv_state.find('.//PVStateValue[@key="opticalZoom"]')
+            if zoom_elem is not None:
+                metadata['numerical_zoom'] = float(zoom_elem.get('value'))
+            
+            # Extract objective lens
+            obj_elem = pv_state.find('.//PVStateValue[@key="objectiveLens"]')
+            if obj_elem is not None:
+                obj_value = obj_elem.get('value')
+                # Extract numeric value from "16X" format
+                obj_num = ''.join(filter(str.isdigit, obj_value))
+                if obj_num:
+                    metadata['objective'] = int(obj_num)
+            
+            # Extract laser power (imaging channel)
+            laser_power_elem = pv_state.find('.//PVStateValue[@key="laserPower"]')
+            if laser_power_elem is not None:
+                imaging_power = laser_power_elem.find('.//IndexedValue[@index="0"]')
+                if imaging_power is not None:
+                    metadata['power'] = round(float(imaging_power.get('value')), 1)
+            
+            # Extract laser wavelength
+            wavelength_elem = pv_state.find('.//PVStateValue[@key="laserWavelength"]')
+            if wavelength_elem is not None:
+                wavelength = wavelength_elem.find('.//IndexedValue[@index="0"]')
+                if wavelength is not None:
+                    metadata['wavelength'] = int(wavelength.get('value'))
+            
+            # Extract Z position (Z Focus)
+            position_elem = pv_state.find('.//PVStateValue[@key="positionCurrent"]')
+            if position_elem is not None:
+                # Find Z axis subindexed values
+                z_axis = position_elem.find('.//SubindexedValues[@index="ZAxis"]')
+                if z_axis is not None:
+                    z_focus = z_axis.find('.//SubindexedValue[@subindex="0"]')
+                    if z_focus is not None and z_focus.get('description') == 'Z Focus':
+                        metadata['depth'] = round(float(z_focus.get('value')), 0)
+            
+            # Extract microns per pixel
+            microns_elem = pv_state.find('.//PVStateValue[@key="micronsPerPixel"]')
+            if microns_elem is not None:
+                x_microns = microns_elem.find('.//IndexedValue[@index="XAxis"]')
+                if x_microns is not None:
+                    metadata['microns_per_pixel'] = round(float(x_microns.get('value')), 2)
+            
+            # Extract pixels per line and lines per frame
+            pixels_elem = pv_state.find('.//PVStateValue[@key="pixelsPerLine"]')
+            lines_elem = pv_state.find('.//PVStateValue[@key="linesPerFrame"]')
+            if pixels_elem is not None and lines_elem is not None:
+                metadata['Npixel_x'] = int(pixels_elem.get('value'))
+                metadata['Npixel_y'] = int(lines_elem.get('value'))
+        
+        # Extract date from PVScan
+        date_attr = root.get('date')
+        if date_attr:
+            # Convert "1/26/2024 5:26:15 PM" to "01262024" format
+            try:
+                date_obj = datetime.strptime(date_attr, "%m/%d/%Y %I:%M:%S %p")
+                metadata['date'] = date_obj.strftime("%m%d%Y")
+            except:
+                metadata['date'] = date_attr
+        
+        # Add run information
+        metadata['run_folder'] = Path(run_folder_path).name
+        metadata['xml_file'] = xml_file.name
+        
+        # Create output filename based on run folder
+        run_name = Path(run_folder_path).name
+        output_filename = f"{run_name}_imaging_params.json"
+        output_path = Path(output_dir) / output_filename
+        
+        # Save the metadata
+        with open(output_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        print(f"Extracted XML metadata for run {run_name}: {output_path}")
+        return str(output_path)
+        
+    except Exception as e:
+        print(f"Warning: could not extract XML metadata for run {run_folder_path}: {e}")
+        return None
 
 # Couldn't suppress tiffffile warnings with warnings.filterwarnings('ignore'), so used this instead
 @contextlib.contextmanager
@@ -456,7 +574,7 @@ def concatenate_tiff_to_bigtiff(tiff_files, export_path, conversion_step='one-st
             # Fallback: look in the same directory as the concatenated file
             xml_file = Path(bigtiff_file).parent / (Path(bigtiff_file).parent.name + ".xml")
         if xml_file.exists():
-            extract_xml_metadata(xml_file, sidecar_path)
+            extract_xml_metadata_to_sidecar(xml_file, sidecar_path)
         else:
             print(f"XML file not found: {xml_file}")
             
@@ -507,7 +625,7 @@ def concatenate_tiff_to_hdf5(tiff_files, export_path, data_path=None):
             # Fallback: look in the same directory as the concatenated file
             xml_file = Path(cat_h5_file).parent / (Path(cat_h5_file).parent.name + ".xml")
         if xml_file.exists():
-            extract_xml_metadata(xml_file, sidecar_path)
+            extract_xml_metadata_to_sidecar(xml_file, sidecar_path)
         else:
             print(f"XML file not found: {xml_file}")
             
@@ -558,6 +676,24 @@ def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method=
         concatenate_tiff_to_bigtiff(tiff_files, export_path, compression=compression, scale_range=scale_range, data_path=input_paths[0])
     elif method == 'hdf5':
         concatenate_tiff_to_hdf5(tiff_files, export_path, data_path=input_paths[0])
+
+    # Extract XML metadata for each run folder
+    if os.path.isdir(input_paths[0]) and len(input_paths) > 1:
+        print("Extracting XML metadata for each run...")
+        for run_folder in input_paths:
+            extracted_file = extract_xml_metadata_for_run(run_folder, export_path)
+            if extracted_file:
+                print(f"Successfully extracted XML metadata for {run_folder}")
+            else:
+                print(f"Failed to extract XML metadata for {run_folder}")
+    elif os.path.isdir(input_paths[0]) and len(input_paths) == 1:
+        # Single folder case - still extract XML metadata
+        print("Extracting XML metadata for single run...")
+        extracted_file = extract_xml_metadata_for_run(input_paths[0], export_path)
+        if extracted_file:
+            print(f"Successfully extracted XML metadata for {input_paths[0]}")
+        else:
+            print(f"Failed to extract XML metadata for {input_paths[0]}")
 
     # Calculate the elapsed time
     elapsed_time = time.time() - start_time
