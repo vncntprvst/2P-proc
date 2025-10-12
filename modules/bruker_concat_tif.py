@@ -681,7 +681,7 @@ def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method=
     if os.path.isdir(input_paths[0]) and len(input_paths) > 1:
         print("Extracting XML metadata for each run...")
         for run_folder in input_paths:
-            extracted_file = extract_xml_metadata_for_run(run_folder, export_path)
+            extracted_file = extract_xml_metadata_to_sidecar_for_run(run_folder, export_path)
             if extracted_file:
                 print(f"Successfully extracted XML metadata for {run_folder}")
             else:
@@ -689,7 +689,7 @@ def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method=
     elif os.path.isdir(input_paths[0]) and len(input_paths) == 1:
         # Single folder case - still extract XML metadata
         print("Extracting XML metadata for single run...")
-        extracted_file = extract_xml_metadata_for_run(input_paths[0], export_path)
+        extracted_file = extract_xml_metadata_to_sidecar_for_run(input_paths[0], export_path)
         if extracted_file:
             print(f"Successfully extracted XML metadata for {input_paths[0]}")
         else:
