@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.3 -f Dockerfile context
+docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.4 -f Dockerfile_s2p_rastermap context
 
 # Push to Docker registry
 docker push --all-tags wanglabneuro/suite2p_rastermap
