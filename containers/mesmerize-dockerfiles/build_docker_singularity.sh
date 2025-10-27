@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.1.2 -f Dockerfile_update .
+docker build -t wanglabneuro/mesmerize-base:latest -t wanglabneuro/mesmerize-base:0.2.1 -f Dockerfile context
 
 # Push to Docker registry
 docker push --all-tags wanglabneuro/mesmerize-base
@@ -15,5 +15,4 @@ then
     exit
 else
      apptainer build -F mesmerize-base_latest.sif docker://wanglabneuro/mesmerize-base:latest
-    # singularity build mesmerize-base_0.0.2.sif docker://wanglabneuro/mesmerize-base:0.0.3
 fi

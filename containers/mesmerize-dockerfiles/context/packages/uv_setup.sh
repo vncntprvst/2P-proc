@@ -1,10 +1,24 @@
 # create a new env in your directory
 #!/bin/bash
 
+# Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-source $HOME/.local/bin/env 
+# Source the appropriate shell configuration file
+if [ -f "$HOME/.bashrc" ]; then
+    source "$HOME/.bashrc"
+elif [ -f "$HOME/.zshrc" ]; then
+    source "$HOME/.zshrc"
+elif [ -f "$HOME/.profile" ]; then
+    source "$HOME/.profile"
+else
+    echo "Warning: No shell configuration file found to source."
+fi
 
+# Check if uv is installed
+uv --version 
+
+# Create a new virtual environment named mescore with Python 3.10
 uv venv mescore --python 3.10
 source mescore/bin/activate
 

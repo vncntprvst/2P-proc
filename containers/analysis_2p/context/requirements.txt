@@ -1,8 +1,10 @@
-# Additional dependencies for Analysis 2P 
-# suite2p
+# Additional dependencies for Analysis 2P
+plotly 
+pylibtiff
 pyarrow
+
+# suite2p
+
+# MCP server support
+# mcp
 # plotly
-
-
-
-

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.3 -f Dockerfile context
+docker build -t wanglabneuro/suite2p_rastermap:latest -t wanglabneuro/suite2p_rastermap:0.0.4 -f Dockerfile_s2p_rastermap context
 
 # Push to Docker registry
 docker push --all-tags wanglabneuro/suite2p_rastermap
@@ -39,21 +39,32 @@ else
             
 fi
 
-# If the .env script exists, get the HPCC_IMAGE_REPO variable
+# Load and export variables from .env
 if [ -f "../../scripts/utils/.env" ]; then
-    echo "Get server information from .env file."
-    while IFS='=' read -r key value; do
-        if [[ $key != \#* ]]; then
-            export "$key=$value"
-        fi
-    done < "../../scripts/utils/.env"
-    export SSH_HPCC_IMAGE_REPO="${SSH_TRANSFER_NODE}:${HPCC_IMAGE_REPO}"
+  set -a                           # auto-export all variables
+  # shellcheck disable=SC1091
+  . "../../scripts/utils/.env"     # source the .env (trusted file)
+  set +a
 fi
 
-# check if hppc_image_repo variable exists
-if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
-    echo "Copying Singularity image to HPCC."
-    rsync -aP suite2p_rastermap_latest.sif "$SSH_HPCC_IMAGE_REPO/"
+# Build SSH_HPCC_IMAGE_REPO if both pieces exist
+if [ -n "${SSH_TRANSFER_NODE:-}" ] && [ -n "${HPCC_IMAGE_REPO:-}" ]; then
+export SSH_HPCC_IMAGE_REPO="${SSH_TRANSFER_NODE}:${HPCC_IMAGE_REPO}"
 else
-    echo "HPPC_IMAGE_REPO variable not set. Not copying to HPPC."
+echo "Warning: SSH_TRANSFER_NODE or HPCC_IMAGE_REPO not set from .env; not setting SSH_HPCC_IMAGE_REPO"
+fi
+
+# Copy SIF to HPCC if SSH_HPCC_IMAGE_REPO is set (format: host:path)
+if [ -n "${SSH_HPCC_IMAGE_REPO:-}" ]; then
+  IFS=: read -r host path <<<"$SSH_HPCC_IMAGE_REPO"
+  echo "Copying Singularity image to HPCC:"
+  echo "  host: ${host:-<empty>}"
+  echo "  path: ${path:-<empty>}"
+    if [ -z "$host" ] || [ -z "$path" ] || [[ "$host" == *"/"* ]]; then
+        echo "Invalid SSH_HPCC_IMAGE_REPO='$SSH_HPCC_IMAGE_REPO'; skipping rsync."
+    else
+        rsync -aP suite2p_rastermap_latest.sif "$SSH_HPCC_IMAGE_REPO/"
+    fi
+else
+    echo "HPCC_IMAGE_REPO variable not set. Not copying to HPCC."
 fi
