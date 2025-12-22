@@ -57,6 +57,7 @@ def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
     Looks for sidecar written by bruker_concat_tif (cat_tiff_bt.tiff.json or
     cat_tiff.h5.json) under export_dir, and writes a copy as
     f"{dest_movie_path.name}.json" next to dest_movie_path.
+    Also creates extracted_parameters.json in plane0 folder.
     """
     try:
         candidates = [
@@ -66,9 +67,44 @@ def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
         src = next((p for p in candidates if p.exists()), None)
         if src is None:
             return
+        
+        # Copy sidecar next to movie file
         dst = dest_movie_path.with_name(dest_movie_path.name + ".json")
         shutil.copy2(src, dst)
         log_and_print(f"Copied sidecar JSON to {dst}")
+        
+        # Move XML parameter files to plane0 folder
+        try:
+            # Create plane0 directory if it doesn't exist
+            plane0_dir = export_dir / "suite2p" / "plane0"
+            plane0_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Find all XML parameter files (*_imaging_params.json)
+            import glob
+            xml_param_files = glob.glob(str(export_dir / "*_imaging_params.json"))
+            
+            moved_count = 0
+            for param_file in xml_param_files:
+                try:
+                    param_file_path = Path(param_file)
+                    dest_path = plane0_dir / param_file_path.name
+                    
+                    # Move the file
+                    shutil.move(str(param_file_path), str(dest_path))
+                    log_and_print(f"Moved XML parameters: {param_file_path.name} -> {dest_path}")
+                    moved_count += 1
+                    
+                except Exception as e:
+                    log_and_print(f"Warning: failed to move {param_file_path.name}: {e}", level='warning')
+            
+            if moved_count > 0:
+                log_and_print(f"Moved {moved_count} XML parameter files to {plane0_dir}")
+            else:
+                log_and_print("No XML parameter files found to move")
+            
+        except Exception as e:
+            log_and_print(f"Warning: failed to move XML parameter files: {e}", level='warning')
+            
     except Exception as e:
         log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level='warning')
 

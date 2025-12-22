@@ -36,7 +36,9 @@ WORKDIR /app
 # RUN python -m pip install suite2p[io]
 RUN git clone https://github.com/MouseLand/suite2p.git && \
     cd suite2p && \
-    python -m pip install .
+    git checkout tags/v0.14.0 && \
+    python -m pip install .[all]
+    # python -m pip install .
 
 # Copy the requirements file
 # COPY requirements.txt .
