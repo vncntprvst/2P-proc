@@ -218,10 +218,23 @@ def cleanup_files(batch_path, export_path):
 
 
 def find_latest_batch(export_path):
-    runfiles = sorted(Path(export_path).glob('*.runfile'), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not runfiles:
-        raise FileNotFoundError(f"No runfile found in {export_path}")
-    return Path(export_path) / runfiles[0].stem
+    export_path = Path(export_path)
+    batch_files = sorted(export_path.glob("batch_*.pickle"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if batch_files:
+        return batch_files[0]
+
+    runfiles = sorted(export_path.glob("*.runfile"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for runfile in runfiles:
+        candidate = export_path / runfile.stem
+        if candidate.exists():
+            return candidate
+        candidate_pickle = export_path / f"{runfile.stem}.pickle"
+        if candidate_pickle.exists():
+            return candidate_pickle
+
+    if runfiles:
+        raise FileNotFoundError(f"No batch file found for runfile(s) in {export_path}")
+    raise FileNotFoundError(f"No batch file found in {export_path}")
 
 
 def get_default_parameters(proc_step):

@@ -47,6 +47,17 @@ __all__ = [
 ]
 
 
+def _prepare_cnmf_movie(mcorr_movie_path: str | Path, export_path: str | Path) -> Path:
+    mcorr_movie_path = Path(mcorr_movie_path)
+    export_path = Path(export_path)
+    if mcorr_movie_path.suffix.lower() in {".h5", ".hdf5", ".tif", ".tiff"}:
+        import caiman as cm
+        mcorr_movie_path = Path(
+            cm.save_memmap([str(mcorr_movie_path)], base_name=str(export_path / "mcorr"), order="C")
+        )
+    return mcorr_movie_path
+
+
 def countdown(n: int) -> None:
     """Simple countdown timer used when prompting the user."""
     while n > 0:
@@ -73,14 +84,7 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
         residuals_movie = df.iloc[index].cnmf.get_residuals()
         # image_residuals = residuals_movie[0,:,:]
     else:
-        mcorr_movie_path = Path(mcorr_movie_path)
-        if mcorr_movie_path.suffix in {".h5", ".hdf5"}:
-            import caiman as cm
-
-            movie = cm.load(str(mcorr_movie_path))
-            mcorr_movie_path = Path(
-                cm.save_memmap(movie, base_name=str(mcorr_movie_path.with_suffix("")), order="C")
-            )
+        mcorr_movie_path = _prepare_cnmf_movie(mcorr_movie_path, export_path)
         mcorr_movie, dims, T = load_memmap(str(mcorr_movie_path))
         mcorr_movie = np.reshape(mcorr_movie.T, [T] + list(dims), order='F')
         mcorr_movie = mcorr_movie.transpose(0, 2, 1)
@@ -263,36 +267,36 @@ def run_cnmf_on_movie(mcorr_movie_path, export_path, params_extraction):
     Parameters
     ----------
     mcorr_movie_path : str or Path
-        Path to the motion corrected movie (``.mmap`` or ``.h5``).
+        Path to the motion corrected movie (``.mmap``, ``.h5``, or ``.tiff``).
     export_path : Path
         Directory where outputs should be written.
     params_extraction : dict
         Parameters for the CNMF algorithm.
+
+    Returns
+    -------
+    tuple
+        ``(cnm_obj, movie_path)`` where ``movie_path`` is the memmap used by CNMF.
     """
 
     export_path = Path(export_path)
     export_path.mkdir(parents=True, exist_ok=True)
 
-    mcorr_movie_path = Path(mcorr_movie_path)
-    if mcorr_movie_path.suffix in {".h5", ".hdf5"}:
-        import caiman as cm
-
-        movie = cm.load(str(mcorr_movie_path))
-        mcorr_movie_path = Path(
-            cm.save_memmap(movie, base_name=str(export_path / "mcorr"), order="C")
-        )
+    mcorr_movie_path = _prepare_cnmf_movie(mcorr_movie_path, export_path)
 
     from caiman.source_extraction.cnmf import cnmf as cnmf_mod
     from caiman.source_extraction.cnmf import params as params_mod
 
-    cnmf_params = params_mod.CNMFParams(params_extraction.get("main", {}))
+    params_main = params_extraction.get("main", {}).copy()
+    params_main["fnames"] = [str(mcorr_movie_path)]
+    cnmf_params = params_mod.CNMFParams(params_dict=params_main)
     cnm = cnmf_mod.CNMF(
         n_processes=params_extraction.get("n_processes", 1),
         params=cnmf_params,
     )
     cnm.fit_file(str(mcorr_movie_path))
     cnm.save(str(export_path / "cnmf_result.hdf5"))
-    return cnm
+    return cnm, mcorr_movie_path
 
 
 def save_processing_parameters(df, export_path, data_path, params_extraction):
@@ -428,4 +432,3 @@ def export_cnmf_results(df, cnmf_obj, export_path, z_correlation=None):
     )
     
     log_and_print(f"Saved results to {export_path}/results_caiman.mat.")
-

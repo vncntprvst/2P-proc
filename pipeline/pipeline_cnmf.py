@@ -59,6 +59,14 @@ def run_cnmf(
             batch_path = find_latest_batch(export_path)
         except FileNotFoundError:
             batch_path = None
+        if batch_path is None:
+            mcorr_movie = _detect_mcorr_movie(
+                export_path, parameters.get("params_mcorr", {})
+            )
+            if mcorr_movie is None:
+                raise FileNotFoundError(
+                    f"No batch file or motion-corrected movie found in {export_path}."
+                )
 
     with memory_manager("cnmf"):
         params_cnmf = parameters["params_extraction"]
@@ -68,13 +76,13 @@ def run_cnmf(
                 batch_path=batch_path, export_path=export_path, excerpt=240
             )
         else:
-            cnm_obj = extraction.run_cnmf_on_movie(
+            cnm_obj, mcorr_movie_path = extraction.run_cnmf_on_movie(
                 mcorr_movie, export_path, params_cnmf
             )
             extraction.create_components_movie(
                 batch_path=None,
                 export_path=export_path,
-                mcorr_movie_path=mcorr_movie,
+                mcorr_movie_path=mcorr_movie_path,
                 cnmf_obj=cnm_obj,
                 excerpt=240,
             )
@@ -94,6 +102,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file", nargs="+", help="Input configuration JSON file")
     parser.add_argument(
+        "--mcorr-movie",
+        dest="mcorr_output",
+        default=None,
+        help="Path to a motion corrected movie to use if motion correction was skipped",
+    )
+    parser.add_argument(
         "--mcorr-output",
         dest="mcorr_output",
         default=None,
@@ -104,6 +118,29 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _deepcopy_dict(data: dict) -> dict:
     return json.loads(json.dumps(data))
+
+
+def _detect_mcorr_movie(export_path: Path, params_mcorr: dict | None) -> Path | None:
+    export_path = Path(export_path)
+    params_mcorr = params_mcorr or {}
+    preferred = []
+    save_format = params_mcorr.get("save_mcorr_movie")
+    if save_format:
+        save_format = save_format.lower()
+        if save_format in {"tif", "tiff"}:
+            preferred.append("mcorr_movie.tiff")
+        elif save_format == "h5":
+            preferred.append("mcorr_movie.h5")
+        elif save_format == "bin":
+            preferred.append("mcorr_movie.bin")
+
+    fallback = ["mcorr_movie.tiff", "mcorr_movie.h5", "mcorr_movie.bin"]
+    for name in preferred + [n for n in fallback if n not in preferred]:
+        candidate = export_path / name
+        if candidate.exists():
+            log_and_print(f"Using motion corrected movie: {candidate}")
+            return candidate
+    return None
 
 
 def _process_config(cfg_path: str, args: argparse.Namespace) -> None:
@@ -161,6 +198,7 @@ def _process_config(cfg_path: str, args: argparse.Namespace) -> None:
     base_params = {
         "params_extraction": params_extraction_cfg,
         "params_extra": config.get("params_extra", {}),
+        "params_mcorr": config.get("params_mcorr", {}),
     }
 
     for i, data_group in enumerate(grouped_paths_list):
