@@ -64,6 +64,7 @@
             "pw_rigid": true,
             "gSig_filt": null
         },
+        "__comment_save_mcorr_movie": "Accepted: 'tiff' (recommended); 'h5' and 'bin' exist but may not work in all workflows.",
         "save_mcorr_movie": "tiff",
         "z_motion_correction": {
             "zstack_shift": {
