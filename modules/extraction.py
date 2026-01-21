@@ -11,6 +11,7 @@ CNMF logic can be reused independently of the full pipeline.
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 
 # Add project root to path
@@ -29,17 +30,18 @@ import numpy as np
 import mesmerize_core as mc
 from scipy import io
 
-from caiman.mmapping import load_memmap
+from caiman.mmapping import load_memmap, prepare_shape
+from caiman import save_memmap as save_memmap
 
 from pipeline.utils.pipeline_utils import (
     log_and_print, 
     clip_range, 
-    cat_movies_to_mp4
+    cat_movies_to_mp4,
+    load_caiman_memmap,
 )
 
 __all__ = [
     "run_cnmf",
-    "run_cnmf_on_movie",
     "save_processing_parameters",
     "prepare_cnmf_object",
     "copy_mean_intensity_template",
@@ -50,12 +52,127 @@ __all__ = [
 def _prepare_cnmf_movie(mcorr_movie_path: str | Path, export_path: str | Path) -> Path:
     mcorr_movie_path = Path(mcorr_movie_path)
     export_path = Path(export_path)
+
+    # Ensure export directory exists for saving memmaps
+    if not export_path.exists():
+        export_path.mkdir(parents=True, exist_ok=True)
+    
     if mcorr_movie_path.suffix.lower() in {".h5", ".hdf5", ".tif", ".tiff"}:
-        import caiman as cm
+
+        # Save memmap directly to export_path/mcorr to avoid tmp directory issues
         mcorr_movie_path = Path(
-            cm.save_memmap([str(mcorr_movie_path)], base_name=str(export_path / "mcorr"), order="C")
+            save_memmap(
+                [str(mcorr_movie_path)], 
+                base_name=str(export_path / "mcorr"), 
+                order="C",
+                dview=None
+            )
         )
+
+    try:
+        RelPath = mcorr_movie_path.relative_to(export_path)
+    except ValueError:
+        # Path is not relative to export path (e.g. it's in /tmp)
+        new_path = export_path / mcorr_movie_path.name
+        if new_path.exists():
+            if new_path.stat().st_size == mcorr_movie_path.stat().st_size:
+                    mcorr_movie_path = new_path
+            else:
+                    shutil.move(mcorr_movie_path, new_path)
+                    mcorr_movie_path = new_path
+        else:
+            shutil.move(mcorr_movie_path, new_path)
+            mcorr_movie_path = new_path
+        log_and_print(f"Moved temporary memmap to {mcorr_movie_path}")
+
     return mcorr_movie_path
+
+
+def _mean_projection_from_memmap(
+    movie_path: Path,
+    chunk_size: int = 200,
+    max_frames: int | None = None,
+) -> np.ndarray:
+    adapter = load_caiman_memmap(movie_path)
+    T, Ly, Lx = adapter.shape
+    if max_frames is not None:
+        T = min(T, max_frames)
+    running_sum = np.zeros((Ly, Lx), dtype=np.float64)
+    for start in range(0, T, chunk_size):
+        stop = min(T, start + chunk_size)
+        running_sum += adapter[start:stop].sum(axis=0, dtype=np.float64)
+    adapter.close()
+    return (running_sum / float(T)).astype(np.float32)
+
+
+def _mean_projection_from_tiff(
+    movie_path: Path,
+    max_frames: int | None = None,
+) -> np.ndarray:
+    import tifffile
+
+    running_sum = None
+    count = 0
+    with tifffile.TiffFile(movie_path) as tif:
+        for page in tif.pages:
+            frame = page.asarray()
+            if running_sum is None:
+                running_sum = np.zeros_like(frame, dtype=np.float64)
+            running_sum += frame.astype(np.float64, copy=False)
+            count += 1
+            if max_frames is not None and count >= max_frames:
+                break
+    if running_sum is None or count == 0:
+        raise ValueError(f"No frames found in {movie_path}")
+    return (running_sum / float(count)).astype(np.float32)
+
+
+def _mean_projection_from_h5(
+    movie_path: Path,
+    max_frames: int | None = None,
+) -> np.ndarray:
+    import h5py
+
+    with h5py.File(movie_path, "r") as f:
+        if "data" in f:
+            dset = f["data"]
+        else:
+            keys = [k for k in f.keys()]
+            if not keys:
+                raise ValueError(f"No datasets found in {movie_path}")
+            dset = f[keys[0]]
+        T = dset.shape[0]
+        if max_frames is not None:
+            T = min(T, max_frames)
+        running_sum = np.zeros(dset.shape[1:], dtype=np.float64)
+        for start in range(0, T, 200):
+            stop = min(T, start + 200)
+            running_sum += dset[start:stop].sum(axis=0, dtype=np.float64)
+    return (running_sum / float(T)).astype(np.float32)
+
+
+def _mean_projection_from_path(
+    movie_path: str | Path,
+    max_frames: int | None = None,
+) -> np.ndarray:
+    movie_path = Path(movie_path)
+    suffix = movie_path.suffix.lower()
+    if suffix in {".mmap", ".npy"}:
+        return _mean_projection_from_memmap(movie_path, max_frames=max_frames)
+    if suffix in {".tif", ".tiff", ".btf"}:
+        return _mean_projection_from_tiff(movie_path, max_frames=max_frames)
+    if suffix in {".h5", ".hdf5", ".n5", ".zarr"}:
+        return _mean_projection_from_h5(movie_path, max_frames=max_frames)
+
+    import caiman as cm
+    movie = cm.load(str(movie_path))
+    return np.mean(movie, axis=0).astype(np.float32)
+
+
+def _coerce_matlab_value(value):
+    if value is None:
+        return np.array([])
+    return value
 
 
 def countdown(n: int) -> None:
@@ -149,10 +266,11 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
 
 def run_cnmf(
     batch: Path,
-    index: int,
+    index: int | None,
     export_path: Path,
     params_extraction: dict,
     data_path,
+    input_movie_path: str | Path | None = None,
     z_correlation=None,
     z_motion_scaling_factors=None,
 ):
@@ -162,14 +280,16 @@ def run_cnmf(
     ----------
     batch : Path
         Path to the Mesmerize batch file produced by motion correction.
-    index : int
-        Index of the motion correction item within the batch.
+    index : int | None
+        Index of the motion correction item within the batch. None if using input_movie_path.
     export_path : Path
         Directory where outputs should be written.
     params_extraction : dict
         Parameters for the CNMF algorithm.
     data_path : str or Path or list
         Original data location (used only for metadata in the saved parameters).
+    input_movie_path : str | Path, optional
+        Direct path to input movie if not using a batch item.
     z_correlation : np.ndarray, optional
         Pre-computed z correlation data.
     z_motion_scaling_factors : np.ndarray, optional
@@ -182,21 +302,25 @@ def run_cnmf(
     # Load batch dataframe
     df = mc.load_batch(batch)
 
-    mcorr_movie_path = df.iloc[index].caiman.get_input_movie()
-    if str(mcorr_movie_path).endswith((".h5", ".hdf5")):
-        import caiman as cm
+    if input_movie_path is not None:
+        mcorr_movie_path = Path(input_movie_path)
+        item_name = mcorr_movie_path.stem
+    elif index is not None:
+        mcorr_movie_path=df.iloc[index]
+        item_name = df.iloc[index]["item_name"]
+    else:
+        raise ValueError("Either index or input_movie_path must be provided.")
 
-        movie = cm.load(mcorr_movie_path)
-        mcorr_movie_path = cm.save_memmap(
-            movie, base_name=str(Path(mcorr_movie_path).with_suffix("")), order="C"
-        )
+    if str(mcorr_movie_path).endswith((".h5", ".hdf5", ".tif", ".tiff")):
+        mcorr_movie_path = _prepare_cnmf_movie(mcorr_movie_path, export_path)
+
 
     # Add CNMF item using the motion corrected result
     df.caiman.add_item(
         algo="cnmf",
         input_movie_path=mcorr_movie_path,
         params=params_extraction,
-        item_name=df.iloc[index]["item_name"],
+        item_name=item_name,
     )
 
     # Handle existing multiprocessing children from previous runs
@@ -261,44 +385,6 @@ def run_cnmf(
     return cnmf_obj
 
 
-def run_cnmf_on_movie(mcorr_movie_path, export_path, params_extraction):
-    """Run CNMF directly on a motion corrected movie file.
-
-    Parameters
-    ----------
-    mcorr_movie_path : str or Path
-        Path to the motion corrected movie (``.mmap``, ``.h5``, or ``.tiff``).
-    export_path : Path
-        Directory where outputs should be written.
-    params_extraction : dict
-        Parameters for the CNMF algorithm.
-
-    Returns
-    -------
-    tuple
-        ``(cnm_obj, movie_path)`` where ``movie_path`` is the memmap used by CNMF.
-    """
-
-    export_path = Path(export_path)
-    export_path.mkdir(parents=True, exist_ok=True)
-
-    mcorr_movie_path = _prepare_cnmf_movie(mcorr_movie_path, export_path)
-
-    from caiman.source_extraction.cnmf import cnmf as cnmf_mod
-    from caiman.source_extraction.cnmf import params as params_mod
-
-    params_main = params_extraction.get("main", {}).copy()
-    params_main["fnames"] = [str(mcorr_movie_path)]
-    cnmf_params = params_mod.CNMFParams(params_dict=params_main)
-    cnm = cnmf_mod.CNMF(
-        n_processes=params_extraction.get("n_processes", 1),
-        params=cnmf_params,
-    )
-    cnm.fit_file(str(mcorr_movie_path))
-    cnm.save(str(export_path / "cnmf_result.hdf5"))
-    return cnm, mcorr_movie_path
-
-
 def save_processing_parameters(df, export_path, data_path, params_extraction):
     """Save the parameters used for motion correction and CNMF processing.
     
@@ -318,15 +404,35 @@ def save_processing_parameters(df, export_path, data_path, params_extraction):
     if isinstance(data_path, list):
         data_path = data_path[0]
 
+    # Use the first batch item to identify the original input movie if possible
+    # This preserves the logic to point to the raw data (input of mcorr) rather than the mcorr output
+    movie_name = str(df.iloc[0]["input_movie_path"])
+
     caiman_params = {
         "data_path": str(data_path),
         "export_path": str(export_path),
-        "movie_name": str(df.iloc[0]["input_movie_path"]),
+        "movie_name": movie_name,
     }
-    caiman_mcorr_params = df.iloc[0]["params"]["main"]
-    caiman_mcorr_params["timestamp_mcorr"] = df.iloc[0]["ran_time"]
-    caiman_cnmf_params = params_extraction["main"] | df.iloc[-1]["params"]["main"]
+    
+    # Attempt to retrieve motion correction parameters from the batch history
+    caiman_mcorr_params = {}
+    
+    # Check if we have mcorr items in the batch
+    # We filter by algo to be safe
+    mcorr_items = df[df["algo"] == "mcorr"]
+    if not mcorr_items.empty:
+        # Use the first mcorr item found
+        caiman_mcorr_params = mcorr_items.iloc[0]["params"]["main"]
+        caiman_mcorr_params["timestamp_mcorr"] = mcorr_items.iloc[0]["ran_time"]
+    
+    # Get CNMF parameters
+    # Merge passed params with what's in the dataframe to be sure
+    caiman_cnmf_params = params_extraction["main"] 
+    if "params" in df.columns and "main" in df.iloc[-1]["params"]:
+         caiman_cnmf_params = caiman_cnmf_params | df.iloc[-1]["params"]["main"]
+    
     caiman_cnmf_params["timestamp_cnmf"] = df.iloc[-1]["ran_time"]
+    
     caiman_params = caiman_params | caiman_mcorr_params | caiman_cnmf_params
 
     with open(params_path, "w") as f:
@@ -412,23 +518,32 @@ def export_cnmf_results(df, cnmf_obj, export_path, z_correlation=None):
         # Assume z_correlation is a dict-like object with "zpos" key
         zpos = z_correlation.get("zpos", np.array([np.nan]))
 
+    mcorr_rows = df[df["algo"] == "mcorr"]
+    if not mcorr_rows.empty:
+        mean_map = mcorr_rows.iloc[0].caiman.get_projection("mean")
+    else:
+        # Use the input movie of the CNMF item
+        movie_path = df.iloc[-1].caiman.get_input_movie()
+        mean_map = _mean_projection_from_path(movie_path)
+
     # Export to MATLAB format
     io.savemat(
         export_path / "results_caiman.mat",
         mdict={
-            "mean_map_motion_corrected": df.iloc[0].caiman.get_projection("mean"),
-            "spatial_components": cnmf_obj.estimates.A,
-            "temporal_components": cnmf_obj.estimates.C,
-            "background_spatial_component": cnmf_obj.estimates.b,
-            "background_temporal_component": cnmf_obj.estimates.f,
-            "residuals": cnmf_obj.estimates.R,
-            "df_wo_bckgrnd": cnmf_obj.estimates.F_dff,
-            "deconv_spk": cnmf_obj.estimates.S,
-            "SNR_comp": cnmf_obj.estimates.SNR_comp,
-            "baseline": np.array(cnmf_obj.estimates.bl, dtype=np.float32),
-            "noise": np.array(cnmf_obj.estimates.neurons_sn, dtype=np.float32),
+            "mean_map_motion_corrected": _coerce_matlab_value(mean_map),
+            "spatial_components": _coerce_matlab_value(cnmf_obj.estimates.A),
+            "temporal_components": _coerce_matlab_value(cnmf_obj.estimates.C),
+            "background_spatial_component": _coerce_matlab_value(cnmf_obj.estimates.b),
+            "background_temporal_component": _coerce_matlab_value(cnmf_obj.estimates.f),
+            "residuals": _coerce_matlab_value(cnmf_obj.estimates.R),
+            "df_wo_bckgrnd": _coerce_matlab_value(cnmf_obj.estimates.F_dff),
+            "deconv_spk": _coerce_matlab_value(cnmf_obj.estimates.S),
+            "SNR_comp": _coerce_matlab_value(cnmf_obj.estimates.SNR_comp),
+            "baseline": _coerce_matlab_value(np.array(cnmf_obj.estimates.bl, dtype=np.float32) if cnmf_obj.estimates.bl is not None else None),
+            "noise": _coerce_matlab_value(np.array(cnmf_obj.estimates.neurons_sn, dtype=np.float32) if cnmf_obj.estimates.neurons_sn is not None else None),
             "zpos": zpos,
         },
     )
     
     log_and_print(f"Saved results to {export_path}/results_caiman.mat.")
+    

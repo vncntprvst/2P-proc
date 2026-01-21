@@ -326,7 +326,53 @@ def compute_zcorrel_for_frame(frame, Z_stack, compute_shifts=False):
         return zcorr       
     
 
-def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=False):
+def plot_z_position(zpos, export_path):
+    """
+    Plot the Z-position over time and its histogram.
+    
+    Args:
+        zpos: Array of best z-positions per frame
+        export_path: Path to save the plot
+    """
+    import matplotlib.pyplot as plt
+    try:
+        # Check if zpos is valid (not all NaNs)
+        if zpos is None or not np.any(np.isfinite(zpos)):
+            print("Z-position data is empty or all NaNs. Skipping plot.")
+            return
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
+        
+        # Plot 1: Z-position over time
+        ax1.plot(zpos, label='zpos')
+        ax1.set_xlabel('T-series Frame')
+        ax1.set_ylabel('Z-stack Frame')
+        ax1.set_title('Z Position over Frames')
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot 2: Histogram of Z-positions
+        # Handle scaling/centering text if needed, similar to the Matlab "mean +/- sd"
+        z_mean = np.nanmean(zpos)
+        z_std = np.nanstd(zpos)
+        
+        ax2.hist(zpos, bins=30, color='gray', edgecolor='black', alpha=0.7)
+        ax2.set_xlabel('Z-stack Frame')
+        ax2.set_ylabel('Frequency')
+        ax2.set_title(f'Z-position Distribution: {z_mean:.2f} +/- {z_std:.2f}')
+        ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        plot_export_path = export_path / 'plots'
+        plot_export_path.mkdir(parents=True, exist_ok=True)
+        
+        plt.savefig(plot_export_path / "z_drift.png", dpi=150)
+        plt.close(fig)
+        print(f"Saved Z-position drift plot to {plot_export_path / 'z_drift.png'}")
+    except Exception as e:
+        print(f"Error plotting z-position: {e}")
+
+def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=False, export_path=None):
     """
     Computes correlation and x/y shifts in z for each frame in the movie, using the anatomical z-stack as reference.
     Computes z-position for each frame by finding the z-stack frame with the highest correlation.
@@ -486,11 +532,23 @@ def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=
             'zpos': zpos.astype(np.uint16)
         }
 
-    np.savez(movie_mmap_path.parents[1] / "z_correlation.npz", **z_correlation)
+    if export_path is None:
+        export_path = movie_mmap_path.parents[1]
+    export_path = Path(export_path)
+    np.savez(export_path / "z_correlation.npz", **z_correlation)
 
     del zcorr, zpos, smoothed_f_func, smoothed_z_stack, T_series, movie_16bit
     gc.collect()
     
+    # Plot results
+    try:
+        plot_z_position(
+            z_correlation['zpos'],
+            export_path
+        )
+    except Exception as e:
+        print(f"Failed to plot z-position summary: {e}")
+
     return z_correlation
 
 def _get_suite2p_rigid():
@@ -1097,18 +1155,6 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     
     # Close the figure
     plt.close(fig)
-    
-    # Plot the z-position over frames
-    fig_zpos = plt.figure()
-    zpos = z_correlation['zpos']
-    plt.plot(zpos)
-    plt.xlabel('Frames')
-    plt.ylabel('Z Position')
-    plt.title('Z Position over Frames')
-    plt.grid(True)
-    plt.savefig(plot_export_path / "z_drift.png")
-    plt.close(fig_zpos)
-    # plt.show()
     
     print(f"Summary plots saved to {plot_export_path}")
 
@@ -1919,7 +1965,11 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
         mesmerize_path = mcorr_movie_path.parents[1]
         # Compute z-correlation if the file doesn't already exist; otherwise, load it.
         if not os.path.exists(mesmerize_path / "z_correlation.npz") or recompute:
-            z_correlation = compute_zcorrel(zstack_path / z_shifted_file, mcorr_movie_path)
+            z_correlation = compute_zcorrel(
+                zstack_path / z_shifted_file,
+                mcorr_movie_path,
+                export_path=mesmerize_path,
+            )
         else:
             z_correlation = np.load(mesmerize_path / "z_correlation.npz")
     except Exception as e:

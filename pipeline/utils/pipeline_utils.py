@@ -175,25 +175,30 @@ def get_batch_ids(batch_path):
     return batch_ids
 
 
-def cleanup_files(batch_path, export_path):
-    try:
-        batch_ids = get_batch_ids(batch_path)
-    except Exception:
-        log_and_print(f"Could not get batch ids from {batch_path}.")
-        return
-    for batch_id in batch_ids:
-        batch_runfile = Path(export_path) / f"{batch_id}.runfile"
-        if batch_runfile.exists():
-            batch_runfile.unlink()
-        batch_dir = Path(export_path) / batch_id
+def cleanup_files(batch_path, export_path, preserve_batch=False):
+    if not preserve_batch:
+        try:
+            batch_ids = get_batch_ids(batch_path)
+        except Exception:
+            log_and_print(f"Could not get batch ids from {batch_path}.")
+            return
+        for batch_id in batch_ids:
+            batch_runfile = Path(export_path) / f"{batch_id}.runfile"
+            if batch_runfile.exists():
+                batch_runfile.unlink()
+            batch_dir = Path(export_path) / batch_id
         if batch_dir.exists():
-            time.sleep(1)
-            try:
-                shutil.rmtree(batch_dir)
-            except Exception as e:
-                log_and_print(f"Could not delete {batch_dir}: {e}")
-    for pickle_file in Path(export_path).glob("batch_*.pickle"):
-        pickle_file.unlink()
+            for attempt in range(3):
+                time.sleep(1 + attempt)
+                try:
+                    shutil.rmtree(batch_dir)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        log_and_print(f"Could not delete {batch_dir}: {e}")
+        for pickle_file in Path(export_path).glob("batch_*.pickle"):
+            pickle_file.unlink()
+
     # Remove concatenated tiff if present
     cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
     if cat_tiff_path.exists():

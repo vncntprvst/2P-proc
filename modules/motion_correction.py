@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import time
+import os
 import numpy as np
 import h5py
 from tifffile import TiffWriter, TiffFile, imread
@@ -51,7 +52,7 @@ from pipeline.utils.pipeline_utils import (
     load_caiman_memmap,
 )
 
-def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
+def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path, allow_suite2p_dir: bool = False):
     """Copy concatenation sidecar JSON next to a converted movie.
 
     Looks for sidecar written by bruker_concat_tif (cat_tiff_bt.tiff.json or
@@ -73,37 +74,19 @@ def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path):
         shutil.copy2(src, dst)
         log_and_print(f"Copied sidecar JSON to {dst}")
         
-        # Move XML parameter files to plane0 folder
-        try:
-            # Create plane0 directory if it doesn't exist
-            plane0_dir = export_dir / "suite2p" / "plane0"
-            plane0_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Find all XML parameter files (*_imaging_params.json)
-            import glob
-            xml_param_files = glob.glob(str(export_dir / "*_imaging_params.json"))
-            
-            moved_count = 0
-            for param_file in xml_param_files:
-                try:
-                    param_file_path = Path(param_file)
-                    dest_path = plane0_dir / param_file_path.name
-                    
-                    # Move the file
-                    shutil.move(str(param_file_path), str(dest_path))
-                    log_and_print(f"Moved XML parameters: {param_file_path.name} -> {dest_path}")
-                    moved_count += 1
-                    
-                except Exception as e:
-                    log_and_print(f"Warning: failed to move {param_file_path.name}: {e}", level='warning')
-            
-            if moved_count > 0:
-                log_and_print(f"Moved {moved_count} XML parameter files to {plane0_dir}")
-            else:
-                log_and_print("No XML parameter files found to move")
-            
-        except Exception as e:
-            log_and_print(f"Warning: failed to move XML parameter files: {e}", level='warning')
+        if allow_suite2p_dir:
+            # Move XML parameter files to plane0 folder
+            try:
+                # Create plane0 directory if it doesn't exist
+                plane0_dir = export_dir / "suite2p" / "plane0"
+                plane0_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Check for consolidated sidecar and copy it if needed, or handle legacy files if they exist
+                # (Logic to move *_imaging_params.json removed to avoid clutter/redundancy)
+                
+            except Exception as e:
+                log_and_print(f"Warning: failed to setup suite2p directory: {e}", level='warning')
+
             
     except Exception as e:
         log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level='warning')
@@ -487,7 +470,11 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
 
     adapter.close()
     # Copy concatenation sidecar JSON next to the new file
-    _copy_concat_sidecar(Path(h5_path).parent, Path(h5_path))
+    allow_suite2p_dir = (
+        parameters
+        and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
+    )
+    _copy_concat_sidecar(Path(h5_path).parent, Path(h5_path), allow_suite2p_dir=allow_suite2p_dir)
     return Path(h5_path)
 
 def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, scale=None):
@@ -554,7 +541,11 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     adapter.close()
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
     # Copy concatenation sidecar JSON next to the new file
-    _copy_concat_sidecar(Path(bin_path).parent, Path(bin_path))
+    allow_suite2p_dir = (
+        parameters
+        and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
+    )
+    _copy_concat_sidecar(Path(bin_path).parent, Path(bin_path), allow_suite2p_dir=allow_suite2p_dir)
     return Path(bin_path)
 
 def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, dtype_out='uint16', scale=None):
@@ -604,7 +595,11 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
     adapter.close()
 
     # Copy concatenation sidecar JSON next to the new file
-    _copy_concat_sidecar(Path(tiff_path).parent, Path(tiff_path))
+    allow_suite2p_dir = (
+        parameters
+        and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
+    )
+    _copy_concat_sidecar(Path(tiff_path).parent, Path(tiff_path), allow_suite2p_dir=allow_suite2p_dir)
 
     # # choose bin edges using running_min/running_max computed above
     # nbins = 100
@@ -900,6 +895,12 @@ def run_motion_correction_workflow(
             # Create comparison movie (first 240 frames)
             create_mcorr_movie(mcorr_movie_path=movie_path, export_path=export_path, 
                                         batch=batch_path, index=index, excerpt=240)
+
+        if output_format == 'memmap':
+            # This is already handled by run_mcorr() -> get_output_path()
+            # The memmap file exists in the batch folder.
+            # We don't need to duplicate it or link it, as the pipeline now preserves the batch folder.
+            pass
         
         results['success'] = True
 

@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import mesmerize_core as mc
 from modules import extraction
 from pipeline.utils.pipeline_utils import (
     log_and_print,
@@ -68,24 +69,28 @@ def run_cnmf(
                     f"No batch file or motion-corrected movie found in {export_path}."
                 )
 
+    if batch_path is None:
+        batch_path = export_path / f"batch_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.pickle"
+        mc.create_batch(batch_path)
+        log_and_print(f"Created new batch for CNMF at {batch_path}")
+
     with memory_manager("cnmf"):
         params_cnmf = parameters["params_extraction"]
-        if batch_path is not None and mcorr_movie is None:
-            extraction.run_cnmf(batch_path, 0, export_path, params_cnmf, data_path)
-            extraction.create_components_movie(
-                batch_path=batch_path, export_path=export_path, excerpt=240
+        if mcorr_movie is not None:
+            extraction.run_cnmf(
+                batch_path,
+                None,
+                export_path,
+                params_cnmf,
+                data_path,
+                input_movie_path=mcorr_movie,
             )
         else:
-            cnm_obj, mcorr_movie_path = extraction.run_cnmf_on_movie(
-                mcorr_movie, export_path, params_cnmf
-            )
-            extraction.create_components_movie(
-                batch_path=None,
-                export_path=export_path,
-                mcorr_movie_path=mcorr_movie_path,
-                cnmf_obj=cnm_obj,
-                excerpt=240,
-            )
+            extraction.run_cnmf(batch_path, 0, export_path, params_cnmf, data_path)
+
+        extraction.create_components_movie(
+            batch_path=batch_path, export_path=export_path, excerpt=240
+        )
 
     postproc_cleanup = parameters.get("params_extra", {}).get("cleanup", True)
     if postproc_cleanup and batch_path is not None:
@@ -133,9 +138,17 @@ def _detect_mcorr_movie(export_path: Path, params_mcorr: dict | None) -> Path | 
             preferred.append("mcorr_movie.h5")
         elif save_format == "bin":
             preferred.append("mcorr_movie.bin")
+        elif save_format in {"memmap", "mmap"}:
+            preferred.append("*.mmap")
 
-    fallback = ["mcorr_movie.tiff", "mcorr_movie.h5", "mcorr_movie.bin"]
+    fallback = ["mcorr_movie.tiff", "mcorr_movie.h5", "mcorr_movie.bin", "*.mmap"]
     for name in preferred + [n for n in fallback if n not in preferred]:
+        if "*" in name:
+            candidates = sorted(export_path.glob(name), key=lambda p: p.stat().st_mtime, reverse=True)
+            if candidates:
+                log_and_print(f"Using motion corrected movie: {candidates[0]}")
+                return candidates[0]
+            continue
         candidate = export_path / name
         if candidate.exists():
             log_and_print(f"Using motion corrected movie: {candidate}")
