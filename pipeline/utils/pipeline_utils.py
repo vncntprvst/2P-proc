@@ -213,6 +213,21 @@ def cleanup_files(batch_path, export_path, preserve_batch=False):
         Path(export_path) / 'cat_tiff_bt.tiff.json',
         Path(export_path) / 'cat_tiff.h5.json',
     ]
+    bt_sidecar = cat_sidecars[0]
+    if bt_sidecar.exists():
+        try:
+            mmap_candidates = sorted(
+                Path(export_path).rglob("*.mmap"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if mmap_candidates:
+                mmap_name = mmap_candidates[0].name
+                dest_sidecar = Path(export_path) / f"{mmap_name}.json"
+                shutil.copy2(bt_sidecar, dest_sidecar)
+                log_and_print(f"Copied sidecar JSON to {dest_sidecar}")
+        except Exception as e:
+            log_and_print(f"Could not copy sidecar JSON for memmap: {e}", level="warning")
     for sc in cat_sidecars:
         if sc.exists():
             try:

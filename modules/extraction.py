@@ -155,7 +155,17 @@ def _mean_projection_from_path(
     movie_path: str | Path,
     max_frames: int | None = None,
 ) -> np.ndarray:
-    movie_path = Path(movie_path)
+    if isinstance(movie_path, np.memmap):
+        if movie_path.ndim == 3:
+            return np.mean(movie_path, axis=0).astype(np.float32)
+        filename = getattr(movie_path, "filename", None)
+        if filename:
+            path = Path(filename)
+            if path.suffix.lower() in {".mmap", ".npy"}:
+                return _mean_projection_from_memmap(path, max_frames=max_frames)
+        raise TypeError("Unsupported memmap input for mean projection")
+    else:
+        movie_path = Path(movie_path)
     suffix = movie_path.suffix.lower()
     if suffix in {".mmap", ".npy"}:
         return _mean_projection_from_memmap(movie_path, max_frames=max_frames)
