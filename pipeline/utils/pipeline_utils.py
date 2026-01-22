@@ -222,8 +222,7 @@ def cleanup_files(batch_path, export_path, preserve_batch=False):
                 reverse=True,
             )
             if mmap_candidates:
-                mmap_name = mmap_candidates[0].name
-                dest_sidecar = Path(export_path) / f"{mmap_name}.json"
+                dest_sidecar = Path(export_path) / "movie_attributes.json"
                 shutil.copy2(bt_sidecar, dest_sidecar)
                 log_and_print(f"Copied sidecar JSON to {dest_sidecar}")
         except Exception as e:

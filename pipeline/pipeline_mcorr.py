@@ -44,6 +44,7 @@ from pipeline.utils.pipeline_utils import (
     memory_manager,
     cleanup_files,
 )
+import pipeline.utils.pipeline_utils as _pipeline_utils
 from pipeline.utils.config_loader import load_config
 
 
@@ -78,6 +79,7 @@ def run_mcorr(
         Options are 'h5', 'memmap' (default), 'tiff' or 'bin'. 
     """
     log_and_print("Starting motion correction pipeline.")
+    log_and_print(f"pipeline_utils loaded from: {_pipeline_utils.__file__}")
     export_path = Path(parameters["export_path"])
     export_path.mkdir(parents=True, exist_ok=True)
 
@@ -105,7 +107,18 @@ def run_mcorr(
         preserve_batch = True
         
     if postproc_cleanup:
-        cleanup_files(batch_path, export_path, preserve_batch=preserve_batch)
+        import inspect
+
+        cleanup_params = inspect.signature(cleanup_files).parameters
+        if "preserve_batch" in cleanup_params:
+            cleanup_files(batch_path, export_path, preserve_batch=preserve_batch)
+        else:
+            if preserve_batch:
+                log_and_print(
+                    "cleanup_files does not support preserve_batch; proceeding without it.",
+                    level="warning",
+                )
+            cleanup_files(batch_path, export_path)
     else:
         log_and_print(
             f"Keeping batch files associated to {batch_path}.", level="warning"

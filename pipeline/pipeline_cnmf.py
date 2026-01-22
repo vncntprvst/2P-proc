@@ -94,7 +94,7 @@ def run_cnmf(
 
     postproc_cleanup = parameters.get("params_extra", {}).get("cleanup", True)
     if postproc_cleanup and batch_path is not None:
-        cleanup_files(batch_path, export_path)
+        cleanup_files(batch_path, export_path, preserve_batch=False)
     elif batch_path is not None:
         log_and_print(
             f"Keeping batch files associated to {batch_path}.", level="warning"
