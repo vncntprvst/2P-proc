@@ -1,23 +1,8 @@
 #!/bin/bash
 
-# Copy the Mesmerize and modules folder one level above, to the context folder
-rsync -avzP --include="utils/" --include="paths/" --include="parameters/" --include="*.py" --include="*.ipynb" --include="*.md" --exclude="*/" ../../Mesmerize/ context/Mesmerize/
-rsync -avzP ../../modules context/
-rsync -avzP ../../pipeline context/
-# rsync -avzP ../../Matlab context/
-rsync -avzP ../../readme.md context/
-rsync -avzP ../../LICENSE.md context/
-
 # Build Docker image
-docker build -t wanglabneuro/analysis-2p:latest -t wanglabneuro/analysis-2p:0.5.4 -f Dockerfile context --no-cache
-
-# Delete the Mesmerize and modules folder from the context folder
-rm -rf context/Mesmerize
-rm -rf context/modules
-rm -rf context/pipeline
-# rm -rf context/Matlab
-rm -f context/readme.md
-rm -f context/LICENSE.md
+# The Dockerfile will install spin-top as a package from the repository
+docker build -t wanglabneuro/spin-top:latest -t wanglabneuro/spin-top:0.1.0 -f Dockerfile context --no-cache
 
 # New versions are created with each release though GitHub Actions. 
 # Previous versions are kept for reference. 
@@ -46,4 +31,9 @@ rm -f context/LICENSE.md
 # v0.0.2: Removed ENTRYPOINT from Dockerfile
 # v0.0.1: Initial release
 
-# Test with docker run --rm -it wanglabneuro/analysis-2p /bin/bash, or singularity run docker://wanglabneuro/analysis-2p:latest /bin/bash
+# Repository split: spin-top v0.1.0
+# - Separated processing code into standalone package
+# - Container now installs spin-top from GitHub
+# - Updated image naming to wanglabneuro/spin-top
+
+# Test with docker run --rm -it wanglabneuro/spin-top /bin/bash, or singularity run docker://wanglabneuro/spin-top:latest /bin/bash

@@ -22,10 +22,10 @@ jobs:
             
       - name: Create logs directory
         run: |
-            mkdir -p Mesmerize/logs
+            mkdir -p pipeline/logs
 
       - name: Copy test JSON file
-        run: cp ~/code/imaging_analysis/Analysis_2P/Mesmerize/paths/paths_test_data.json Mesmerize/paths/paths_test_data.json
+        run: cp ~/code/imaging_analysis/spin-top-test-data/paths_test_data.json pipeline/configs/paths_test_data.json
             
       - name: Run batch mcorr cnmf pipeline
         run: |
@@ -36,17 +36,18 @@ jobs:
             # Resolve the absolute path of the JSON file
             # PATHS_FILE=$(realpath Mesmerize/paths/paths_test_data.json)
             # List the directory to verify the file exists
-            ls -l Mesmerize/paths
+            ls -l pipeline/configs
             # Use GITHUB_WORKSPACE to build the absolute path
-            PATHS_FILE=$(realpath "$GITHUB_WORKSPACE/Mesmerize/paths/paths_test_data.json")
-            echo "Using JSON file: $PATHS_FILE"
+            CONFIG_FILE=$(realpath "$GITHUB_WORKSPACE/pipeline/configs/paths_test_data.json")
+            echo "Using config file: $CONFIG_FILE"
             # Run the pipeline
-            python Mesmerize/batch_mcorr_cnmf.py $PATHS_FILE
+            python pipeline/pipeline_mcorr.py $CONFIG_FILE
+            python pipeline/pipeline_cnmf.py $CONFIG_FILE
 
       - name: Check logs
         run: |
             # Check the logs for errors
-            if grep -q "ERROR" Mesmerize/logs/*.log; then
+            if grep -q "ERROR" pipeline/logs/*.log; then
                 echo "Errors found in logs"
                 exit 1
             else
@@ -56,7 +57,7 @@ jobs:
       - name: Check output
         run: |
             # Check the export path (in export_paths field in paths_test_data.json)
-            EXPORT_PATH=$(jq -r '.export_paths[0]' Mesmerize/paths/paths_test_data.json)
+            EXPORT_PATH=$(jq -r '.paths.output_dir' pipeline/configs/paths_test_data.json)
             # List the files in the export path
             echo "Files in export path:"
             tree $EXPORT_PATH

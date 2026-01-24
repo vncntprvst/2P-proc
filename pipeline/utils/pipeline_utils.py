@@ -175,25 +175,30 @@ def get_batch_ids(batch_path):
     return batch_ids
 
 
-def cleanup_files(batch_path, export_path):
-    try:
-        batch_ids = get_batch_ids(batch_path)
-    except Exception:
-        log_and_print(f"Could not get batch ids from {batch_path}.")
-        return
-    for batch_id in batch_ids:
-        batch_runfile = Path(export_path) / f"{batch_id}.runfile"
-        if batch_runfile.exists():
-            batch_runfile.unlink()
-        batch_dir = Path(export_path) / batch_id
+def cleanup_files(batch_path, export_path, preserve_batch=False):
+    if not preserve_batch:
+        try:
+            batch_ids = get_batch_ids(batch_path)
+        except Exception:
+            log_and_print(f"Could not get batch ids from {batch_path}.")
+            return
+        for batch_id in batch_ids:
+            batch_runfile = Path(export_path) / f"{batch_id}.runfile"
+            if batch_runfile.exists():
+                batch_runfile.unlink()
+            batch_dir = Path(export_path) / batch_id
         if batch_dir.exists():
-            time.sleep(1)
-            try:
-                shutil.rmtree(batch_dir)
-            except Exception as e:
-                log_and_print(f"Could not delete {batch_dir}: {e}")
-    for pickle_file in Path(export_path).glob("batch_*.pickle"):
-        pickle_file.unlink()
+            for attempt in range(3):
+                time.sleep(1 + attempt)
+                try:
+                    shutil.rmtree(batch_dir)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        log_and_print(f"Could not delete {batch_dir}: {e}")
+        for pickle_file in Path(export_path).glob("batch_*.pickle"):
+            pickle_file.unlink()
+
     # Remove concatenated tiff if present
     cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
     if cat_tiff_path.exists():
@@ -208,6 +213,20 @@ def cleanup_files(batch_path, export_path):
         Path(export_path) / 'cat_tiff_bt.tiff.json',
         Path(export_path) / 'cat_tiff.h5.json',
     ]
+    bt_sidecar = cat_sidecars[0]
+    if bt_sidecar.exists():
+        try:
+            mmap_candidates = sorted(
+                Path(export_path).rglob("*.mmap"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if mmap_candidates:
+                dest_sidecar = Path(export_path) / "movie_attributes.json"
+                shutil.copy2(bt_sidecar, dest_sidecar)
+                log_and_print(f"Copied sidecar JSON to {dest_sidecar}")
+        except Exception as e:
+            log_and_print(f"Could not copy sidecar JSON for memmap: {e}", level="warning")
     for sc in cat_sidecars:
         if sc.exists():
             try:
@@ -218,10 +237,23 @@ def cleanup_files(batch_path, export_path):
 
 
 def find_latest_batch(export_path):
-    runfiles = sorted(Path(export_path).glob('*.runfile'), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not runfiles:
-        raise FileNotFoundError(f"No runfile found in {export_path}")
-    return Path(export_path) / runfiles[0].stem
+    export_path = Path(export_path)
+    batch_files = sorted(export_path.glob("batch_*.pickle"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if batch_files:
+        return batch_files[0]
+
+    runfiles = sorted(export_path.glob("*.runfile"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for runfile in runfiles:
+        candidate = export_path / runfile.stem
+        if candidate.exists():
+            return candidate
+        candidate_pickle = export_path / f"{runfile.stem}.pickle"
+        if candidate_pickle.exists():
+            return candidate_pickle
+
+    if runfiles:
+        raise FileNotFoundError(f"No batch file found for runfile(s) in {export_path}")
+    raise FileNotFoundError(f"No batch file found in {export_path}")
 
 
 def get_default_parameters(proc_step):

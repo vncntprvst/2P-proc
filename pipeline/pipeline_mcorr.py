@@ -1,7 +1,21 @@
 """Motion correction pipeline step.
 
-This module wraps the motion correction workflow so it can be executed independently of
-extraction and exposes a CLI previously provided by ``batch_mcorr.py``."""
+This module wraps the motion correction workflow.
+It can be executed independently of ROI extraction. 
+
+Usage:
+    python -m pipeline.pipeline_mcorr path/to/config.json
+    (equivalent to `python pipeline/pipeline_mcorr.py path/to/config.json`)
+
+Input:
+    A configuration JSON file specifying data paths, export paths, and parameters.
+    See `pipeline/configs/` for examples.
+
+Output:
+    Motion-corrected movies, and associated batch files if using the caiman pipeline (memmap format).
+    Files are saved in the specified export paths
+
+"""
 
 from __future__ import annotations
 
@@ -30,6 +44,7 @@ from pipeline.utils.pipeline_utils import (
     memory_manager,
     cleanup_files,
 )
+import pipeline.utils.pipeline_utils as _pipeline_utils
 from pipeline.utils.config_loader import load_config
 
 
@@ -64,6 +79,7 @@ def run_mcorr(
         Options are 'h5', 'memmap' (default), 'tiff' or 'bin'. 
     """
     log_and_print("Starting motion correction pipeline.")
+    log_and_print(f"pipeline_utils loaded from: {_pipeline_utils.__file__}")
     export_path = Path(parameters["export_path"])
     export_path.mkdir(parents=True, exist_ok=True)
 
@@ -81,8 +97,28 @@ def run_mcorr(
     batch_path = mcorr_results["batch_path"]
 
     postproc_cleanup = parameters.get("params_extra", {}).get("cleanup", False)
+
+    preserve_batch = False
+    if output_format == "memmap":
+        log_and_print(
+            "Output format is 'memmap'. Configuring cleanup to preserve the memory-mapped file.",
+            level="warning"
+        )
+        preserve_batch = True
+        
     if postproc_cleanup:
-        cleanup_files(batch_path, export_path)
+        import inspect
+
+        cleanup_params = inspect.signature(cleanup_files).parameters
+        if "preserve_batch" in cleanup_params:
+            cleanup_files(batch_path, export_path, preserve_batch=preserve_batch)
+        else:
+            if preserve_batch:
+                log_and_print(
+                    "cleanup_files does not support preserve_batch; proceeding without it.",
+                    level="warning",
+                )
+            cleanup_files(batch_path, export_path)
     else:
         log_and_print(
             f"Keeping batch files associated to {batch_path}.", level="warning"
@@ -178,6 +214,7 @@ def _process_config(cfg_path: str, args: argparse.Namespace) -> None:
         "subject": config.get("subject", {}),
         "imaging": config.get("imaging", {}),
         "params_mcorr": base_params_mcorr,
+        "params_extraction": config.get("params_extraction", {}),
         "params_extra": config.get("params_extra", {}),
     }
 
