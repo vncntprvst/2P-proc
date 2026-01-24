@@ -1,5 +1,6 @@
-# create a new env in your directory
 #!/bin/bash
+# create a new env in your directory
+# usage: bash venv_script.sh
 
 # Set CUDA environment variables to prevent conflicts
 export TF_CPP_MIN_LOG_LEVEL=2  # Suppress TensorFlow warnings
@@ -11,13 +12,10 @@ if ! command -v uv &> /dev/null; then
     # if on Windows, use the Windows installer
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
         powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
     else
         # if on Linux or macOS, use the shell script installer
         curl -LsSf https://astral.sh/uv/install.sh | sh
     fi
-else
-    # echo "uv is already installed."
 fi
 
 uv venv .a2P --python 3.10
