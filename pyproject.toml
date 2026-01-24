@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "toupie-proc"
+version = "0.1.0"
+description = "2-photon calcium imaging data processing pipeline with CaImAn / Suite2P"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Vincent Prevosto", email = "prevosto@mit.edu"},
+    {name = "Manuel Levy", email = "levym@mit.edu"}
+]
+keywords = ["calcium imaging", "2-photon", "neuroscience", "image processing", "CaImAn"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+dependencies = [
+    "caiman>=1.12.2,<=1.13.0",
+    "mesmerize-core>=0.5.0",
+    "numpy>=1.26.4",
+    "scipy>=1.15.3",
+    "scikit-image>=0.25.2",
+    "tifffile>=2025.5.10",
+    "h5py>=3.14.0",
+    "opencv-python>=4.11.0.86",
+    "pylibtiff>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "ruff>=0.0.200",
+]
+viz = [
+    "fastplotlib>=0.1.0a16",
+    "plotly>=6.5.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/vncntprvst/toupie-proc"
+Repository = "https://github.com/vncntprvst/toupie-proc"
+Issues = "https://github.com/vncntprvst/toupie-proc/issues"
+
+[tool.setuptools]
+packages = ["pipeline", "modules"]
+
+[tool.setuptools.package-data]
+pipeline = ["configs/*.json"]
+modules = ["utils/*.py"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
