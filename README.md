@@ -1,8 +1,10 @@
-# Toupie-Proc
+# 2P-proc (spin-top)
 
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![CaImAn Version](https://img.shields.io/badge/CaImAn-1.12.2+-green)](https://github.com/flatironinstitute/CaImAn)
 ![License](https://img.shields.io/badge/license-MIT-red)
 
-**Toupie-Proc** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/) and [Mesmerize](https://github.com/nel-lab/mesmerize-core/).
+**2P-proc (spin-top)** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/) and [Mesmerize](https://github.com/nel-lab/mesmerize-core/).
 
 This package provides:
 - **Motion correction**: Rigid and non-rigid motion correction with optional z-drift correction
@@ -22,16 +24,16 @@ conda activate toupie
 conda install -c conda-forge caiman mesmerize-core
 caimanmanager install
 
-# Install toupie-proc
-pip install git+https://github.com/vncntprvst/toupie-proc.git
+# Install spin-top
+pip install git+https://github.com/vncntprvst/2P-proc.git
 ```
 
 ### Option 2: Development install
 
 ```bash
 # Clone repository
-git clone https://github.com/vncntprvst/toupie-proc.git
-cd toupie-proc
+git clone https://github.com/vncntprvst/2P-proc.git
+cd 2P-proc
 
 # Create and activate environment
 conda create -n toupie python=3.9 -c conda-forge
@@ -151,7 +153,7 @@ pytest tests/
 ## Container Support
 
 Docker/Singularity containers are available for cluster computing:
-- `containers/analysis_2p`: Main processing container with toupie-proc installed
+- `containers/analysis_2p`: Main processing container with spin-top installed
 - `containers/suite2p`: Suite2p-based extraction pipeline
 - `containers/allenneuraldynamics`: Integration with AIND extraction capsule
 
@@ -159,7 +161,7 @@ Build and use containers:
 ```bash
 # Build container
 cd containers/analysis_2p
-docker build -t toupie-proc:latest .
+docker build -t spin-top:latest .
 
 # Run with Singularity
 singularity exec containers/analysis-2p_latest.sif python pipeline/pipeline_mcorr.py config.json
@@ -196,5 +198,5 @@ This project is licensed under the MIT License - see [LICENSE.md](LICENSE.md) fo
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/vncntprvst/toupie-proc/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/vncntprvst/toupie-proc/discussions)
+- **Issues**: [GitHub Issues](https://github.com/vncntprvst/2P-proc/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/vncntprvst/2P-proc/discussions)

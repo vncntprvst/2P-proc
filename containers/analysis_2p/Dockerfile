@@ -11,6 +11,10 @@ RUN mkdir -p /code && \
 COPY . /code/
 WORKDIR /code
 
+# Install spin-top package from GitHub
+RUN uv pip install git+https://github.com/vncntprvst/2P-proc.git
+
+# Install additional requirements
 RUN uv pip install -r requirements.txt && \
     rm requirements.txt
 
@@ -38,4 +42,4 @@ ENV LANG=C.UTF-8 \
     PYTHONUTF8=1
 
 # Test if the container is working: 
-# docker run --rm -it wanglabneuro/analysis-2p:latest python -c "import caiman; print(caiman.__version__)"
+# docker run --rm -it wanglabneuro/spin-top:latest python -c "import caiman; print(caiman.__version__); import pipeline; print('spin-top installed')"
