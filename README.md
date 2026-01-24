@@ -18,14 +18,13 @@ This package provides:
 ### Option 1: Install from GitHub (recommended)
 
 ```bash
-# Create and activate conda environment with CaImAn
-conda create -n toupie python=3.9 -c conda-forge
+# Create and activate conda environment
+conda create -n toupie python=3.10 -c conda-forge # Name the env any name you prefer
 conda activate toupie
-conda install -c conda-forge caiman mesmerize-core
-caimanmanager install
-
 # Install spin-top
 pip install git+https://github.com/vncntprvst/2P-proc.git
+# Install CaImAn manager
+caimanmanager install
 ```
 
 ### Option 2: Development install
@@ -36,16 +35,14 @@ git clone https://github.com/vncntprvst/2P-proc.git
 cd 2P-proc
 
 # Create and activate environment
-conda create -n toupie python=3.9 -c conda-forge
+conda create -n toupie python=3.10 -c conda-forge # Name the env any name you prefer
 conda activate toupie
-conda install -c conda-forge caiman mesmerize-core
-caimanmanager install
-
 # Install in editable mode
 pip install -e .
-
-# Optional: install visualization and Suite2p support
-pip install -e ".[viz,suite2p]"
+# Optional: install visualization
+pip install -e ".[viz]"
+# Install CaImAn manager
+caimanmanager install
 ```
 
 ### Additional dependencies
@@ -66,28 +63,111 @@ pip install plotly
 
 ### 1. Configure your pipeline
 
-Create a configuration JSON based on `pipeline/configs/config_template.json`:
+Create a configuration JSON based on `pipeline/configs/config_template_cnmf.json` or `pipeline/configs/config_template_suite2p.json`.
 
+**CNMF-based extraction** (`config_template_cnmf.json`):
 ```json
 {
-  "acquisition": {
-    "fps": 30.0,
-    "pixel_size": 0.65,
-    "num_planes": 1
+  "experimenter": "FirstName LastName",
+  "subject": {
+    "name": "SUBJECT_ID",
+    "sex": "M/F/U",
+    "genotype": "Strain or Genotype"
   },
-  "motion_correction": {
-    "max_shifts": [6, 6],
-    "strides": [48, 48],
-    "overlaps": [24, 24]
-  },
-  "cnmf": {
-    "gSig": [4, 4],
-    "K": 100,
-    "p": 1
+  "imaging": {
+    "date": "SESSION_DATE",
+    "fr": 20,
+    "Npixel_x": 765,
+    "Npixel_y": 765,
+    "microns_per_pixel": 1.45
   },
   "paths": {
-    "input_movie": "/path/to/data.tif",
-    "output_dir": "/path/to/output/"
+    "data_paths": [
+      "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-001"
+    ],
+    "export_paths": [
+      "EXPORT_ROOT/SUBJECT_ID/SESSION_DATE/cnmf"
+    ],
+    "zstack_paths": [
+      "DATA_ROOT/SUBJECT_ID/SESSION_DATE/ZSeries-004"
+    ]
+  },
+  "params_mcorr": {
+    "method": "caiman",
+    "main": {
+      "strides": [36, 36],
+      "overlaps": [24, 24],
+      "max_shifts": [12, 12],
+      "pw_rigid": true
+    },
+    "save_mcorr_movie": "tiff",
+    "z_motion_correction": {
+      "zstack_shift": {
+        "Ch": 2,
+        "Nz": 41
+      },
+      "non_rigid": false
+    }
+  },
+  "params_extraction": {
+    "method": "cnmf",
+    "main": {
+      "p": 0,
+      "K": 8,
+      "gSig": [5, 5],
+      "merge_thr": 0.8,
+      "min_SNR": 3.0,
+      "rval_thr": 0.85,
+      "use_cnn": true
+    }
+  },
+  "logging": {
+    "log_path": "EXPORT_ROOT/SUBJECT_ID",
+    "log_level": "INFO"
+  }
+}
+```
+
+**Suite2p-based extraction** (`config_template_suite2p.json`):
+```json
+{
+  "experimenter": "FirstName LastName",
+  "subject": {
+    "name": "SUBJECT_ID",
+    "sex": "M/F/U"
+  },
+  "imaging": {
+    "date": "SESSION_DATE",
+    "fr": 20,
+    "Npixel_x": 765,
+    "Npixel_y": 765
+  },
+  "paths": {
+    "data_paths": [
+      "DATA_ROOT/SUBJECT_ID/SESSION_DATE/TSeries-001"
+    ],
+    "export_paths": [
+      "EXPORT_ROOT/SUBJECT_ID/SESSION_DATE/suite2p"
+    ],
+    "zstack_paths": [
+      "DATA_ROOT/SUBJECT_ID/SESSION_DATE/ZSeries-004"
+    ]
+  },
+  "params_mcorr": {
+    "method": "caiman",
+    "main": {
+      "strides": [36, 36],
+      "overlaps": [24, 24],
+      "max_shifts": [12, 12],
+      "pw_rigid": true
+    },
+    "save_mcorr_movie": "tiff"
+  },
+  "params_extraction": {
+    "method": "suite2p",
+    "main": {
+      "decay_time": 0.3
+    }
   }
 }
 ```
@@ -99,7 +179,6 @@ Create a configuration JSON based on `pipeline/configs/config_template.json`:
 ```bash
 python pipeline/pipeline_mcorr.py configs/my_config.json
 python pipeline/pipeline_cnmf.py configs/my_config.json
-python pipeline/roi_zcorr.py configs/my_config.json  # optional z-correction
 ```
 
 **On a cluster with SLURM:**
@@ -121,10 +200,10 @@ python Caiman/multisession_registration.py --json configs/my_config.json
 - Optional z-drift correction using anatomical z-stack
 - Export to multiple formats (TIFF, memmap, HDF5)
 
-### CNMF Extraction
-- Constrained non-negative matrix factorization for ROI detection
-- Automatic component quality assessment
-- Denoised fluorescence traces and deconvolved spikes
+### ROI Extraction
+- CNMF (CaImAn): Constrained non-negative matrix factorization with automatic component quality assessment
+- Suite2p: Fast, correlation-based clustering and SVD-accelerated cell detection and extraction
+- Both methods provide denoised fluorescence traces and deconvolved spikes
 
 ### ROI Z-Correction
 - Regress and subtract axial drift from ROI traces
@@ -169,7 +248,7 @@ singularity exec containers/analysis-2p_latest.sif python pipeline/pipeline_mcor
 
 ## Documentation
 
-- **Configuration**: See `pipeline/configs/config_template.json` for all available parameters
+- **Configuration**: See `pipeline/configs/config_template_cnmf.json` for all available parameters
 - **API Reference**: Coming soon
 - **Tutorials**: Jupyter notebooks in `Mesmerize/` and `Caiman/`
 
@@ -190,7 +269,7 @@ Contributions are welcome! Please:
 
 If you use this software, please cite:
 - CaImAn: Giovannucci et al. (2019) eLife
-- Mesmerize: Corder et al. (2024)
+- Mesmerize: Kolar et al. (2019) Nature Communications
 
 ## License
 
@@ -199,4 +278,3 @@ This project is licensed under the MIT License - see [LICENSE.md](LICENSE.md) fo
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/vncntprvst/2P-proc/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/vncntprvst/2P-proc/discussions)
