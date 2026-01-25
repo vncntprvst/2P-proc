@@ -6,13 +6,14 @@ pipeline/configs/
 !pipeline/configs/config_template_cnmf.json
 !pipeline/configs/config_template_suite2p.json
 
-# Scripts
-scripts/
-!scripts/batch_2P_pipeline_template.sh
-!scripts/cluster_processing_template.sh
-
 # Environment files
 **/.env
+
+# Scripts
+scripts/*
+!scripts/batch_2P_pipeline_template.sh
+!scripts/cluster_processing_template.sh
+!scripts/template.env
 
 # Build files
 dist/
