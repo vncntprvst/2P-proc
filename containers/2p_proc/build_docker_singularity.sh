@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Build Docker image
-# The Dockerfile will install spin-top as a package from the repository
-docker build -t wanglabneuro/spin-top:latest -t wanglabneuro/spin-top:0.1.0 -f Dockerfile context
+# The Dockerfile will install optimouse as a package from PyPI
+docker build -t wanglabneuro/optimouse:latest -t wanglabneuro/optimouse:0.9.0 -f Dockerfile context
 #  --no-cache
 
 # Push to Docker registry
-docker push --all-tags wanglabneuro/spin-top
+docker push --all-tags wanglabneuro/optimouse
 
 # Convert Docker image to Singularity image
 # Requires Singularity installed on your system.
@@ -17,8 +17,8 @@ then
     exit
 else
     # If a hash file exists, check the hash matches the current Docker image. If not, build a new Singularity image.
-    if [ -f "spin-top_latest.sif.hash" ]; then
-        if [ "$(docker inspect wanglabneuro/spin-top:latest --format='{{.Id}}')" == "$(cat spin-top_latest.sif.hash)" ]; then
+    if [ -f "optimouse_latest.sif.hash" ]; then
+        if [ "$(docker inspect wanglabneuro/optimouse:latest --format='{{.Id}}')" == "$(cat optimouse_latest.sif.hash)" ]; then
             echo "Docker image has not changed. Not building Singularity image."
             build_singularity=0
         else
@@ -33,10 +33,10 @@ else
     if [ $build_singularity -eq 1 ]; then
         echo "Building Singularity image."
         # docker login
-        apptainer build -F spin-top_latest.sif docker://wanglabneuro/spin-top:latest
+        apptainer build -F optimouse_latest.sif docker://wanglabneuro/optimouse:latest
         # docker logout
         # store a hash of the Docker image in a file
-        docker inspect wanglabneuro/spin-top:latest --format='{{.Id}}' > spin-top_latest.sif.hash
+        docker inspect wanglabneuro/optimouse:latest --format='{{.Id}}' > optimouse_latest.sif.hash
     fi
 
 fi
@@ -65,7 +65,7 @@ if [ -n "${SSH_HPCC_IMAGE_REPO:-}" ]; then
     if [ -z "$host" ] || [ -z "$path" ] || [[ "$host" == *"/"* ]]; then
         echo "Invalid SSH_HPCC_IMAGE_REPO='$SSH_HPCC_IMAGE_REPO'; skipping rsync."
     else
-            rsync -aP spin-top_latest.sif "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
+            rsync -aP optimouse_latest.sif "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
     fi
 else
     echo "HPCC_IMAGE_REPO variable not set. Not copying to HPCC."

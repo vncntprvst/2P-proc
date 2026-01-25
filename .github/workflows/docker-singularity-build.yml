@@ -56,7 +56,7 @@ jobs:
           else
             TAG=latest
           fi
-          docker build -t wanglabneuro/spin-top:latest -t wanglabneuro/spin-top:$TAG -f containers/analysis_2p/Dockerfile containers/analysis_2p/context --no-cache
+          docker build -t wanglabneuro/optimouse:latest -t wanglabneuro/optimouse:$TAG -f containers/analysis_2p/Dockerfile containers/analysis_2p/context --no-cache
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -66,7 +66,7 @@ jobs:
 
       - name: Push Docker image
         run: |
-          docker push --all-tags wanglabneuro/spin-top
+          docker push --all-tags wanglabneuro/optimouse
 
       # - name: Install Apptainer
       # # Note that that doesn't work on a local runner 
@@ -80,7 +80,7 @@ jobs:
             echo "Please install apptainer from https://apptainer.org/docs/admin/main/installation.html#install-ubuntu-packages"
             exit 1
           fi
-          apptainer build -F spin-top_latest.sif docker://wanglabneuro/spin-top:latest 
+          apptainer build -F optimouse_latest.sif docker://wanglabneuro/optimouse:latest 
 
       # - name: Install sshpass
       # # Same note as above
@@ -92,7 +92,7 @@ jobs:
           export SSH_HPCC_IMAGE_REPO="${{ secrets.HPCC_SERVER }}:${{ secrets.HPCC_IMAGE_REPO }}"
           if [ -n "${SSH_HPCC_IMAGE_REPO+x}" ]; then
             echo "Copying Singularity image to HPCC."
-            rsync -aP --rsh="sshpass -p '${{ secrets.HPCC_PWD }}' ssh -o StrictHostKeyChecking=no" spin-top_latest.sif "${{ secrets.HPCC_LOGIN }}@$SSH_HPCC_IMAGE_REPO/"
+            rsync -aP --rsh="sshpass -p '${{ secrets.HPCC_PWD }}' ssh -o StrictHostKeyChecking=no" optimouse_latest.sif "${{ secrets.HPCC_LOGIN }}@$SSH_HPCC_IMAGE_REPO/"
           else
             echo "HPPC_IMAGE_REPO variable not set. Not copying to HPPC."
           fi

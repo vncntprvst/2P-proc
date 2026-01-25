@@ -1,11 +1,14 @@
 #!/bin/bash
 
 # Build Docker image
-# The Dockerfile will install spin-top as a package from the repository
-docker build -t wanglabneuro/spin-top:latest -t wanglabneuro/spin-top:0.1.0 -f Dockerfile context --no-cache
+# The Dockerfile will install optimouse as a package from PyPI
+docker build -t wanglabneuro/optimouse:latest -t wanglabneuro/optimouse:0.9.0 -f Dockerfile context --no-cache
 
-# New versions are created with each release though GitHub Actions. 
-# Previous versions are kept for reference. 
+# Version history:
+# v0.9.0: Initial container release for Optimouse package
+
+# Previous tags for the analysis-2p container, created with the Analysis 2P pipeline before splitting the repository, are kept for reference below. 
+# v0.6.1: Updates container with code to accomodate both CNMF and Suite2P extraction options in the Analysis 2P pipeline 
 # v0.5.4: Updates for new HPC cluster
 # v0.5.3: Move utility Python scripts from scripts directory to container
 # v0.5.2: quick fix for dark mcorr_u8 and compare_og_mcorr, fix ops nframes detection not working when zcorrection not requested, with sidecar json file + robust fallbacks
@@ -31,9 +34,9 @@ docker build -t wanglabneuro/spin-top:latest -t wanglabneuro/spin-top:0.1.0 -f D
 # v0.0.2: Removed ENTRYPOINT from Dockerfile
 # v0.0.1: Initial release
 
-# Repository split: spin-top v0.1.0
+# Repository split: optimouse v0.1.0
 # - Separated processing code into standalone package
-# - Container now installs spin-top from GitHub
-# - Updated image naming to wanglabneuro/spin-top
+# - Container now installs optimouse from GitHub
+# - Updated image naming to wanglabneuro/optimouse
 
-# Test with docker run --rm -it wanglabneuro/spin-top /bin/bash, or singularity run docker://wanglabneuro/spin-top:latest /bin/bash
+# Test with docker run --rm -it wanglabneuro/optimouse /bin/bash, or singularity run docker://wanglabneuro/optimouse:latest /bin/bash

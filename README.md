@@ -1,10 +1,10 @@
-# 2P-proc (spin-top)
+# 2P-proc (optimouse)
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![CaImAn Version](https://img.shields.io/badge/CaImAn-1.12.2+-green)](https://github.com/flatironinstitute/CaImAn)
 ![License](https://img.shields.io/badge/license-MIT-red)
 
-**2P-proc (spin-top)** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/) and [Mesmerize](https://github.com/nel-lab/mesmerize-core/).
+**2P-proc (optimouse)** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/) and [Mesmerize](https://github.com/nel-lab/mesmerize-core/).
 
 This package provides:
 - **Motion correction**: Rigid and non-rigid motion correction with optional z-drift correction
@@ -21,7 +21,7 @@ This package provides:
 # Create and activate conda environment
 conda create -n toupie python=3.10 -c conda-forge # Name the env any name you prefer
 conda activate toupie
-# Install spin-top
+# Install optimouse
 pip install git+https://github.com/vncntprvst/2P-proc.git
 # Install CaImAn manager
 caimanmanager install
@@ -232,7 +232,7 @@ pytest tests/
 ## Container Support
 
 Docker/Singularity containers are available for cluster computing:
-- `containers/analysis_2p`: Main processing container with spin-top installed
+- `containers/2p_proc`: Main processing container with optimouse installed
 - `containers/suite2p`: Suite2p-based extraction pipeline
 - `containers/allenneuraldynamics`: Integration with AIND extraction capsule
 
@@ -240,7 +240,7 @@ Build and use containers:
 ```bash
 # Build container
 cd containers/analysis_2p
-docker build -t spin-top:latest .
+docker build -t optimouse:latest .
 
 # Run with Singularity
 singularity exec containers/analysis-2p_latest.sif python pipeline/pipeline_mcorr.py config.json

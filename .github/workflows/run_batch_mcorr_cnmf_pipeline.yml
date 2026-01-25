@@ -25,7 +25,7 @@ jobs:
             mkdir -p pipeline/logs
 
       - name: Copy test JSON file
-        run: cp ~/code/imaging_analysis/spin-top-test-data/paths_test_data.json pipeline/configs/paths_test_data.json
+        run: cp ~/code/imaging_analysis/optimouse-test-data/paths_test_data.json pipeline/configs/paths_test_data.json
             
       - name: Run batch mcorr cnmf pipeline
         run: |
