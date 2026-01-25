@@ -31,7 +31,7 @@ fi
 # The following options can be set there:
 
     # In "params_mcorr", set "method" to "caiman" to run motion correction or "none" to skip it.
-    # Set "save_mcorr_movie" to "h5" or "bin" to save the motion corrected movie as HDF5 or binary file, respectively.
+    # Set "save_mcorr_movie" to "tiff", "memap", "h5" or "bin" to save the motion corrected movie as HDF5 or binary file, respectively.
     # If "save_mcorr_movie" is set to false, the motion corrected movie will temporarily be saved in the batch directory as a memory-mapped file (.mmap), and discarded later if cleanup is set to true.
 
     # In "params_extraction", set the "method" field to "cnmf", "suite2p", or "aind" to specify the extraction method, or
@@ -92,69 +92,74 @@ if command -v squeue >/dev/null 2>&1 && [ -n "${SLURM_JOB_ID:-}" ]; then
     echo "Requested walltime: $(squeue -j $SLURM_JOB_ID -h --Format TimeLimit)"
 fi
 
-# Determine location of utility scripts
-UTILS_DIR=${UTILS_DIR:-./utils}
-UTILS_DIR=$(realpath "$UTILS_DIR")
-if [ ! -d "$UTILS_DIR" ]; then
-    echo "Utilities directory '$UTILS_DIR' not found. Attempting to download..."
-    TMP_UTILS_DIR=$(mktemp -d)
-    if command -v git >/dev/null 2>&1; then
-        if git clone --depth 1 https://github.com/pseudomanu/Analysis_2P.git "$TMP_UTILS_DIR/repo"; then
-            mkdir -p "$UTILS_DIR"
-            cp -r "$TMP_UTILS_DIR/repo/scripts/utils/." "$UTILS_DIR"
-            FETCH_SUCCESS=1
-        fi
-    elif command -v curl >/dev/null 2>&1; then
-        if curl -L https://github.com/pseudomanu/Analysis_2P/archive/refs/heads/main.tar.gz | tar -xz -C "$TMP_UTILS_DIR"; then
-            mkdir -p "$UTILS_DIR"
-            cp -r "$TMP_UTILS_DIR/Analysis_2P-main/scripts/utils/." "$UTILS_DIR"
-            FETCH_SUCCESS=1
-        fi
-    fi
-    rm -rf "$TMP_UTILS_DIR"
-    if [ "${FETCH_SUCCESS:-0}" -ne 1 ]; then
-        echo "Failed to obtain utilities directory."
-        exit 1
-    fi
-    echo "Utilities directory created at '$UTILS_DIR'."
-    echo "Now add an .env file in '$UTILS_DIR', then run the script again."
-    exit 1
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load environment variables from .env file
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a  # auto-export all variables
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.env"
+    set +a
+    echo "Loaded environment from $SCRIPT_DIR/.env"
+else
+    echo "Warning: No .env file found at $SCRIPT_DIR/.env"
+    echo "Copy template.env to .env and configure it for your environment."
 fi
 
-# Load global settings
-source "$UTILS_DIR/set_globals.sh" "$USER"
+# Detect OS version for cluster-specific settings
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [[ "$ID" == "centos" ]] && [[ "$VERSION_ID" == "7" ]]; then
+            echo "centos7"
+        elif [[ "$ID" == "rocky" ]] && [[ "$VERSION_ID" =~ ^8 ]]; then
+            echo "rocky8"
+        else
+            echo "unknown"
+        fi
+    else
+        echo "unknown"
+    fi
+}
 
-if [ "$OS_VERSION" = "centos7" ]; then
-    echo "Loading modules for CentOS 7."
-    module load openmind/singularity/3.9.5 openmind/anaconda
-    USE_SINGULARITY=1
-elif [ "$OS_VERSION" = "rocky8" ]; then
+OS_VERSION=$(detect_os)
+echo "Detected OS: $OS_VERSION"
+
+# Set default values if not in .env
+IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
+LAB_SPACE=${LAB_SPACE:-}
+USERNAME=${USER}
+
+if [ "$OS_VERSION" = "rocky8" ]; then
     if [[ -d "$HOME/orcd" ]]; then
-        echo "Loading modules for Rocky 8 on Engaging."
+        echo "Loading modules"
         module load apptainer/1.4.2 miniforge/23.11.0-0
     else
-        echo "Loading modules for Rocky 8 on OpenMind."
-        module load openmind8/apptainer openmind8/anaconda
+        echo "Unknown OS version; not loading modules"
+        exit 1
     fi
     USE_SINGULARITY=1
 else
 
     # Prefer Singularity if available locally and images are present
     if command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1; then
-        if [ -f "$IMAGE_REPO/analysis-2p_latest.sif" ] && [ -f "$IMAGE_REPO/suite2p_latest.sif" ]; then
-            echo "Singularity detected and images present; forcing Singularity path."
+        # Check if main processing image exists (suite2p image is optional)
+        if [ -f "$IMAGE_REPO/2p_proc_latest.sif" ]; then
+            echo "Singularity/Apptainer detected and 2p_proc image found."
             USE_SINGULARITY=1
+            # Warn if suite2p image is missing but don't fail
+            if [ ! -f "$IMAGE_REPO/suite2p_latest.sif" ]; then
+                echo "Warning: suite2p_latest.sif not found. Suite2P extraction will use Docker if needed."
+            fi
         else
-            echo "OS version $OS_VERSION not recognized. Using Docker instead."
+            echo "Singularity/Apptainer available but 2p_proc image not found in $IMAGE_REPO"
+            echo "Please build or download the image, or use Docker instead."
             USE_SINGULARITY=0
-            source ../tests/a2P/bin/activate
-            export PYTHONPATH="$PWD/../tests/a2P:$PYTHONPATH"
         fi
     else
-        echo "OS version $OS_VERSION not recognized. Using Docker instead."
+        echo "Singularity/Apptainer not found. Using Docker instead."
         USE_SINGULARITY=0
-        source ../tests/a2P/bin/activate
-        export PYTHONPATH="$PWD/../tests/a2P:$PYTHONPATH"   
     fi
 fi
 
@@ -162,37 +167,178 @@ fi
 CONFIG_FILE=$1
 echo "Config file provided: $CONFIG_FILE"
 
+# Get directory of config file
+CONFIG_FILE_DIR=$(realpath $(dirname "$CONFIG_FILE"))
+
+# Parse config file to extract paths using Python in container
 if [ $# -eq 1 ]; then
     export USE_SINGULARITY
-    # If only config file is provided, then get arguments from the file.
-    source "$UTILS_DIR/update_paths_file.sh" "$CONFIG_FILE"
-    source "$UTILS_DIR/read_path_file.sh" "$CONFIG_FILE"
+    echo "Reading paths from configuration file..."
+
+    if [ $USE_SINGULARITY -eq 1 ]; then
+        if command -v apptainer >/dev/null 2>&1; then
+            CONTAINER_CMD="apptainer"
+        else
+            CONTAINER_CMD="singularity"
+        fi
+    fi
+
+    # Update remote paths (if needed)
+    if [ $USE_SINGULARITY -eq 1 ]; then
+        CONFIG_FILE=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import update_remote_paths
+path_file = sys.argv[1]
+old_paths = sys.argv[2].split(',')
+new_paths = sys.argv[3].split(',')
+print(update_remote_paths(path_file, old_paths, new_paths))
+" "$CONFIG_FILE" "/om/scratch/tmp,/om/user,/om2/scratch/tmp,/om2/user" \
+"$OM_SCRATCH_TMP,$OM_USER_DIR_ALIAS,$OM2_SCRATCH_TMP,$OM2_USER_DIR_ALIAS")
+    else
+        CONFIG_FILE=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import update_remote_paths
+path_file = sys.argv[1]
+old_paths = sys.argv[2].split(',')
+new_paths = sys.argv[3].split(',')
+print(update_remote_paths(path_file, old_paths, new_paths))
+" "$CONFIG_FILE" "/om/scratch/tmp,/om/user,/om2/scratch/tmp,/om2/user" \
+"$OM_SCRATCH_TMP,$OM_USER_DIR_ALIAS,$OM2_SCRATCH_TMP,$OM2_USER_DIR_ALIAS")
+    fi
+
+    # Read common roots
+    if [ $USE_SINGULARITY -eq 1 ]; then
+        COMMON_ROOT_DATA_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "data_paths")
+        COMMON_ROOT_EXPORT_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "export_paths")
+        LOG_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "logging")
+        EXTRACTOR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
+        IFS=' ' read -ra SOURCE_DATA_PATHS <<< "$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import read_data_paths
+print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
+" "$CONFIG_FILE" "data_paths" "bash")"
+        IFS=' ' read -ra EXPORT_DATA_PATHS <<< "$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import read_data_paths
+print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
+" "$CONFIG_FILE" "export_paths" "bash")"
+    else
+        COMMON_ROOT_DATA_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "data_paths")
+        COMMON_ROOT_EXPORT_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "export_paths")
+        LOG_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "logging")
+        EXTRACTOR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
+        IFS=' ' read -ra SOURCE_DATA_PATHS <<< "$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import read_data_paths
+print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
+" "$CONFIG_FILE" "data_paths" "bash")"
+        IFS=' ' read -ra EXPORT_DATA_PATHS <<< "$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import read_data_paths
+print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
+" "$CONFIG_FILE" "export_paths" "bash")"
+    fi
+
+    # Ensure export paths exist
+    for path in "${EXPORT_DATA_PATHS[@]}"; do
+        if [ ! -d "$path" ]; then
+            echo "Creating export path: $path"
+            mkdir -p "$path"
+        fi
+    done
+
+    # Check LOG_DIR
+    if [ ! -d "$LOG_DIR" ]; then
+        echo "LOG_DIR does not exist. Creating it."
+        mkdir -p "$LOG_DIR"
+    fi
+    if [ ! -w "$LOG_DIR" ]; then
+        echo "LOG_DIR is not writable. Setting LOG_DIR to COMMON_ROOT_EXPORT_DIR."
+        LOG_DIR=$COMMON_ROOT_EXPORT_DIR
+    fi
+
+    echo "Data directory: $COMMON_ROOT_DATA_DIR"
+    echo "Export directory: $COMMON_ROOT_EXPORT_DIR"
+    echo "Log directory: $LOG_DIR"
 else
-    # Otherwise, use the provided arguments
+    # Use provided arguments
     COMMON_ROOT_DATA_DIR=$2
     COMMON_ROOT_EXPORT_DIR=$3
     LOG_DIR=$4
 fi
 
-# Get directory of config file
-CONFIG_FILE_DIR=$(realpath $(dirname "$CONFIG_FILE"))
-
 # Get the motion correction and extraction methods from the configuration file
 echo "Retrieving motion correction and extraction methods from the configuration file..."
 if [ $USE_SINGULARITY -eq 1 ]; then
-    MCORR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-        $IMAGE_REPO/analysis-2p_latest.sif \
-        python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
-    EXTRACTOR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-        $IMAGE_REPO/analysis-2p_latest.sif \
-        python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
+    MCORR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR $IMAGE_REPO/2p_proc_latest.sif python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
+    EXTRACTOR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR $IMAGE_REPO/2p_proc_latest.sif python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
 else
-    MCORR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-        wanglabneuro/analysis-2p:latest \
-        python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
-    EXTRACTOR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-        wanglabneuro/analysis-2p:latest \
-        python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
+    MCORR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR wanglabneuro/2p_proc:latest python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
+    EXTRACTOR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR wanglabneuro/2p_proc:latest python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
 fi
 echo "Motion correction method: $MCORR_METHOD"
 echo "Extraction method: $EXTRACTOR_METHOD"
@@ -210,7 +356,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
     echo "==============================="
 
     # Build python command with optional arguments
-    PYTHON_MC_CMD="python -u /code/pipeline/pipeline_mcorr.py $CONFIG_FILE"
+    PYTHON_MC_CMD="python -u -m pipeline.pipeline_mcorr $CONFIG_FILE"
     # if [ $save_mcorr_movie -eq 1 ]; then
     #     PYTHON_MC_CMD+=" --save-binary $MCORR_SAVE_OPTS"
     # fi
@@ -221,15 +367,19 @@ if [ "$MCORR_METHOD" != "none" ]; then
         echo "Using Singularity."
 
         # Create list of mount points to pass to Singularity. Only use unique mount points.
-        echo "OM_USERS_DIR: $OM_USER_DIR_ALIAS"
-        echo "OM2_USERS_DIR: $OM2_USER_DIR_ALIAS"
         echo "CURRENT_DIR: $CURRENT_DIR"
         
-        # Create an array of directories
-        SESSION_ROOT_DIR="$(dirname "$COMMON_ROOT_DATA_DIR")"
-        DIRS=("$CONFIG_FILE_DIR" "$LOG_DIR" \
-                "$SESSION_ROOT_DIR" "$COMMON_ROOT_DATA_DIR" "$COMMON_ROOT_EXPORT_DIR" \
-                "$CURRENT_DIR" "$SLURM_SUBMIT_DIR")
+        # Create an array of directories (only non-empty, absolute paths)
+        DIRS=()
+        [ -n "$CONFIG_FILE_DIR" ] && [[ "$CONFIG_FILE_DIR" = /* ]] && DIRS+=("$CONFIG_FILE_DIR")
+        [ -n "$LOG_DIR" ] && [[ "$LOG_DIR" = /* ]] && DIRS+=("$LOG_DIR")
+        if [ -n "$COMMON_ROOT_DATA_DIR" ] && [[ "$COMMON_ROOT_DATA_DIR" = /* ]]; then
+            SESSION_ROOT_DIR="$(dirname "$COMMON_ROOT_DATA_DIR")"
+            DIRS+=("$SESSION_ROOT_DIR" "$COMMON_ROOT_DATA_DIR")
+        fi
+        [ -n "$COMMON_ROOT_EXPORT_DIR" ] && [[ "$COMMON_ROOT_EXPORT_DIR" = /* ]] && DIRS+=("$COMMON_ROOT_EXPORT_DIR")
+        [ -n "$CURRENT_DIR" ] && [[ "$CURRENT_DIR" = /* ]] && DIRS+=("$CURRENT_DIR")
+        [ -n "$SLURM_SUBMIT_DIR" ] && [[ "$SLURM_SUBMIT_DIR" = /* ]] && DIRS+=("$SLURM_SUBMIT_DIR")
         echo "DIRS: ${DIRS[@]}"
 
        # Build Singularity bind list with exact (not substring) de-duplication
@@ -261,16 +411,20 @@ if [ "$MCORR_METHOD" != "none" ]; then
         mkdir -p "$MPLCONFIGDIR"
 
         # Create a temporary directory in COMMON_ROOT_EXPORT_DIR for CaImAn and assign it to CAIMAN_TEMP
-        CAIMAN_TEMP=$(mktemp -d -p $COMMON_ROOT_EXPORT_DIR)
+        if [ -n "$COMMON_ROOT_EXPORT_DIR" ]; then
+            CAIMAN_TEMP=$(mktemp -d -p "$COMMON_ROOT_EXPORT_DIR")
+        else
+            CAIMAN_TEMP=$(mktemp -d)
+        fi
 
-        echo "Starting Batch mcorr cnmf analysis on analysis-2p singularity image."
+        echo "Starting motion-correction on 2p_proc singularity image."
 
         if [ $USE_STABLE -eq 1 ]; then
             # To run the pipeline with the stable version of the code repository 
             singularity run \
                 -B $MOUNT_POINTS \
                 --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                $IMAGE_REPO/analysis-2p_latest.sif \
+                $IMAGE_REPO/2p_proc_latest.sif \
                 $PYTHON_MC_CMD
             SINGULARITY_EXIT_STATUS=$?
         else
@@ -281,7 +435,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
                 -B $MOUNT_POINTS \
                 -B $CODE_DIR:/code \
                 --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                $IMAGE_REPO/analysis-2p_latest.sif \
+                $IMAGE_REPO/2p_proc_latest.sif \
                 $PYTHON_MC_CMD
             SINGULARITY_EXIT_STATUS=$?
         fi
@@ -302,7 +456,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
         REPO_DIR="$(dirname "$SCRIPT_DIR")"
         CODE_DIR=$REPO_DIR
         echo "Using code directory: $CODE_DIR"
-        echo "Starting Batch mcorr cnmf analysis on analysis-2p docker image."
+        echo "Starting motion-correction on 2p_proc docker image."
         export MPLBACKEND="Agg"
         export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
         mkdir -p "$MPLCONFIGDIR"
@@ -316,7 +470,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
             -v $CODE_DIR:/code \
             -e MPLBACKEND=Agg \
             -e MPLCONFIGDIR=$MPLCONFIGDIR \
-            wanglabneuro/analysis-2p:latest \
+            wanglabneuro/2p_proc:latest \
             $PYTHON_MC_CMD
         
         # Capture the exit status of the docker command
@@ -358,11 +512,11 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         echo "Getting ops parameters from configuration file..."
         if [ $USE_SINGULARITY -eq 1 ]; then
             OPS=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -B $EXPORT_PATH:$EXPORT_PATH \
-                $IMAGE_REPO/analysis-2p_latest.sif \
+                $IMAGE_REPO/2p_proc_latest.sif \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-suite2p-ops --export-path "$EXPORT_PATH")
         else
             OPS=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $EXPORT_PATH:$EXPORT_PATH \
-                wanglabneuro/analysis-2p:latest \
+                wanglabneuro/2p_proc:latest \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-suite2p-ops --export-path "$EXPORT_PATH")
         fi
 
@@ -401,11 +555,11 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         # Create the ops dictionary
         if [ $USE_SINGULARITY -eq 1 ]; then
             output_format_STR=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                $IMAGE_REPO/analysis-2p_latest.sif \
+                $IMAGE_REPO/2p_proc_latest.sif \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         else
             output_format_STR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                wanglabneuro/analysis-2p:latest \
+                wanglabneuro/2p_proc:latest \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         fi
 
@@ -512,30 +666,35 @@ if [ "$EXTRACTOR_METHOD" = "cnmf" ]; then
     export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
     mkdir -p "$MPLCONFIGDIR"
     if [ $USE_SINGULARITY -eq 1 ]; then
-        CAIMAN_TEMP=$(mktemp -d -p $COMMON_ROOT_EXPORT_DIR)
-        CNMF_CMD="python -u /code/pipeline/pipeline_cnmf.py $CONFIG_FILE"
+        # Create a temporary directory in COMMON_ROOT_EXPORT_DIR for CaImAn and assign it to CAIMAN_TEMP
+        if [ -n "$COMMON_ROOT_EXPORT_DIR" ]; then
+            CAIMAN_TEMP=$(mktemp -d -p "$COMMON_ROOT_EXPORT_DIR")
+        else
+            CAIMAN_TEMP=$(mktemp -d)
+        fi
+        CNMF_CMD="python -u -m pipeline.pipeline_cnmf $CONFIG_FILE"
         if [ -n "$MCORR_OUTPUT" ]; then
             CNMF_CMD+=" --mcorr-movie $MCORR_OUTPUT"
         fi
         if [ $USE_STABLE -eq 1 ]; then
             singularity run -B $MOUNT_POINTS \
                             --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                            $IMAGE_REPO/analysis-2p_latest.sif $CNMF_CMD
+                            $IMAGE_REPO/2p_proc_latest.sif $CNMF_CMD
         else
             echo "Using code directory: $PIPELINE_CODE_DIR for CNMF extraction."
             singularity run -B $MOUNT_POINTS \
                             -B $PIPELINE_CODE_DIR:/code \
                             --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                            $IMAGE_REPO/analysis-2p_latest.sif $CNMF_CMD
+                            $IMAGE_REPO/2p_proc_latest.sif $CNMF_CMD
         fi
         CNMF_EXIT_STATUS=$?
         rm -rf $CAIMAN_TEMP
     else
-        CNMF_CMD="python -u /code/pipeline/pipeline_cnmf.py $CONFIG_FILE"
+        CNMF_CMD="python -u -m pipeline.pipeline_cnmf $CONFIG_FILE"
         if [ -n "$MCORR_OUTPUT" ]; then
             CNMF_CMD+=" --mcorr-movie $MCORR_OUTPUT"
         fi
-        docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID -v $COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR -v $COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $LOG_DIR:$LOG_DIR -v $CODE_DIR:/code -e MPLBACKEND=Agg wanglabneuro/analysis-2p:latest $CNMF_CMD
+        docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID -v $COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR -v $COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $LOG_DIR:$LOG_DIR -v $CODE_DIR:/code -e MPLBACKEND=Agg wanglabneuro/2p_proc:latest $CNMF_CMD
         CNMF_EXIT_STATUS=$?
     fi
     rm -rf "$MPLCONFIGDIR"
@@ -630,8 +789,8 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
     export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
     mkdir -p "$MPLCONFIGDIR"
     if [ $USE_SINGULARITY -eq 1 ]; then
-        singularity run -B $MOUNT_POINTS --env MPLBACKEND=$MPLBACKEND --env MPLCONFIGDIR=$MPLCONFIGDIR $IMAGE_REPO/analysis-2p_latest.sif \
-            python -u /code/pipeline/roi_zcorr.py $CONFIG_FILE
+        singularity run -B $MOUNT_POINTS --env MPLBACKEND=$MPLBACKEND --env MPLCONFIGDIR=$MPLCONFIGDIR $IMAGE_REPO/2p_proc_latest.sif \
+            python -u -m pipeline.roi_zcorr $CONFIG_FILE
         ROI_Z_EXIT_STATUS=$?
     else
         docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID \
@@ -642,8 +801,8 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
             -v $CODE_DIR:/code \
             -e MPLBACKEND=Agg \
             -e MPLCONFIGDIR=$MPLCONFIGDIR \
-            wanglabneuro/analysis-2p:latest \
-            python -u /code/pipeline/roi_zcorr.py $CONFIG_FILE
+            wanglabneuro/2p_proc:latest \
+            python -u -m pipeline.roi_zcorr $CONFIG_FILE
         ROI_Z_EXIT_STATUS=$?
     fi
     rm -rf "$MPLCONFIGDIR"
@@ -692,11 +851,11 @@ if [ "${PIPELINE_SUCCESS:-0}" -eq 1 ]; then
     if [ "$CLEANUP_AFTER" = "true" ]; then
         if [ $USE_SINGULARITY -eq 1 ]; then
             output_format_STR=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                $IMAGE_REPO/analysis-2p_latest.sif \
+                $IMAGE_REPO/2p_proc_latest.sif \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         else
             output_format_STR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                wanglabneuro/analysis-2p:latest \
+                wanglabneuro/2p_proc:latest \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         fi
         for EXPORT_PATH in "${EXPORT_DATA_PATHS[@]}"; do
