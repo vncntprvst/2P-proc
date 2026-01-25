@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
 RUN mkdir -p /code && \
     mkdir -p /data
 
-# Copy repo files to code directory
+# Copy additional Python files to code directory
 COPY . /code/
 WORKDIR /code
 
@@ -42,4 +42,4 @@ ENV LANG=C.UTF-8 \
     PYTHONUTF8=1
 
 # Test if the container is working: 
-# docker run --rm -it wanglabneuro/optimouse:latest python -c "import caiman; print(caiman.__version__); import pipeline; print('optimouse installed')"
+# docker run --rm -it wanglabneuro/2p_proc:latest python -c "import caiman; print(caiman.__version__); import pipeline; print('optimouse installed')"

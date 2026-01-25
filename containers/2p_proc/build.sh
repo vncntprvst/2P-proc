@@ -1,11 +1,10 @@
 #!/bin/bash
 
 # Build Docker image
-# The Dockerfile will install optimouse as a package from PyPI
-docker build -t wanglabneuro/optimouse:latest -t wanglabneuro/optimouse:0.9.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.9.0 -f Dockerfile context --no-cache
 
 # Version history:
-# v0.9.0: Initial container release for Optimouse package
+# v0.9.0: Initial container using optimouse package
 
 # Previous tags for the analysis-2p container, created with the Analysis 2P pipeline before splitting the repository, are kept for reference below. 
 # v0.6.1: Updates container with code to accomodate both CNMF and Suite2P extraction options in the Analysis 2P pipeline 
@@ -34,9 +33,4 @@ docker build -t wanglabneuro/optimouse:latest -t wanglabneuro/optimouse:0.9.0 -f
 # v0.0.2: Removed ENTRYPOINT from Dockerfile
 # v0.0.1: Initial release
 
-# Repository split: optimouse v0.1.0
-# - Separated processing code into standalone package
-# - Container now installs optimouse from GitHub
-# - Updated image naming to wanglabneuro/optimouse
-
-# Test with docker run --rm -it wanglabneuro/optimouse /bin/bash, or singularity run docker://wanglabneuro/optimouse:latest /bin/bash
+# Test with docker run --rm -it wanglabneuro/2p_proc /bin/bash, or singularity run docker://wanglabneuro/2p_proc:latest /bin/bash

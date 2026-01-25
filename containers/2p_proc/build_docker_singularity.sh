@@ -1,15 +1,19 @@
 #!/bin/bash
 
 # Build Docker image
-# The Dockerfile will install optimouse as a package from PyPI
-docker build -t wanglabneuro/optimouse:latest -t wanglabneuro/optimouse:0.9.0 -f Dockerfile context
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.9.0 -f Dockerfile context
 #  --no-cache
 
 # Push to Docker registry
-docker push --all-tags wanglabneuro/optimouse
+docker push --all-tags wanglabneuro/2p_proc
 
 # Convert Docker image to Singularity image
 # Requires Singularity installed on your system.
+
+# Set output directory for SIF files (default to .apptainer in home directory)
+SIF_OUTPUT_DIR=${SIF_OUTPUT_DIR:-$HOME/.apptainer/images}
+mkdir -p "$SIF_OUTPUT_DIR"
+
 if ! command -v apptainer &> /dev/null
 then
     echo "apptainer could not be found"
@@ -17,8 +21,8 @@ then
     exit
 else
     # If a hash file exists, check the hash matches the current Docker image. If not, build a new Singularity image.
-    if [ -f "optimouse_latest.sif.hash" ]; then
-        if [ "$(docker inspect wanglabneuro/optimouse:latest --format='{{.Id}}')" == "$(cat optimouse_latest.sif.hash)" ]; then
+    if [ -f "$SIF_OUTPUT_DIR/2p_proc_latest.sif.hash" ]; then
+        if [ "$(docker inspect wanglabneuro/2p_proc:latest --format='{{.Id}}')" == "$(cat $SIF_OUTPUT_DIR/2p_proc_latest.sif.hash)" ]; then
             echo "Docker image has not changed. Not building Singularity image."
             build_singularity=0
         else
@@ -31,21 +35,33 @@ else
     fi
           
     if [ $build_singularity -eq 1 ]; then
-        echo "Building Singularity image."
+        echo "Building Singularity image in $SIF_OUTPUT_DIR"
         # docker login
-        apptainer build -F optimouse_latest.sif docker://wanglabneuro/optimouse:latest
+        apptainer build -F "$SIF_OUTPUT_DIR/2p_proc_latest.sif" docker://wanglabneuro/2p_proc:latest
         # docker logout
         # store a hash of the Docker image in a file
-        docker inspect wanglabneuro/optimouse:latest --format='{{.Id}}' > optimouse_latest.sif.hash
+        docker inspect wanglabneuro/2p_proc:latest --format='{{.Id}}' > "$SIF_OUTPUT_DIR/2p_proc_latest.sif.hash"
+        echo "Singularity image built: $SIF_OUTPUT_DIR/2p_proc_latest.sif"
     fi
 
 fi
 
 # Load and export variables from .env
-if [ -f "../../scripts/utils/.env" ]; then
+# Check current directory first, then parent containers/, then scripts/utils/
+if [ -f ".env" ]; then
   set -a                           # auto-export all variables
   # shellcheck disable=SC1091
-  . "../../scripts/utils/.env"     # source the .env (trusted file)
+  . ".env"                         # source the .env (trusted file)
+  set +a
+elif [ -f "../.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "../.env"
+  set +a
+elif [ -f "../../scripts/utils/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "../../scripts/utils/.env"
   set +a
 fi
 
@@ -65,7 +81,7 @@ if [ -n "${SSH_HPCC_IMAGE_REPO:-}" ]; then
     if [ -z "$host" ] || [ -z "$path" ] || [[ "$host" == *"/"* ]]; then
         echo "Invalid SSH_HPCC_IMAGE_REPO='$SSH_HPCC_IMAGE_REPO'; skipping rsync."
     else
-            rsync -aP optimouse_latest.sif "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
+            rsync -aP "$SIF_OUTPUT_DIR/2p_proc_latest.sif" "$SSH_HPCC_IMAGE_REPO/" # -z compression flag tends to screw up the transfer when using the script. May not be necessary anyway.
     fi
 else
     echo "HPCC_IMAGE_REPO variable not set. Not copying to HPCC."

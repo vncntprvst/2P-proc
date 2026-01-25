@@ -11,8 +11,24 @@ scripts/
 !scripts/batch_2P_pipeline_template.sh
 !scripts/cluster_processing_template.sh
 
+# Environment files
+**/.env
+
 # Build files
 dist/
+build/
 *.egg-info
 
+# Container artifacts
+*.sif
+*.sif.hash
+
+# Environments
+environments/.a2P/
+environments/*/
+
+# Large binary files
+*.mmap
+*.hdf5
+*.h5
 

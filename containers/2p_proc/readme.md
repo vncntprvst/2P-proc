@@ -8,14 +8,14 @@ The data volumes must be mounted in the container.
 #### Example usage
 * With Docker:
 ```bash
-docker run --rm -d -v /data:/data wanglabneuro/optimouse:latest conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
-docker run --rm -d -v /data:/data wanglabneuro/optimouse:latest conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
+docker run --rm -d -v /data:/data wanglabneuro/2p_proc:latest conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
+docker run --rm -d -v /data:/data wanglabneuro/2p_proc:latest conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
 ```
 
 * With Singularity:
 ```bash
-singularity run --cleanenv -B /data:/data optimouse_latest.sif conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
-singularity run --cleanenv -B /data:/data optimouse_latest.sif conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
+singularity run --cleanenv -B /data:/data 2p_proc_latest.sif conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
+singularity run --cleanenv -B /data:/data 2p_proc_latest.sif conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
 ```
 
 #### Building the container
