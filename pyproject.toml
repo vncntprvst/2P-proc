@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "2-photon calcium imaging data processing pipeline with CaImAn / Suite2P"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Vincent Prevosto", email = "prevosto@mit.edu"},
     {name = "Manuel Levy", email = "levym@mit.edu"}
@@ -17,7 +17,6 @@ keywords = ["calcium imaging", "2-photon", "neuroscience", "image processing", "
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -57,7 +56,7 @@ Repository = "https://github.com/vncntprvst/2P-proc"
 Issues = "https://github.com/vncntprvst/2P-proc/issues"
 
 [tool.setuptools]
-packages = ["pipeline", "modules"]
+packages = ["pipeline", "pipeline.configs", "pipeline.utils", "modules", "modules.utils"]
 
 [tool.setuptools.package-data]
 pipeline = ["configs/*.json"]
