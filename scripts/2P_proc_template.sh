@@ -9,6 +9,9 @@
 #SBATCH --job-name=2P_proc_pipeline                 # job name       
 #SBATCH -o ./slurm_logs/2P_proc-%j.ans              # stdout
 
+# Create log directory if it doesn't exist
+mkdir -p ./slurm_logs
+
 # Dynamically set mail-user (skip if not on SLURM)
 if command -v scontrol >/dev/null 2>&1 && [ -n "${SLURM_JOB_ID:-}" ]; then
     scontrol update job $SLURM_JOB_ID MailUser=$USER@mit.edu
@@ -91,8 +94,13 @@ if command -v squeue >/dev/null 2>&1 && [ -n "${SLURM_JOB_ID:-}" ]; then
     echo "Requested walltime: $(squeue -j $SLURM_JOB_ID -h --Format TimeLimit)"
 fi
 
-# Get script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get script directory (use SLURM_SUBMIT_DIR if running under SLURM, otherwise use BASH_SOURCE)
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    SCRIPT_DIR="$SLURM_SUBMIT_DIR"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+echo "Script directory: $SCRIPT_DIR"
 
 # Load environment variables from .env file
 if [ -f "$SCRIPT_DIR/.env" ]; then
