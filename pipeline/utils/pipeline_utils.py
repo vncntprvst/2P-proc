@@ -203,6 +203,17 @@ def cleanup_files(batch_path, export_path, preserve_batch=False):
     cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
     if cat_tiff_path.exists():
         cat_tiff_path.unlink()
+    
+    # Remove mcorr mmap file if preserve_batch is False
+    # (i.e., when output format is not "memmap")
+    if not preserve_batch:
+        for mmap_file in Path(export_path).glob('mcorr_*.mmap'):
+            try:
+                mmap_file.unlink()
+                log_and_print(f"Removed intermediate mmap file: {mmap_file}")
+            except Exception as e:
+                log_and_print(f"Could not remove {mmap_file}: {e}", level="warning")
+    
     # NOTE: Do not remove the final motion-corrected movie here.
     # Downstream steps (ops creation and extraction) may rely on
     # `mcorr_movie.*` being present in the export directory.
