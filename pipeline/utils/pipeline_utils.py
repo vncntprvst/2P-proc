@@ -187,32 +187,31 @@ def cleanup_files(batch_path, export_path, preserve_batch=False):
             if batch_runfile.exists():
                 batch_runfile.unlink()
             batch_dir = Path(export_path) / batch_id
-        if batch_dir.exists():
-            for attempt in range(3):
-                time.sleep(1 + attempt)
-                try:
-                    shutil.rmtree(batch_dir)
-                    break
-                except Exception as e:
-                    if attempt == 2:
-                        log_and_print(f"Could not delete {batch_dir}: {e}")
+            if batch_dir.exists():
+                for attempt in range(3):
+                    time.sleep(1 + attempt)
+                    try:
+                        shutil.rmtree(batch_dir)
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            log_and_print(f"Could not delete {batch_dir}: {e}")
         for pickle_file in Path(export_path).glob("batch_*.pickle"):
             pickle_file.unlink()
 
-    # Remove concatenated tiff if present
-    cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
-    if cat_tiff_path.exists():
-        cat_tiff_path.unlink()
-    
-    # Remove mcorr mmap file if preserve_batch is False
-    # (i.e., when output format is not "memmap")
-    if not preserve_batch:
+        # Remove mcorr mmap file if preserve_batch is False
+        # (i.e., when output format is not "memmap")
         for mmap_file in Path(export_path).glob('mcorr_*.mmap'):
             try:
                 mmap_file.unlink()
                 log_and_print(f"Removed intermediate mmap file: {mmap_file}")
             except Exception as e:
                 log_and_print(f"Could not remove {mmap_file}: {e}", level="warning")
+
+    # Remove concatenated tiff if present
+    cat_tiff_path = Path(export_path) / 'cat_tiff_bt.tiff'
+    if cat_tiff_path.exists():
+        cat_tiff_path.unlink()
     
     # NOTE: Do not remove the final motion-corrected movie here.
     # Downstream steps (ops creation and extraction) may rely on
@@ -244,7 +243,10 @@ def cleanup_files(batch_path, export_path, preserve_batch=False):
                 sc.unlink()
             except Exception:
                 pass
-    log_and_print("Batch files deleted.\n")
+    if not preserve_batch:
+        log_and_print("Batch files deleted.\n")
+    else:
+        log_and_print("Batch files preserved.\n")
 
 
 def find_latest_batch(export_path):
