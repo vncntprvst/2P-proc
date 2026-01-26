@@ -27,7 +27,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "caiman>=1.12.2,<=1.13.0",
     "mesmerize-core>=0.5.0",
     "numpy>=1.26.4",
     "scipy>=1.15.3",
@@ -49,6 +48,18 @@ viz = [
     "fastplotlib>=0.1.0a16",
     "plotly>=6.5.2",
 ]
+all = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "ruff>=0.0.200",
+    "fastplotlib>=0.1.0a16",
+    "plotly>=6.5.2",
+]
+
+# Note: CaImAn (>=1.12.2,<1.13.0) must be installed separately from GitHub:
+# uv pip install "git+https://github.com/flatironinstitute/CaImAn.git@v1.12.2"
+# caimanmanager install
 
 [project.urls]
 Homepage = "https://github.com/vncntprvst/2P-proc"

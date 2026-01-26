@@ -18,21 +18,29 @@ if ! command -v uv &> /dev/null; then
     fi
 fi
 
-uv venv .proc2P --python 3.10
-source .proc2P/bin/activate
+uv venv .a2P --python 3.10
+source .a2P/bin/activate
 
 # get latest pip setuptools and wheel
 uv pip install --upgrade setuptools wheel cython numpy
 
-# Install CaImAn from GitHub (required before optimouse)
-# on cluster, you may need:
+# Install CUDA-compatible versions
+uv pip install "tensorflow>=2.12,<2.16" --no-deps
+uv pip install "torch>=2.0" --index-url https://download.pytorch.org/whl/cu118
+
+# install caiman
+# on cluster: 
 # module load gcc/12.2.0
 # export LD_LIBRARY_PATH=$(dirname $(dirname $(which gcc)))/lib64:$LD_LIBRARY_PATH
-uv pip install "git+https://github.com/flatironinstitute/CaImAn.git@v1.12.2"
+
+uv pip install git+https://github.com/flatironinstitute/CaImAn.git
 caimanmanager install
 
-# Install optimouse
-uv pip install optimouse[all] --prerelease=allow
+# install mesmerize-core
+uv pip install mesmerize-core
 
-# Activate optimouse environment
-source .proc2P/bin/activate
+# install mesmerize-viz
+uv pip install mesmerize-viz --prerelease=allow
+
+# install other dependencies
+uv pip install simplejpeg pylibtiff PyQt6 pyarrow plotly imagecodecs
