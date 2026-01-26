@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "2P-proc (optimouse)"
+version: "0.1.1"
+date-released: "2026-01-25"
+doi: "10.5281/zenodo.18371949"
+license: "MIT"
+repository-code: "https://github.com/vncntprvst/2P-proc"
+url: "https://github.com/vncntprvst/2P-proc"
+abstract: "A comprehensive 2-photon calcium imaging data processing pipeline built on CaImAn, Mesmerize, and Suite2p. Provides rigid and non-rigid motion correction with unique support for rigid/non-rigid z-drift correction using anatomical z-stacks, CNMF or Suite2p-based ROI extraction, spike deconvolution, and multi-session registration capabilities."
+keywords:
+  - calcium imaging
+  - 2-photon microscopy
+  - motion correction
+  - z-drift correction
+  - neuroscience
+  - CaImAn
+  - Suite2p
+  - ROI extraction
+  - spike deconvolution
+  - image processing
+authors:
+  - family-names: "Prevosto"
+    given-names: "Vincent"
+    email: "prevosto@mit.edu"
+    orcid: "https://orcid.org/0000-0001-8803-5918"
+  - family-names: "Levy"
+    given-names: "Manuel"
+    email: "levym@mit.edu"
+    orcid: "https://orcid.org/0000-0003-1117-5028"
