@@ -11,7 +11,7 @@ pipeline/configs/*
 
 # Scripts
 scripts/*
-!scripts/batch_2P_pipeline_template.sh
+!scripts/2P_proc_template.sh
 !scripts/cluster_processing_template.sh
 !scripts/template.env
 

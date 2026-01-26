@@ -18,17 +18,17 @@ This package provides:
 ## No-installation Quick Start
 Try the pipeline without installation, using containers:
 * Create your config JSON as described in the [Quick Start](#quick-start) section
-* Edit scripts/batch_2P_pipeline.sh to set paths and options:
+* Edit scripts/2P_proc.sh to set paths and options:
 ```bash
 # Copy and customize the batch script
-cp scripts/batch_2P_pipeline_template.sh scripts/batch_2P_pipeline.sh
+cp scripts/2P_proc_template.sh scripts/2P_proc.sh
 ```
 * Run the pipeline
 ```bash
 # On a local machine
-bash scripts/batch_2P_pipeline.sh configs/my_config.json
+bash scripts/2P_proc.sh configs/my_config.json
 # On a cluster with SLURM
-sbatch scripts/batch_2P_pipeline.sh configs/my_config.json
+sbatch scripts/2P_proc.sh configs/my_config.json
 ```
 
 The Docker containers are available on [Docker Hub](https://hub.docker.com/r/wanglabneuro/2p_proc). If using Docker, they will be pulled automatically when running the batch script.
@@ -201,10 +201,10 @@ python -m pipeline.pipeline_cnmf configs/my_config.json
 
 **On a cluster with SLURM:**
 
-Copy and customize `scripts/batch_2P_pipeline_template.sh` to `scripts/batch_2P_pipeline.sh`, then submit:
+Copy and customize `scripts/2P_proc_template.sh` to `scripts/2P_proc.sh`, then submit:
 
 ```bash
-sbatch scripts/batch_2P_pipeline.sh configs/my_config.json
+sbatch scripts/2P_proc.sh configs/my_config.json
 ```
 
 ### 3. Multi-session registration

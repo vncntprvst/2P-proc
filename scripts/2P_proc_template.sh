@@ -16,7 +16,7 @@ fi
 
 # Example usage:
 
-# sbatch --mail-user=$EMAIL batch_2P_pipeline.sh CONFIG_FILE [options]
+# sbatch --mail-user=$EMAIL 2P_proc.sh CONFIG_FILE [options]
 
 # Options:
 #   --mcorr-only      Run only the motion correction step, skip the extraction step
@@ -829,7 +829,7 @@ if [ "${PIPELINE_SUCCESS:-0}" -eq 1 ]; then
         log_name="${base_no_json}.log"
 
         if [ -z "$SLURM_LOG_FILE" ] && [ -n "$SLURM_JOB_ID" ]; then
-            SLURM_LOG_FILE="./slurm_logs/batch_2P_pipeline-${SLURM_JOB_ID}.ans"
+            SLURM_LOG_FILE="./slurm_logs/2P_proc-${SLURM_JOB_ID}.ans"
         fi
 
         if [ -n "$SLURM_LOG_FILE" ] && [ -f "$SLURM_LOG_FILE" ]; then
