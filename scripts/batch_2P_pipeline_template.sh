@@ -5,10 +5,9 @@
 #SBATCH --mem=300GB                                 # Request up to 700 GB of memory
 #SBATCH --partition=ou_bcs_normal
 #SBATCH --export=HDF5_USE_FILE_LOCKING=FALSE 
-#SBATCH --mail-type=ALL                             # email on start, end, and fail       
-#SBATCH -o ./slurm_logs/batch_2P_pipeline-%j.ans     # stdout
-
-# If not running on Engaging, remove #SBATCH --partition=ou_bcs_normal from the directives in scripts/batch_2P_pipeline.sh
+#SBATCH --mail-type=ALL                             # email on start, end, and fail
+#SBATCH --job-name=2P_proc_pipeline                 # job name       
+#SBATCH -o ./slurm_logs/2P_proc-%j.ans              # stdout
 
 # Dynamically set mail-user (skip if not on SLURM)
 if command -v scontrol >/dev/null 2>&1 && [ -n "${SLURM_JOB_ID:-}" ]; then
