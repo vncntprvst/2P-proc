@@ -2,32 +2,55 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![CaImAn Version](https://img.shields.io/badge/CaImAn-1.12.2+-green)](https://github.com/flatironinstitute/CaImAn)
+[![PyPI Version](https://img.shields.io/pypi/v/optimouse)](https://pypi.org/project/optimouse/)
+<!-- [![Build Status](https://img.shields.io/github/actions/workflow/status/vncntprvst/2P-proc/ci.yml)](https://github.com/vncntprvst/2P-proc/actions) -->
 ![License](https://img.shields.io/badge/license-MIT-red)
 
-**2P-proc (optimouse)** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/) and [Mesmerize](https://github.com/nel-lab/mesmerize-core/).
+**2P-proc (optimouse)** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/), [Mesmerize](https://github.com/nel-lab/mesmerize-core/) and [Suite2p](https://github.com/MouseLand/suite2p).
 
 This package provides:
-- **Motion correction**: Rigid and non-rigid motion correction with optional z-drift correction
-- **ROI extraction**: CNMF-based and Suite2p-based cell detection and segmentation
+- **Motion correction**: Rigid and non-rigid motion correction with optional z-drift correction (rigid/non-rigid)
+- **ROI extraction**: CNMF-based or Suite2p-based cell detection and segmentation
 - **Spike deconvolution**: Temporal activity inference from calcium signals
-- **Parameter optimization**: Notebooks for systematic parameter exploration
+- **Parameter optimization**: Notebooks for systematic parameter exploration (CaImAn NoRMCorre and CNMF)
 - **Multi-session registration**: Cross-session ROI alignment using CaImAn's registration algorithm
+
+## No-installation Quick Start
+Try the pipeline without installation, using containers:
+* Create your config JSON as described in the [Quick Start](#quick-start) section
+* Edit scripts/batch_2P_pipeline.sh to set paths and options:
+```bash
+# Copy and customize the batch script
+cp scripts/batch_2P_pipeline_template.sh scripts/batch_2P_pipeline.sh
+```
+* Run the pipeline
+```bash
+# On a local machine
+bash scripts/batch_2P_pipeline.sh configs/my_config.json
+# On a cluster with SLURM
+sbatch scripts/batch_2P_pipeline.sh configs/my_config.json
+```
+
+The Docker containers are available on [Docker Hub](https://hub.docker.com/r/wanglabneuro/2p_proc). If using Docker, they will be pulled automatically when running the batch script.
+Singularity images can be built from the Docker containers using the provided scripts in `containers/2P_proc/`.
 
 ## Installation
 
-### Option 1: Install from GitHub (recommended)
+If you prefer to install the pipeline locally, follow the instructions below.
+
+### Standard Installation
 
 ```bash
 # Create and activate conda environment
 conda create -n toupie python=3.10 -c conda-forge # Name the env any name you prefer
 conda activate toupie
-# Install optimouse
-pip install git+https://github.com/vncntprvst/2P-proc.git
+# Install optimouse from PyPI
+pip install optimouse
 # Install CaImAn manager
 caimanmanager install
 ```
 
-### Option 2: Development install
+### For Developers
 
 ```bash
 # Clone repository
@@ -46,12 +69,6 @@ caimanmanager install
 ```
 
 ### Additional dependencies
-
-For z-correction:
-```bash
-conda install -c conda-forge mkl mkl_fft
-pip install suite2p
-```
 
 For visualization:
 ```bash
@@ -177,11 +194,14 @@ Create a configuration JSON based on `pipeline/configs/config_template_cnmf.json
 **On a local machine:**
 
 ```bash
-python pipeline/pipeline_mcorr.py configs/my_config.json
-python pipeline/pipeline_cnmf.py configs/my_config.json
+conda activate toupie # Activate your conda environment
+python -m pipeline.pipeline_mcorr configs/my_config.json
+python -m pipeline.pipeline_cnmf configs/my_config.json
 ```
 
 **On a cluster with SLURM:**
+
+Copy and customize `scripts/batch_2P_pipeline_template.sh` to `scripts/batch_2P_pipeline.sh`, then submit:
 
 ```bash
 sbatch scripts/batch_2P_pipeline.sh configs/my_config.json
@@ -197,13 +217,13 @@ python Caiman/multisession_registration.py --json configs/my_config.json
 
 ### Motion Correction
 - Rigid and non-rigid motion correction using NoRMCorre algorithm
-- Optional z-drift correction using anatomical z-stack
+- Optional rigid or non-rigid z-drift correction using anatomical z-stack
 - Export to multiple formats (TIFF, memmap, HDF5)
 
 ### ROI Extraction
-- CNMF (CaImAn): Constrained non-negative matrix factorization with automatic component quality assessment
-- Suite2p: Fast, correlation-based clustering and SVD-accelerated cell detection and extraction
-- Both methods provide denoised fluorescence traces and deconvolved spikes
+- [Option 1] CNMF (CaImAn): Constrained non-negative matrix factorization with automatic component quality assessment
+- [Option 2] Suite2p: Fast, correlation-based clustering and SVD-accelerated cell detection and extraction
+Both methods provide denoised fluorescence traces and deconvolved spikes
 
 ### ROI Z-Correction
 - Regress and subtract axial drift from ROI traces
@@ -214,10 +234,10 @@ python Caiman/multisession_registration.py --json configs/my_config.json
 Jupyter notebooks in `Mesmerize/` for systematic parameter exploration:
 - `optimize_mcorr_bruker.ipynb`: Motion correction parameters
 - `optimize_cnmf_bruker.ipynb`: CNMF extraction parameters
-- `pipeline_notebook_template.ipynb`: Complete pipeline template
+- `pipeline_notebook_template.ipynb`: Complete pipeline template (**Needs to be updated**)
 
 ## Testing
-
+**Note: the tests are outdated and may not reflect the current state of the pipeline.**
 ```bash
 # Download test data (~1.2GB)
 ./scripts/download_test_data.sh
@@ -239,17 +259,17 @@ Docker/Singularity containers are available for cluster computing:
 Build and use containers:
 ```bash
 # Build container
-cd containers/analysis_2p
-docker build -t optimouse:latest .
+cd containers/2P_proc
+./build.sh # For Docker only
+./build_docker_singularity.sh # For Singularity too
 
 # Run with Singularity
-singularity exec containers/analysis-2p_latest.sif python pipeline/pipeline_mcorr.py config.json
+singularity exec containers/2p_proc_latest.sif python -m pipeline.pipeline_mcorr configs/my_config.json
 ```
 
 ## Documentation
 
-- **Configuration**: See `pipeline/configs/config_template_cnmf.json` for all available parameters
-- **API Reference**: Coming soon
+- **Configuration**: See `pipeline/configs/config_template_cnmf.json` and `pipeline/configs/config_template_suite2p.json` for available parameters
 - **Tutorials**: Jupyter notebooks in `Mesmerize/` and `Caiman/`
 
 ## Post-Processing and Analysis
@@ -267,9 +287,10 @@ Contributions are welcome! Please:
 
 ## Citation
 
-If you use this software, please cite:
+This pipeline builds upon the following tools:
 - CaImAn: Giovannucci et al. (2019) eLife
 - Mesmerize: Kolar et al. (2019) Nature Communications
+- Suite2p: Pachitariu et al. (2017) bioRxiv
 
 ## License
 
