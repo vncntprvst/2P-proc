@@ -188,14 +188,24 @@ def cleanup_files(batch_path, export_path, preserve_batch=False):
                 batch_runfile.unlink()
             batch_dir = Path(export_path) / batch_id
             if batch_dir.exists():
-                for attempt in range(3):
+                max_attempts = 6
+                for attempt in range(max_attempts):
                     time.sleep(1 + attempt)
                     try:
                         shutil.rmtree(batch_dir)
                         break
                     except Exception as e:
-                        if attempt == 2:
-                            log_and_print(f"Could not delete {batch_dir}: {e}")
+                        if attempt == max_attempts - 1:
+                            nfs_files = list(batch_dir.glob(".nfs*"))
+                            if nfs_files:
+                                log_and_print(
+                                    f"Could not delete {batch_dir}: {e}. "
+                                    f"Detected NFS temp files: {[p.name for p in nfs_files]}. "
+                                    "A process likely still holds an open handle; retry later.",
+                                    level="warning",
+                                )
+                            else:
+                                log_and_print(f"Could not delete {batch_dir}: {e}")
         for pickle_file in Path(export_path).glob("batch_*.pickle"):
             pickle_file.unlink()
 
