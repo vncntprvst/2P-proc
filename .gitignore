@@ -33,3 +33,9 @@ environments/*/
 *.hdf5
 *.h5
 
+# Demos
+Caiman/demos/*
+Caiman/CNMF demo_pipeline.ipynb
+
+#
+TODO
