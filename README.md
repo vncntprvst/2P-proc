@@ -10,7 +10,7 @@
 **2P-proc (optimouse)** is a 2-photon calcium imaging data processing pipeline built on [CaImAn](https://github.com/flatironinstitute/CaImAn/), [Mesmerize](https://github.com/nel-lab/mesmerize-core/) and [Suite2p](https://github.com/MouseLand/suite2p).
 
 This package provides:
-- **Motion correction**: Rigid and non-rigid motion correction with optional z-drift correction (rigid/non-rigid)
+- **Motion correction**: Rigid and non-rigid motion correction with optional z-drift correction (rigid or non-rigid)
 - **ROI extraction**: CNMF-based or Suite2p-based cell detection and segmentation
 - **Spike deconvolution**: Temporal activity inference from calcium signals
 - **Parameter optimization**: Notebooks for systematic parameter exploration (CaImAn NoRMCorre and CNMF)
