@@ -87,6 +87,21 @@
             "none"
         ],
         "method": "suite2p",
+        "__suite2p_parameter_options": {
+            "__comment": "Add any Suite2p ops key under 'main' to override Suite2p defaults at ops creation. Keep 'decay_time' (or 'tau') as the minimum required field.",
+            "decay_time_or_tau": "Calcium decay time in seconds (mapped to Suite2p 'tau').",
+            "threshold_scaling": "Detection threshold multiplier; lower finds more ROIs.",
+            "max_overlap": "Maximum allowed ROI overlap before rejection.",
+            "diameter": "Expected ROI diameter in pixels.",
+            "inner_neuropil_radius": "Pixels excluded around ROI for neuropil estimate.",
+            "snr_thresh": "Nonrigid registration SNR threshold.",
+            "do_registration": "1/0 or true/false to enable/disable registration in Suite2p step.",
+            "nonrigid": "true/false for nonrigid registration.",
+            "maxregshift": "Maximum rigid registration shift (fraction of frame size).",
+            "sparse_mode": "true/false sparse ROI detection mode.",
+            "pre_smooth": "Registration pre-smoothing level.",
+            "max_iterations": "Maximum ROI detection refinement iterations."
+        },
         "main": {
             "decay_time": 0.3
         }

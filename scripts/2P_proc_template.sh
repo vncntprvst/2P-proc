@@ -534,6 +534,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
             OPS_FS=$(echo "$OPS" | jq -r '.fs')
             OPS_TAU=$(echo "$OPS" | jq -r '.tau')
             OPS_ZCORR_FILE=$(echo "$OPS" | jq -r '.zcorr_file')
+            OPS_OVERRIDES=$(echo "$OPS" | jq -c '.ops_overrides // {}')
         else
             echo "jq not found. Falling back to Python."
             OPS_NFRAMES=$(echo "$OPS" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('nframes',''))")
@@ -542,6 +543,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
             OPS_FS=$(echo "$OPS" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('fs',''))")
             OPS_TAU=$(echo "$OPS" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('tau',''))")
             OPS_ZCORR_FILE=$(echo "$OPS" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('zcorr_file',''))")
+            OPS_OVERRIDES=$(echo "$OPS" | python -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('ops_overrides', {}), separators=(',',':')))")
         fi
 
         # If OPS_NFRAMES is not set, use ImageMagik
@@ -586,6 +588,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         echo "  - Lx: $OPS_LX"
         echo "  - fs: $OPS_FS"
         echo "  - tau: $OPS_TAU"
+        echo "  - ops_overrides: $OPS_OVERRIDES"
         # If zcorr_file is not None, include it in the ops parameters
         if [ -n "$OPS_ZCORR_FILE" ]; then
             echo "  - zcorr_file: $OPS_ZCORR_FILE"
@@ -600,6 +603,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
             --Lx \"$OPS_LX\" \
             --fs \"$OPS_FS\" \
             --tau \"$OPS_TAU\" \
+            --ops_overrides_json '$OPS_OVERRIDES' \
             --save_mat 1 \
             --do_registration 0 \
             --nonrigid 0"

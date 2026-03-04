@@ -190,6 +190,12 @@ Create a configuration JSON based on `pipeline/configs/config_template_cnmf.json
 }
 ```
 
+Notes:
+- `params_extraction.main` accepts generic Suite2p ops overrides (passed through at ops creation).
+- See notes on parameters, and setting up a local Suite2p environment for testing: `suite2p/readme.md`.
+- `decay_time` is mapped to Suite2p `tau`. Use `decay_time` or `tau` interchangeably.
+
+
 ### 2. Run the pipeline
 
 **On a local machine:**

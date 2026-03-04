@@ -1,6 +1,7 @@
 import argparse
 import os
 import logging
+import json
 import numpy as np
 import h5py
 from tifffile import TiffFile
@@ -136,15 +137,16 @@ def main():
     parser.add_argument('--save_mat', type=int, default=0, help="Export results as MATLAB .mat (1=True, 0=False)")
     parser.add_argument('--do_registration', type=int, default=0, help="Perform registration (0=skip, 1=do)")
     parser.add_argument('--nonrigid', type=int, default=0, help="Perform nonrigid registration (0=skip, 1=do)")
+    parser.add_argument('--ops_overrides_json', default='{}', help="JSON dict of Suite2p ops overrides from config")
     parser.add_argument('--reg_file', default=None, help="Path to the motion-corrected HDF5 movie file, if different from --movie")
     parser.add_argument('--zcorr_file', default=None, help="Path to the z-motion estimates file")
 
     # Detection parameters
-    parser.add_argument('--diameter', type=int, default=0, help="Expected diameter of neurons in pixels")
-    parser.add_argument('--spatial_scale', type=int, default=0, help="Spatial scale for detection (0=auto)")
-    parser.add_argument('--threshold_scaling', type=float, default=1.0, help="Scaling factor for detection threshold")
-    parser.add_argument('--max_overlap', type=float, default=0.75, help="Maximum allowed overlap between ROIs")
-    parser.add_argument('--anatomical_only', type=int, default=0, help="Anatomical detection mode")
+    parser.add_argument('--diameter', type=int, default=None, help="Expected diameter of neurons in pixels")
+    parser.add_argument('--spatial_scale', type=int, default=None, help="Spatial scale for detection (0=auto)")
+    parser.add_argument('--threshold_scaling', type=float, default=None, help="Scaling factor for detection threshold")
+    parser.add_argument('--max_overlap', type=float, default=None, help="Maximum allowed overlap between ROIs")
+    parser.add_argument('--anatomical_only', type=int, default=None, help="Anatomical detection mode")
 
     # For .bin files, these are required!
     parser.add_argument('--nframes', type=int, help="Number of frames (required if using .bin)")
@@ -244,7 +246,7 @@ def main():
     ops['yrange'] = [0, ops['Ly']]
     ops['filelist'] = [args.movie]
 
-    # Parameter overrides
+    # Core parameter overrides required by pipeline.
     ops.update({
         'save_path0': args.export_path,
         'save_folder': '.',
@@ -253,18 +255,41 @@ def main():
         'nonrigid': args.nonrigid,
         'fs': args.fs,
         'tau': args.tau,
-        'diameter': args.diameter,
-        'spatial_scale': args.spatial_scale,
-        'threshold_scaling': args.threshold_scaling,
-        'max_overlap': args.max_overlap,
-        'anatomical_only': args.anatomical_only,
-        'max_iterations': 20,
-        'high_pass': 100,
-        'soma_crop': 1,
-        'allow_overlap': 0,
-        'inner_neuropil_radius': 2,
-        'min_neuropil_pixels': 350,
     })
+
+    # Backward-compatible optional CLI overrides.
+    if args.diameter is not None:
+        ops['diameter'] = args.diameter
+    if args.spatial_scale is not None:
+        ops['spatial_scale'] = args.spatial_scale
+    if args.threshold_scaling is not None:
+        ops['threshold_scaling'] = args.threshold_scaling
+    if args.max_overlap is not None:
+        ops['max_overlap'] = args.max_overlap
+    if args.anatomical_only is not None:
+        ops['anatomical_only'] = args.anatomical_only
+
+    # Generic config pass-through from params_extraction.main.
+    try:
+        ops_overrides = json.loads(args.ops_overrides_json or '{}')
+        if not isinstance(ops_overrides, dict):
+            raise ValueError("ops_overrides_json must decode to a dict")
+    except Exception as e:
+        raise ValueError(f"Failed to parse --ops_overrides_json: {e}")
+
+    # Backward compatibility in case decay_time is passed through.
+    if "decay_time" in ops_overrides and "tau" not in ops_overrides:
+        ops_overrides["tau"] = ops_overrides["decay_time"]
+    ops_overrides.pop("decay_time", None)
+
+    if ops_overrides:
+        print(f"Applying {len(ops_overrides)} config ops overrides.")
+        ops.update(ops_overrides)
+
+    # Keep pipeline defaults/behavior regardless of user overrides.
+    ops['save_mat'] = args.save_mat
+    ops['do_registration'] = args.do_registration
+    ops['nonrigid'] = args.nonrigid
 
     # Binning consistent with GUI: bin_frames = round(tau*fs), nbinned derived from nframes
     enforce_nbinned(ops)

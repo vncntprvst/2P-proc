@@ -301,6 +301,14 @@ def get_suite2p_ops(config_file, export_path=None):
         if nframes is None:
             nframes = 0
 
+        # Generic pass-through: any key in params_extraction.main can override
+        # Suite2p defaults during ops creation.
+        # decay_time is mapped to tau.
+        ops_overrides = dict(extraction_params)
+        if "decay_time" in ops_overrides and "tau" not in ops_overrides:
+            ops_overrides["tau"] = ops_overrides["decay_time"]
+        ops_overrides.pop("decay_time", None)
+
         ops = {
             "nframes": int(nframes),
             "Ly": int(Ly),
@@ -308,6 +316,7 @@ def get_suite2p_ops(config_file, export_path=None):
             "fs": float(fs),
             "tau": float(tau),
             "zcorr_file": zcorr_file,
+            "ops_overrides": ops_overrides,
         }
         return json_module.dumps(ops)
     except Exception as e:
