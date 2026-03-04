@@ -37,5 +37,7 @@ environments/*/
 Caiman/demos/*
 Caiman/CNMF demo_pipeline.ipynb
 
-#
+# Development files
 TODO
+dev/
+.vscode/settings.json
