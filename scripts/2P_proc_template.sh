@@ -594,36 +594,36 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
             echo "  - zcorr_file: $OPS_ZCORR_FILE"
         fi
 
-        OPS_PYTHON_CMD="python /app/scripts/make_ops.py \
-            --export_path \"$EXPORT_PATH\" \
-            --movie \"$EXPORT_FILE\" \
-            --h5py_key data \
-            --nframes \"$OPS_NFRAMES\" \
-            --Ly \"$OPS_LY\" \
-            --Lx \"$OPS_LX\" \
-            --fs \"$OPS_FS\" \
-            --tau \"$OPS_TAU\" \
-            --ops_overrides_json '$OPS_OVERRIDES' \
-            --save_mat 1 \
-            --do_registration 0 \
-            --nonrigid 0"
+        OPS_PYTHON_ARGS=(
+            python /app/scripts/make_ops.py
+            --export_path "$EXPORT_PATH"
+            --movie "$EXPORT_FILE"
+            --h5py_key data
+            --nframes "$OPS_NFRAMES"
+            --Ly "$OPS_LY"
+            --Lx "$OPS_LX"
+            --fs "$OPS_FS"
+            --tau "$OPS_TAU"
+            --ops_overrides_json "$OPS_OVERRIDES"
+            --save_mat 1
+            --do_registration 0
+            --nonrigid 0
+        )
         if [ -n "$OPS_ZCORR_FILE" ]; then
-            OPS_PYTHON_CMD+=" \
-            --zcorr_file \"$OPS_ZCORR_FILE\""
+            OPS_PYTHON_ARGS+=(--zcorr_file "$OPS_ZCORR_FILE")
         fi
 
         if [ $USE_SINGULARITY -eq 1 ]; then
             singularity run -B $EXPORT_PATH:$EXPORT_PATH \
                 $IMAGE_REPO/suite2p_latest.sif \
-                $OPS_PYTHON_CMD
+                "${OPS_PYTHON_ARGS[@]}"
             OPS_EXIT_STATUS=$?
         else
             docker run --rm -v $EXPORT_PATH:$EXPORT_PATH \
                 $IMAGE_REPO/suite2p_latest.sif \
-                $OPS_PYTHON_CMD
+                "${OPS_PYTHON_ARGS[@]}"
             OPS_EXIT_STATUS=$?
         fi
-
         # Check if ops creation failed
         if [ $OPS_EXIT_STATUS -ne 0 ]; then
             PIPELINE_SUCCESS=0
