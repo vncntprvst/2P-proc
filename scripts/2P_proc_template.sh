@@ -628,6 +628,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         if [ $OPS_EXIT_STATUS -ne 0 ]; then
             PIPELINE_SUCCESS=0
             echo "Failed to create ops file for $EXPORT_PATH"
+            continue
         fi
 
     done
@@ -800,7 +801,11 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
     export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
     mkdir -p "$MPLCONFIGDIR"
     if [ $USE_SINGULARITY -eq 1 ]; then
-        singularity run -B $MOUNT_POINTS --env MPLBACKEND=$MPLBACKEND --env MPLCONFIGDIR=$MPLCONFIGDIR $IMAGE_REPO/2p_proc_latest.sif \
+        if [ -z "${MOUNT_POINTS:-}" ]; then
+            MOUNT_POINTS="$CONFIG_FILE_DIR,$COMMON_ROOT_DATA_DIR,$COMMON_ROOT_EXPORT_DIR,$LOG_DIR,$CODE_DIR"
+        fi
+        singularity run -B "$MOUNT_POINTS" \
+            $IMAGE_REPO/2p_proc_latest.sif \
             python -u -m pipeline.roi_zcorr $CONFIG_FILE
         ROI_Z_EXIT_STATUS=$?
     else

@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.9.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.10.0 -f Dockerfile context --no-cache
 
 # Version history:
-# v0.9.0: Initial container using optimouse package
+# v0.10.0: Adding Suite2P ops overrides.
+# v0.9.0: Initial container using optimouse package.
 
 # Previous tags for the analysis-2p container, created with the Analysis 2P pipeline before splitting the repository, are kept for reference below. 
 # v0.6.1: Updates container with code to accomodate both CNMF and Suite2P extraction options in the Analysis 2P pipeline 
