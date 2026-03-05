@@ -1,9 +1,9 @@
 name: Update Release Badge
 
 on:
-  release:
-    types: [published]
-    branches: [main]
+  # release:
+  #   types: [published]
+  #   branches: [main]
   workflow_dispatch:
 
 jobs:

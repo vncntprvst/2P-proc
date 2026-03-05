@@ -1,15 +1,15 @@
 name: Motion Correction Test
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'Mesmerize/pipeline_mcorr_cnmf.py'
-      - 'Mesmerize/batch_mcorr_cnmf.py'
-      - 'Mesmerize/bruker_concat_tif.py'
-      - 'Mesmerize/compute_zcorr.py'
-  pull_request:
-    branches: [ main ]
+  # push:
+  #   branches: [ main ]
+  #   paths:
+  #     - 'Mesmerize/pipeline_mcorr_cnmf.py'
+  #     - 'Mesmerize/batch_mcorr_cnmf.py'
+  #     - 'Mesmerize/bruker_concat_tif.py'
+  #     - 'Mesmerize/compute_zcorr.py'
+  # pull_request:
+  #   branches: [ main ]
   workflow_dispatch:
 
 jobs:

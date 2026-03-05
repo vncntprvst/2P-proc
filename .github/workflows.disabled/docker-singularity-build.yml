@@ -13,10 +13,10 @@ on:
   #   types: [published]
   #   branches:
   #     - main
-  workflow_run:
-    workflows: ["Update Release Badge"]
-    types:
-      - completed
+  # workflow_run:
+  #   workflows: ["Update Release Badge"]
+  #   types:
+  #     - completed
   workflow_dispatch:
 
 jobs:

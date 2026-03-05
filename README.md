@@ -2,6 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![CaImAn Version](https://img.shields.io/badge/CaImAn-1.12.2+-green)](https://github.com/flatironinstitute/CaImAn)
+[![Suite2p Version](https://img.shields.io/badge/Suite2p-0.14.0-orange)](https://github.com/MouseLand/suite2p/releases/tag/v0.14.0)
 [![PyPI Version](https://img.shields.io/pypi/v/optimouse)](https://pypi.org/project/optimouse/)
 [![DOI](https://zenodo.org/badge/1141473002.svg)](https://doi.org/10.5281/zenodo.18371949)
 <!-- [![Build Status](https://img.shields.io/github/actions/workflow/status/vncntprvst/2P-proc/ci.yml)](https://github.com/vncntprvst/2P-proc/actions) -->
