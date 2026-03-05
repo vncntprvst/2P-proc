@@ -1,13 +1,13 @@
 #!/bin/bash                      
 #SBATCH -t 02:00:00                                 # walltime = 2 hour. Minimum to be safe: 30 mn
 #SBATCH -N 1                                        # 1 node
-#SBATCH -n 40                                       # e.g., 60 CPU (hyperthreaded) cores
-#SBATCH --mem=300GB                                 # Request up to 700 GB of memory
-#SBATCH --partition=ou_bcs_normal
-#SBATCH --export=HDF5_USE_FILE_LOCKING=FALSE 
+#SBATCH -n 20                                       # e.g., 60 CPU (hyperthreaded) cores
+#SBATCH --mem=120GB                                 # Request up to 1 TB of memory
+#SBATCH --partition=ou_bcs_normal                   # Default partition for BCS
+#SBATCH --export=HDF5_USE_FILE_LOCKING=FALSE        # Disable HDF5 file locking to avoid issues with parallel access to HDF5 files (if using HDF5 output)
 #SBATCH --mail-type=ALL                             # email on start, end, and fail
 #SBATCH --job-name=2P_proc_pipeline                 # job name       
-#SBATCH -o ./slurm_logs/2P_proc-%j.ans              # stdout
+#SBATCH -o ./slurm_logs/2P_proc-%j.ans              # log files (%j expands to jobID)
 
 # Create log directory if it doesn't exist
 mkdir -p ./slurm_logs
