@@ -101,6 +101,8 @@ else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 echo "Script directory: $SCRIPT_DIR"
+# Define CURRENT_DIR early so .env variable expansions can safely reference it.
+CURRENT_DIR="$SCRIPT_DIR"
 
 # Load environment variables from .env file
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -350,8 +352,7 @@ fi
 echo "Motion correction method: $MCORR_METHOD"
 echo "Extraction method: $EXTRACTOR_METHOD"
 
-# Set script directory and current directory
-# SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+# Set current directory for runtime helpers.
 CURRENT_DIR=$PWD
 
 # Matplotlib cache handling:
@@ -364,7 +365,14 @@ setup_mpl_cache() {
     export MPLBACKEND="Agg"
     if [ "$KEEP_MPL_CACHE" = "1" ]; then
         export MPLCONFIGDIR="$MPL_CACHE_DIR"
-        mkdir -p "$MPLCONFIGDIR"
+        if ! mkdir -p "$MPLCONFIGDIR" 2>/dev/null; then
+            # Fallback to writable temp cache when configured path is not writable.
+            if [ -n "${SLURM_TMPDIR:-}" ] && [ -d "${SLURM_TMPDIR:-}" ]; then
+                export MPLCONFIGDIR="$(mktemp -d -p "$SLURM_TMPDIR" mpl_cache.XXXXXX)"
+            else
+                export MPLCONFIGDIR="$(mktemp -d -p "$CURRENT_DIR" mpl_cache.XXXXXX)"
+            fi
+        fi
     else
         if [ -n "${SLURM_TMPDIR:-}" ] && [ -d "${SLURM_TMPDIR:-}" ]; then
             export MPLCONFIGDIR="$(mktemp -d -p "$SLURM_TMPDIR" mpl_cache.XXXXXX)"
