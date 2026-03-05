@@ -922,6 +922,14 @@ if [ "${PIPELINE_SUCCESS:-0}" -eq 1 ]; then
                 rm -f "$EXPORT_FILE"
                 [ -f "${EXPORT_FILE}.json" ] && rm -f "${EXPORT_FILE}.json"
             fi
+
+            # Cleanup Suite2p temporary binary generated from TIFF/H5 input.
+            # Keep outputs (F.npy/stat.npy/iscell.npy/spks.npy), remove only data.bin.
+            while IFS= read -r s2p_bin; do
+                [ -z "$s2p_bin" ] && continue
+                echo "Cleaning up Suite2p temporary binary: $s2p_bin"
+                rm -f "$s2p_bin"
+            done < <(find "$EXPORT_PATH" -type f -path "*/suite2p/plane*/data.bin" 2>/dev/null)
         done
     fi
     exit 0
