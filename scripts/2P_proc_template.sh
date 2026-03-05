@@ -646,7 +646,8 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         fi
 
         if [ $USE_SINGULARITY -eq 1 ]; then
-            singularity run -B $EXPORT_PATH:$EXPORT_PATH \
+            # Use "exec" (not "run") to preserve JSON quoting in --ops_overrides_json.
+            singularity exec -B $EXPORT_PATH:$EXPORT_PATH \
                 $IMAGE_REPO/suite2p_latest.sif \
                 "${OPS_PYTHON_ARGS[@]}"
             OPS_EXIT_STATUS=$?
