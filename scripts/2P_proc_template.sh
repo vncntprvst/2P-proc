@@ -354,6 +354,44 @@ echo "Extraction method: $EXTRACTOR_METHOD"
 # SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 CURRENT_DIR=$PWD
 
+# Matplotlib cache handling:
+# - KEEP_MPL_CACHE=1 keeps a persistent cache directory across runs.
+# - KEEP_MPL_CACHE=0 uses a temporary per-step cache and removes it afterward.
+KEEP_MPL_CACHE=${KEEP_MPL_CACHE:-1}
+MPL_CACHE_DIR=${MPL_CACHE_DIR:-$CURRENT_DIR/.matplotlib_cache}
+
+setup_mpl_cache() {
+    export MPLBACKEND="Agg"
+    if [ "$KEEP_MPL_CACHE" = "1" ]; then
+        export MPLCONFIGDIR="$MPL_CACHE_DIR"
+        mkdir -p "$MPLCONFIGDIR"
+    else
+        if [ -n "${SLURM_TMPDIR:-}" ] && [ -d "${SLURM_TMPDIR:-}" ]; then
+            export MPLCONFIGDIR="$(mktemp -d -p "$SLURM_TMPDIR" mpl_cache.XXXXXX)"
+        else
+            export MPLCONFIGDIR="$(mktemp -d -p "$CURRENT_DIR" mpl_cache.XXXXXX)"
+        fi
+    fi
+}
+
+cleanup_mpl_cache() {
+    if [ "$KEEP_MPL_CACHE" != "1" ] && [ -n "${MPLCONFIGDIR:-}" ] && [ -d "${MPLCONFIGDIR:-}" ]; then
+        rm -rf "$MPLCONFIGDIR"
+    fi
+}
+
+is_roi_zcorr_requested() {
+    local requested
+    if [ $USE_SINGULARITY -eq 1 ]; then
+        requested=$(singularity run -B "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "from pipeline.utils.config_loader import load_config; c=load_config('$CONFIG_FILE'); z=c.get('params_mcorr',{}).get('z_motion_correction',None); zp=c.get('paths',{}).get('zstack_paths',[]); print('1' if (z is not None and isinstance(zp,list) and any(str(p).strip() for p in zp)) else '0')")
+    else
+        requested=$(docker run --rm -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" wanglabneuro/2p_proc:latest \
+            python -c "from pipeline.utils.config_loader import load_config; c=load_config('$CONFIG_FILE'); z=c.get('params_mcorr',{}).get('z_motion_correction',None); zp=c.get('paths',{}).get('zstack_paths',[]); print('1' if (z is not None and isinstance(zp,list) and any(str(p).strip() for p in zp)) else '0')")
+    fi
+    [ "$requested" = "1" ]
+}
+
 #### MOTION CORRECTION STEP
 
 if [ "$MCORR_METHOD" != "none" ]; then
@@ -411,11 +449,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
         MOUNT_POINTS=$(IFS=, ; echo "${UNIQ_DIRS[*]}")
         echo "MOUNT_POINTS: $MOUNT_POINTS"
 
-        # Use non-GUI backend to speed up Matplotlib imports
-        export MPLBACKEND="Agg"
-        # Fix Matplotlib cache warning by setting MPLCONFIGDIR to a writable location
-        export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
-        mkdir -p "$MPLCONFIGDIR"
+        setup_mpl_cache
 
         # Create a temporary directory in COMMON_ROOT_EXPORT_DIR for CaImAn and assign it to CAIMAN_TEMP
         if [ -n "$COMMON_ROOT_EXPORT_DIR" ]; then
@@ -456,7 +490,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
 
         # Remove the temporary directories
         rm -rf $CAIMAN_TEMP 
-        rm -rf "$MPLCONFIGDIR"
+        cleanup_mpl_cache
         :
     else
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -464,9 +498,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
         CODE_DIR=$REPO_DIR
         echo "Using code directory: $CODE_DIR"
         echo "Starting motion-correction on 2p_proc docker image."
-        export MPLBACKEND="Agg"
-        export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
-        mkdir -p "$MPLCONFIGDIR"
+        setup_mpl_cache
         docker run \
             --rm \
             --user $HOST_USER_ID:$HOST_GROUP_ID \
@@ -489,7 +521,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
         fi
 
         # Remove the temporary directories
-        rm -rf "$MPLCONFIGDIR"
+        cleanup_mpl_cache
         :
     fi
 
@@ -674,9 +706,7 @@ fi
 
 if [ "$EXTRACTOR_METHOD" = "cnmf" ]; then
     echo "Running CNMF extraction."
-    export MPLBACKEND="Agg"
-    export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
-    mkdir -p "$MPLCONFIGDIR"
+    setup_mpl_cache
     if [ $USE_SINGULARITY -eq 1 ]; then
         # Create a temporary directory in COMMON_ROOT_EXPORT_DIR for CaImAn and assign it to CAIMAN_TEMP
         if [ -n "$COMMON_ROOT_EXPORT_DIR" ]; then
@@ -706,10 +736,10 @@ if [ "$EXTRACTOR_METHOD" = "cnmf" ]; then
         if [ -n "$MCORR_OUTPUT" ]; then
             CNMF_CMD+=" --mcorr-movie $MCORR_OUTPUT"
         fi
-        docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID -v $COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR -v $COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $LOG_DIR:$LOG_DIR -v $CODE_DIR:/code -e MPLBACKEND=Agg wanglabneuro/2p_proc:latest $CNMF_CMD
+        docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID -v $COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR -v $COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $LOG_DIR:$LOG_DIR -v $CODE_DIR:/code -e MPLBACKEND=Agg -e MPLCONFIGDIR=$MPLCONFIGDIR wanglabneuro/2p_proc:latest $CNMF_CMD
         CNMF_EXIT_STATUS=$?
     fi
-    rm -rf "$MPLCONFIGDIR"
+    cleanup_mpl_cache
     :
     if [ $CNMF_EXIT_STATUS -ne 0 ]; then
         PIPELINE_SUCCESS=0
@@ -721,9 +751,7 @@ fi
 if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
     for EXPORT_PATH in "${EXPORT_DATA_PATHS[@]}"; do
         echo "Running suite2p extraction on $EXPORT_PATH (API runner)"
-        export MPLBACKEND="Agg"
-        export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
-        mkdir -p "$MPLCONFIGDIR"
+        setup_mpl_cache
         if [ $USE_SINGULARITY -eq 1 ]; then
             singularity run -B $EXPORT_PATH:$EXPORT_PATH \
                 --env MPLCONFIGDIR=$MPLCONFIGDIR \
@@ -751,7 +779,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
             echo "Suite2P extraction failed for $EXPORT_PATH with exit status $SUITE2P_EXIT_STATUS"
         fi
         
-        rm -rf "$MPLCONFIGDIR"
+        cleanup_mpl_cache
         :
     done
 fi
@@ -760,9 +788,7 @@ fi
 if [ "$EXTRACTOR_METHOD" = "aind" ]; then
     for EXPORT_PATH in "${EXPORT_DATA_PATHS[@]}"; do
         echo "Running aind-ophys-extraction on $EXPORT_PATH"
-        export MPLBACKEND="Agg"
-        export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
-        mkdir -p "$MPLCONFIGDIR"
+        setup_mpl_cache
         if [ $USE_SINGULARITY -eq 1 ]; then
             singularity run -B $EXPORT_PATH:$EXPORT_PATH \
                 --env MPLBACKEND=$MPLBACKEND \
@@ -785,21 +811,19 @@ if [ "$EXTRACTOR_METHOD" = "aind" ]; then
             echo "AIND extraction failed for $EXPORT_PATH with exit status $AIND_EXIT_STATUS"
         fi
 
-        rm -rf "$MPLCONFIGDIR"
+        cleanup_mpl_cache
         :
     done
 fi
 
 #### ROI Z-MOTION CORRECTION STEP
-if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
+if [ "$EXTRACTOR_METHOD" = "suite2p" ] && is_roi_zcorr_requested; then
     echo ""
     echo "================================"
     echo "Running ROI z-motion correction."
     echo "================================"
 
-    export MPLBACKEND="Agg"
-    export MPLCONFIGDIR="$CURRENT_DIR/.matplotlib_cache"
-    mkdir -p "$MPLCONFIGDIR"
+    setup_mpl_cache
     if [ $USE_SINGULARITY -eq 1 ]; then
         if [ -z "${MOUNT_POINTS:-}" ]; then
             MOUNT_POINTS="$CONFIG_FILE_DIR,$COMMON_ROOT_DATA_DIR,$COMMON_ROOT_EXPORT_DIR,$LOG_DIR,$CODE_DIR"
@@ -821,12 +845,14 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
             python -u -m pipeline.roi_zcorr $CONFIG_FILE
         ROI_Z_EXIT_STATUS=$?
     fi
-    rm -rf "$MPLCONFIGDIR"
+    cleanup_mpl_cache
     :
     if [ $ROI_Z_EXIT_STATUS -ne 0 ]; then
         PIPELINE_SUCCESS=0
         echo "ROI z-motion correction failed with exit status $ROI_Z_EXIT_STATUS"
     fi
+elif [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
+    echo "Skipping ROI z-motion correction (not requested in config: requires params_mcorr.z_motion_correction and non-empty paths.zstack_paths)."
 fi
 
 
