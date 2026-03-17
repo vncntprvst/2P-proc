@@ -561,11 +561,11 @@ def concatenate_files(input_paths, output_path, regex='*_Ch2_*.ome.tif', method=
         if len(input_paths) == 1:
             tiff_files = sorted(glob.glob(os.path.join(input_paths[0],regex)))
         else:
-        # For multiple folders:
+        # For multiple folders, preserve the order of input_paths while still
+        # sorting files within each folder.
             tiff_files = []
             for folder in input_paths:
-                tiff_files += sorted(glob.glob(os.path.join(folder,regex)))
-            tiff_files.sort()
+                tiff_files.extend(sorted(glob.glob(os.path.join(folder, regex))))
 
     else:
         # The input is file list
