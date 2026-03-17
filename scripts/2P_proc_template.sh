@@ -239,6 +239,14 @@ sys.path.append('/code')
 from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "export_paths")
+        COMMON_ROOT_ZSTACK_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            $IMAGE_REPO/2p_proc_latest.sif \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "zstack_paths")
         LOG_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
             $IMAGE_REPO/2p_proc_latest.sif \
             python -c "
@@ -283,6 +291,14 @@ sys.path.append('/code')
 from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "export_paths")
+        COMMON_ROOT_ZSTACK_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
+            wanglabneuro/2p_proc:latest \
+            python -c "
+import sys
+sys.path.append('/code')
+from paths_params_io import get_common_dir
+print(get_common_dir(sys.argv[1], sys.argv[2]))
+" "$CONFIG_FILE" "zstack_paths")
         LOG_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
             wanglabneuro/2p_proc:latest \
             python -c "
@@ -332,6 +348,7 @@ print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
 
     echo "Data directory: $COMMON_ROOT_DATA_DIR"
     echo "Export directory: $COMMON_ROOT_EXPORT_DIR"
+    echo "Z-stack directory: $COMMON_ROOT_ZSTACK_DIR"
     echo "Log directory: $LOG_DIR"
 else
     # Use provided arguments
@@ -431,6 +448,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
             DIRS+=("$SESSION_ROOT_DIR" "$COMMON_ROOT_DATA_DIR")
         fi
         [ -n "$COMMON_ROOT_EXPORT_DIR" ] && [[ "$COMMON_ROOT_EXPORT_DIR" = /* ]] && DIRS+=("$COMMON_ROOT_EXPORT_DIR")
+        [ -n "$COMMON_ROOT_ZSTACK_DIR" ] && [[ "$COMMON_ROOT_ZSTACK_DIR" = /* ]] && DIRS+=("$COMMON_ROOT_ZSTACK_DIR")
         [ -n "$CURRENT_DIR" ] && [[ "$CURRENT_DIR" = /* ]] && DIRS+=("$CURRENT_DIR")
         [ -n "$SLURM_SUBMIT_DIR" ] && [[ "$SLURM_SUBMIT_DIR" = /* ]] && DIRS+=("$SLURM_SUBMIT_DIR")
         echo "DIRS: ${DIRS[@]}"

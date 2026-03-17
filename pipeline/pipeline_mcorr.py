@@ -241,7 +241,11 @@ def _process_config(cfg_path: str, args: argparse.Namespace) -> None:
         if zstack_paths is not None:
             zstack_path = zstack_paths[i] if len(zstack_paths) > 1 else zstack_paths[0]
             if not os.path.exists(zstack_path):
-                print(f"❌ Z-stack path not found: {zstack_path}. Check the path.")
+                print(
+                    "❌ Z-stack path is not accessible from the motion-correction runtime: "
+                    f"{zstack_path}. Check the config path and, if running in Apptainer/Singularity, "
+                    "make sure the parent z-stack directory is included in the container bind mounts."
+                )
                 continue
             if z_motion_correction:
                 params["params_mcorr"]["z_motion_correction"] = z_motion_correction
