@@ -17,6 +17,7 @@ This package provides:
 - **Spike deconvolution**: Temporal activity inference from calcium signals
 - **Parameter optimization**: Notebooks for systematic parameter exploration (CaImAn NoRMCorre and CNMF)
 - **Multi-session registration**: Cross-session ROI alignment using CaImAn's registration algorithm
+- **Better UI**: TBD
 
 ## No-installation Quick Start
 Try the pipeline without installation, using containers:
