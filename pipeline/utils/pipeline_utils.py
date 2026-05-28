@@ -446,10 +446,13 @@ def overwrite_movie_memmap(movie, original_mmap_path, clip=True, movie_type='mco
 def save_mmap_movie(movie, movie_path):
     """
     Save an array as a memmaped numpy array.
-    Original array must have dimensions T, y, x
+    Original array must have dimensions T, y, x.
+    Writes a companion memmap_paths.json file alongside the memmap with shape and dtype metadata.
     """
+    import json as _json
     # Save the movie as a memmaped numpy array
     movie_path = Path(movie_path)
+    T, Ly, Lx = movie.shape
     # Transpose the array to (y, x, T)
     transposed_array = movie.transpose(1, 2, 0)
     # Flatten the transposed array in 'F' order (to align with the loading code)
@@ -459,7 +462,17 @@ def save_mmap_movie(movie, movie_path):
     movie_[:] = flattened_array[:]
     # Flush changes to disk and close the memmap
     del movie_
-    del flattened_array    
+    del flattened_array
+
+    # Write companion metadata JSON so downstream code can locate and describe the memmap
+    memmap_metadata = {
+        'path': str(movie_path),
+        'shape': [T, Ly, Lx],
+        'dtype': 'float32',
+    }
+    metadata_path = movie_path.parent / 'memmap_paths.json'
+    with open(metadata_path, 'w') as _f:
+        _json.dump(memmap_metadata, _f, indent=2)
     
 def load_mmap_movie(movie_path):
     """
