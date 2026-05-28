@@ -21,6 +21,7 @@ scripts/*
 !scripts/sbatch_test_capsule.sh
 !scripts/prepare_aind_test_data.py
 !scripts/validate_capsule_output.py
+!scripts/sbatch_benchmark_zcorr.sh
 
 # Build files
 dist/
