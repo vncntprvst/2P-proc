@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH -t 01:00:00
+#SBATCH -t 00:30:00
 #SBATCH -N 1
 #SBATCH -n 8
-#SBATCH --mem=60GB
+#SBATCH --mem=32GB
 #SBATCH --partition=ou_bcs_normal
 #SBATCH --export=HDF5_USE_FILE_LOCKING=FALSE
 #SBATCH --mail-type=ALL
-#SBATCH --job-name=aind_extraction
-#SBATCH -o ./slurm_logs/aind_extraction-%j.ans
+#SBATCH --job-name=roi_zcorr
+#SBATCH -o ./slurm_logs/roi_zcorr-%j.ans
 
 # Create log directory if it doesn't exist
 mkdir -p ./slurm_logs
@@ -17,12 +17,21 @@ if command -v scontrol >/dev/null 2>&1 && [ -n "${SLURM_JOB_ID:-}" ]; then
     scontrol update job $SLURM_JOB_ID MailUser=$USER@mit.edu
 fi
 
-# Usage: sbatch [--mail-user=EMAIL] sbatch_aind_extraction.sh path/to/config.json
+# Usage: sbatch [--mail-user=EMAIL] sbatch_roi_zcorr.sh path/to/config.json
 #
-# Runs the AIND ophys Suite2p extraction capsule
-# (aind-ophys-extraction-suite2p-docker-local_latest.sif) on every export path
-# listed in the config file.  Falls back to the GHCR Docker image when the
-# .sif is absent.
+# Runs the ROI z-motion correction step via pipeline.roi_zcorr inside the
+# 2p_proc_latest.sif container.  Falls back to Docker when the .sif is absent.
+#
+# This step requires:
+#   - params_mcorr.z_motion_correction set in the config
+#   - paths.zstack_paths containing at least one non-empty entry
+
+USE_STABLE=1  # Set to 1 to use stable (main branch) version of the pipeline, 0 to use latest (dev branch)
+if [ $USE_STABLE -eq 1 ]; then
+    echo "RUNNING STABLE (MAIN BRANCH) VERSION OF THE PIPELINE"
+else
+    echo "RUNNING LATEST (DEV BRANCH) VERSION OF THE PIPELINE"
+fi
 
 # Check resource availability and usage
 echo "Starting job $SLURM_JOB_ID on $(hostname) at $(date)"
@@ -90,13 +99,13 @@ if [ "$OS_VERSION" = "rocky8" ]; then
     fi
     USE_SINGULARITY=1
 else
-    # Prefer Singularity/Apptainer if available and the AIND extraction image is present
+    # Prefer Singularity/Apptainer if available and the main 2p_proc image is present
     if command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1; then
-        if [ -f "$IMAGE_REPO/aind-ophys-extraction-suite2p-docker-local_latest.sif" ]; then
-            echo "Singularity/Apptainer detected and aind-ophys-extraction image found."
+        if [ -f "$IMAGE_REPO/2p_proc_latest.sif" ]; then
+            echo "Singularity/Apptainer detected and 2p_proc image found."
             USE_SINGULARITY=1
         else
-            echo "Singularity/Apptainer available but aind-ophys-extraction-suite2p-docker-local_latest.sif not found in $IMAGE_REPO"
+            echo "Singularity/Apptainer available but 2p_proc_latest.sif not found in $IMAGE_REPO"
             echo "Falling back to Docker."
             USE_SINGULARITY=0
         fi
@@ -119,7 +128,7 @@ fi
 CONFIG_FILE=$1
 if [ -z "$CONFIG_FILE" ]; then
     echo "Error: No config file specified."
-    echo "Usage: sbatch sbatch_aind_extraction.sh path/to/config.json"
+    echo "Usage: sbatch sbatch_roi_zcorr.sh path/to/config.json"
     exit 1
 fi
 echo "Config file provided: $CONFIG_FILE"
@@ -193,14 +202,6 @@ sys.path.append('/code')
 from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "logging")
-    IFS=' ' read -ra EXPORT_DATA_PATHS <<< "$($CONTAINER_CMD run -B "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" \
-        "$IMAGE_REPO/2p_proc_latest.sif" \
-        python -c "
-import sys
-sys.path.append('/code')
-from paths_params_io import read_data_paths
-print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
-" "$CONFIG_FILE" "export_paths" "bash")"
 else
     COMMON_ROOT_DATA_DIR=$(docker run --rm -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" \
         wanglabneuro/2p_proc:latest \
@@ -234,23 +235,7 @@ sys.path.append('/code')
 from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "logging")
-    IFS=' ' read -ra EXPORT_DATA_PATHS <<< "$(docker run --rm -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" \
-        wanglabneuro/2p_proc:latest \
-        python -c "
-import sys
-sys.path.append('/code')
-from paths_params_io import read_data_paths
-print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
-" "$CONFIG_FILE" "export_paths" "bash")"
 fi
-
-# Ensure export paths exist
-for path in "${EXPORT_DATA_PATHS[@]}"; do
-    if [ ! -d "$path" ]; then
-        echo "Creating export path: $path"
-        mkdir -p "$path"
-    fi
-done
 
 # Check LOG_DIR
 if [ ! -d "$LOG_DIR" ]; then
@@ -300,49 +285,90 @@ cleanup_mpl_cache() {
     fi
 }
 
-#### AIND OPHYS EXTRACTION STEP
+#### ROI Z-MOTION CORRECTION STEP
 
 echo ""
-echo "======================================="
-echo "Running AIND ophys extraction step."
-echo "======================================="
+echo "================================"
+echo "Running ROI z-motion correction."
+echo "================================"
 
-STEP_SUCCESS=1
+# Build mount points (same logic as 2P_proc_template.sh)
+if [ "${USE_SINGULARITY:-0}" -eq 1 ]; then
+    DIRS=()
+    [ -n "$CONFIG_FILE_DIR" ] && [[ "$CONFIG_FILE_DIR" = /* ]] && DIRS+=("$CONFIG_FILE_DIR")
+    [ -n "$LOG_DIR" ] && [[ "$LOG_DIR" = /* ]] && DIRS+=("$LOG_DIR")
+    if [ -n "$COMMON_ROOT_DATA_DIR" ] && [[ "$COMMON_ROOT_DATA_DIR" = /* ]]; then
+        SESSION_ROOT_DIR="$(dirname "$COMMON_ROOT_DATA_DIR")"
+        DIRS+=("$SESSION_ROOT_DIR" "$COMMON_ROOT_DATA_DIR")
+    fi
+    [ -n "$COMMON_ROOT_EXPORT_DIR" ] && [[ "$COMMON_ROOT_EXPORT_DIR" = /* ]] && DIRS+=("$COMMON_ROOT_EXPORT_DIR")
+    [ -n "$COMMON_ROOT_ZSTACK_DIR" ] && [[ "$COMMON_ROOT_ZSTACK_DIR" = /* ]] && DIRS+=("$COMMON_ROOT_ZSTACK_DIR")
+    [ -n "$CURRENT_DIR" ] && [[ "$CURRENT_DIR" = /* ]] && DIRS+=("$CURRENT_DIR")
+    [ -n "$SLURM_SUBMIT_DIR" ] && [[ "$SLURM_SUBMIT_DIR" = /* ]] && DIRS+=("$SLURM_SUBMIT_DIR")
 
-for EXPORT_PATH in "${EXPORT_DATA_PATHS[@]}"; do
-    echo "Running aind-ophys-extraction on $EXPORT_PATH"
-    setup_mpl_cache
+    # Exact (non-substring) de-duplication of mount points
+    UNIQ_DIRS=()
+    for dir in "${DIRS[@]}"; do
+        [ -z "$dir" ] && continue
+        already=0
+        for u in "${UNIQ_DIRS[@]}"; do
+            if [ "$u" = "$dir" ]; then
+                already=1
+                break
+            fi
+        done
+        if [ $already -eq 0 ]; then
+            UNIQ_DIRS+=("$dir")
+        fi
+    done
 
-    if [ "${USE_SINGULARITY:-0}" -eq 1 ]; then
-        singularity run -B "$EXPORT_PATH:$EXPORT_PATH" \
+    MOUNT_POINTS=$(IFS=, ; echo "${UNIQ_DIRS[*]}")
+    echo "MOUNT_POINTS: $MOUNT_POINTS"
+fi
+
+setup_mpl_cache
+
+if [ "${USE_SINGULARITY:-0}" -eq 1 ]; then
+    if [ $USE_STABLE -eq 1 ]; then
+        singularity run -B "$MOUNT_POINTS" \
             --env MPLBACKEND="$MPLBACKEND",MPLCONFIGDIR="$MPLCONFIGDIR" \
-            "$IMAGE_REPO/aind-ophys-extraction-suite2p-docker-local_latest.sif" \
-            run --input-dir "$EXPORT_PATH"
-        EXIT_STATUS=$?
+            "$IMAGE_REPO/2p_proc_latest.sif" \
+            python -u -m pipeline.roi_zcorr "$CONFIG_FILE"
     else
-        docker run --rm \
-            -v "$EXPORT_PATH:$EXPORT_PATH" \
-            -e MPLBACKEND=Agg \
-            -e MPLCONFIGDIR="$MPLCONFIGDIR" \
-            ghcr.io/allenneuraldynamics/aind-ophys-extraction-suite2p-docker-local:latest \
-            run --input-dir "$EXPORT_PATH"
-        EXIT_STATUS=$?
+        echo "Using code directory: $PIPELINE_CODE_DIR for ROI z-correction."
+        singularity run -B "$MOUNT_POINTS" \
+            -B "$PIPELINE_CODE_DIR:/code" \
+            --env MPLBACKEND="$MPLBACKEND",MPLCONFIGDIR="$MPLCONFIGDIR" \
+            "$IMAGE_REPO/2p_proc_latest.sif" \
+            python -u -m pipeline.roi_zcorr "$CONFIG_FILE"
     fi
+    EXIT_STATUS=$?
+else
+    SCRIPT_DIR_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    REPO_DIR="$(dirname "$SCRIPT_DIR_LOCAL")"
+    CODE_DIR=$REPO_DIR
+    echo "Using code directory: $CODE_DIR"
+    docker run --rm \
+        --user "$HOST_USER_ID:$HOST_GROUP_ID" \
+        -v "$COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR" \
+        -v "$COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR" \
+        -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" \
+        -v "$LOG_DIR:$LOG_DIR" \
+        -v "$CODE_DIR:/code" \
+        -e MPLBACKEND=Agg \
+        -e MPLCONFIGDIR="$MPLCONFIGDIR" \
+        wanglabneuro/2p_proc:latest \
+        python -u -m pipeline.roi_zcorr "$CONFIG_FILE"
+    EXIT_STATUS=$?
+fi
 
-    cleanup_mpl_cache
+cleanup_mpl_cache
 
-    if [ $EXIT_STATUS -ne 0 ]; then
-        STEP_SUCCESS=0
-        echo "AIND extraction failed for $EXPORT_PATH with exit status $EXIT_STATUS"
-    fi
-done
-
-if [ "$STEP_SUCCESS" -ne 1 ]; then
-    echo ""
-    echo "One or more AIND extraction steps failed. Check logs above."
+if [ $EXIT_STATUS -ne 0 ]; then
+    echo "ROI z-motion correction failed with exit status $EXIT_STATUS"
     exit 1
 fi
 
 echo ""
-echo "AIND ophys extraction completed successfully."
+echo "ROI z-motion correction completed successfully."
 exit 0
