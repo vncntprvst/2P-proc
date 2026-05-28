@@ -64,7 +64,7 @@
             "pw_rigid": true,
             "gSig_filt": null
         },
-        "__comment_save_mcorr_movie": "Accepted: 'tiff' (recommended); 'h5' and 'bin' exist but may not work in all workflows.",
+        "__comment_save_mcorr_movie": "Accepted: 'tiff' (recommended, reliably tested); 'memmap' (default, reliably tested); 'h5' and 'bin' exist but are not reliably tested in all downstream workflows.",
         "save_mcorr_movie": "tiff",
         "z_motion_correction": {
             "zstack_shift": {
@@ -101,6 +101,18 @@
             "sparse_mode": "true/false sparse ROI detection mode.",
             "pre_smooth": "Registration pre-smoothing level.",
             "max_iterations": "Maximum ROI detection refinement iterations."
+        },
+        "__cnmf_equivalent_params": {
+            "__comment": "CNMF-equivalent parameters shown here for reference. Add any of these under 'main' to override Suite2p defaults.",
+            "decay_time": "Calcium decay time in seconds (mapped to Suite2p 'tau'). Equivalent to CNMF 'decay_time'.",
+            "min_SNR": "Minimum SNR for ROI acceptance. Equivalent to CNMF 'min_SNR' (default 3.0 in CNMF).",
+            "rval_thr": "Spatial correlation threshold for ROI acceptance. Equivalent to CNMF 'rval_thr' (default 0.85 in CNMF).",
+            "threshold_scaling": "Detection threshold multiplier; lower finds more ROIs. Loosely equivalent to CNMF 'K'.",
+            "max_overlap": "Maximum allowed ROI overlap before rejection. Related to CNMF 'merge_thr'.",
+            "diameter": "Expected ROI diameter in pixels. Related to CNMF 'gSig'.",
+            "inner_neuropil_radius": "Pixels excluded around ROI for neuropil estimate. No direct CNMF equivalent.",
+            "sparse_mode": "Sparse ROI detection mode (true/false). Related to CNMF 'method_init'.",
+            "nb": "Number of background components. Equivalent to CNMF 'nb' (default 2 in CNMF)."
         },
         "main": {
             "decay_time": 0.3

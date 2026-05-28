@@ -1217,6 +1217,7 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
     return b
 
 
+# DEPRECATED: use subtract_z_motion_hr_frames instead.
 # def subtract_z_motion_lr_frames(F_func, F_anat):
 #     """
 #     Subtract the movement-induced changes from the functional movie using linear regression.
@@ -1313,6 +1314,7 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 
 #     return F_corrected, z_motion_scaling_factors
 
+# DEPRECATED: use subtract_z_motion_hr_frames instead.
 # def subtract_z_motion_hr_pixels(F_func, F_anat):
 #     """
 #     Subtract the movement-induced changes from the functional movie using pixel-wise subtraction.
@@ -1979,12 +1981,6 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     # --- Compute non-rigid z-motion computation if specified ---
     try:
         compute_non_rigid = z_parameters.get('non_rigid', None)
-        if compute_non_rigid is None and 'subtract_z_motion' in z_parameters:
-            legacy_value = z_parameters['subtract_z_motion']
-            if isinstance(legacy_value, str):
-                compute_non_rigid = legacy_value.lower() not in ('false', '0', 'none')
-            else:
-                compute_non_rigid = bool(legacy_value)
 
         if compute_non_rigid is not None:
             
