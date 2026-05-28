@@ -18,6 +18,9 @@ scripts/*
 !scripts/sbatch_nonrigid_mcorr.sh
 !scripts/sbatch_aind_extraction.sh
 !scripts/sbatch_roi_zcorr.sh
+!scripts/sbatch_test_capsule.sh
+!scripts/prepare_aind_test_data.py
+!scripts/validate_capsule_output.py
 
 # Build files
 dist/

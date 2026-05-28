@@ -359,13 +359,23 @@ if [ "${USE_SINGULARITY:-0}" -eq 1 ]; then
         CAIMAN_TEMP=$(mktemp -d)
     fi
 
-    echo "Starting non-rigid motion correction on aind_nonrigid_mcorr singularity image."
+    # Results land in a motion_correction/ subdirectory under the export root
+    MCORR_RESULTS_DIR="$COMMON_ROOT_EXPORT_DIR/motion_correction"
+    mkdir -p "$MCORR_RESULTS_DIR"
 
-    singularity run \
-        -B "$MOUNT_POINTS" \
+    echo "Starting non-rigid motion correction on aind_nonrigid_mcorr singularity image."
+    echo "  Input  (mounted as /data)   : $COMMON_ROOT_DATA_DIR"
+    echo "  Results (mounted as /results): $MCORR_RESULTS_DIR"
+
+    # The capsule follows Code Ocean conventions: reads from /data, writes to /results.
+    # Bind-mount our cluster paths to those fixed container paths.
+    $CONTAINER_CMD run \
+        -B "$COMMON_ROOT_DATA_DIR:/data" \
+        -B "$MCORR_RESULTS_DIR:/results" \
+        -B "$CAIMAN_TEMP:$CAIMAN_TEMP" \
+        -B "$MPLCONFIGDIR:$MPLCONFIGDIR" \
         --env CAIMAN_TEMP="$CAIMAN_TEMP",MPLBACKEND="$MPLBACKEND",MPLCONFIGDIR="$MPLCONFIGDIR" \
         "$IMAGE_REPO/aind_nonrigid_mcorr_latest.sif" \
-        --input-dir "$COMMON_ROOT_EXPORT_DIR" \
         --pw-rigid \
         --max-shifts 6 \
         --strides 48 \
@@ -379,14 +389,15 @@ else
     echo "Using Docker (aind_nonrigid_mcorr image)."
     setup_mpl_cache
 
+    MCORR_RESULTS_DIR="$COMMON_ROOT_EXPORT_DIR/motion_correction"
+    mkdir -p "$MCORR_RESULTS_DIR"
+
     docker run --rm \
-        -v "$COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR" \
-        -v "$COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR" \
-        -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" \
+        -v "$COMMON_ROOT_DATA_DIR:/data" \
+        -v "$MCORR_RESULTS_DIR:/results" \
         -e MPLBACKEND=Agg \
         -e MPLCONFIGDIR="$MPLCONFIGDIR" \
         wanglabneuro/aind_nonrigid_mcorr:latest \
-        --input-dir "$COMMON_ROOT_EXPORT_DIR" \
         --pw-rigid \
         --max-shifts 6 \
         --strides 48 \

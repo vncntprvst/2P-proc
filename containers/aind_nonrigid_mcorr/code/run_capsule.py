@@ -5,8 +5,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-DATA_DIR = Path("/data")
-RESULTS_DIR = Path("/results")
+_DEFAULT_DATA_DIR = Path("/data")
+_DEFAULT_RESULTS_DIR = Path("/results")
 
 
 def _ts():
@@ -54,7 +54,21 @@ def main():
         default=1,
         help="Number of rigid correction iterations (default: 1)",
     )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=_DEFAULT_DATA_DIR,
+        help="Input directory containing *.h5 file(s) (default: /data)",
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=_DEFAULT_RESULTS_DIR,
+        help="Output directory for all results (default: /results)",
+    )
     args = parser.parse_args()
+    DATA_DIR = args.data_dir
+    RESULTS_DIR = args.results_dir
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     start_time = datetime.utcnow().isoformat()
