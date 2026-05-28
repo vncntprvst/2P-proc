@@ -24,14 +24,13 @@ import multiprocessing
 import shutil
 import threading
 import time
-from pathlib import Path
 
 import numpy as np
 import mesmerize_core as mc
 from scipy import io
 
 from caiman.mmapping import load_memmap, prepare_shape
-from caiman import save_memmap as save_memmap
+from caiman import save_memmap
 
 from pipeline.utils.pipeline_utils import (
     log_and_print, 
@@ -282,7 +281,6 @@ def run_cnmf(
     data_path,
     input_movie_path: str | Path | None = None,
     z_correlation=None,
-    z_motion_scaling_factors=None,
 ):
     """Run CNMF on a motion corrected movie and export results.
 
@@ -302,9 +300,6 @@ def run_cnmf(
         Direct path to input movie if not using a batch item.
     z_correlation : np.ndarray, optional
         Pre-computed z correlation data.
-    z_motion_scaling_factors : np.ndarray, optional
-        Scaling factors from z motion subtraction (unused but kept for backwards
-        compatibility).
     """
     # Set the parent raw data path before any batch operations
     mc.set_parent_raw_data_path(Path(export_path))
@@ -370,7 +365,11 @@ def run_cnmf(
         log_and_print(
             f"Running batch item {row.name}, id {row.uuid}, algo {row.algo}."
         )
-        process = row.caiman.run()
+        try:
+            process = row.caiman.run()
+        except Exception as e:
+            log_and_print(f"Error running CNMF for batch item {row.name}: {e}", level='error')
+            continue
 
         if process.__class__.__name__ == "DummyProcess":
             df = df.caiman.reload_from_disk()

@@ -28,7 +28,6 @@ import os
 import numpy as np
 import h5py
 from tifffile import TiffWriter, TiffFile, imread
-import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.stats import mode
 from sklearn.linear_model import HuberRegressor
@@ -105,14 +104,6 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
     Save the motion corrected movie (memmaped array) as a BigTIFF file or a mp4 movie.
     If diff_corr is true (default), concatenate the original movie and the motion corrected movie horizontally.
     """
-    # # Load the movie from the memmap file
-    # mcorr_movie_16bit , dims, T = load_memmap(mcorr_path)
-    # # Reshape the array to the desired dimensions
-    # mcorr_movie_16bit = np.reshape(mcorr_movie_16bit.T, [T] + list(dims), order='F')
-    # # At this point the images should already be transposed
-    # # mcorr_movie_16bit = mcorr_movie_16bit.transpose(0, 2, 1)
-    # # image = mcorr_movie_16bit[0,:,:]  
-
     # Load the movie from the memmap file
     loaded_mcorr_movie = load_mmap_movie(mcorr_movie_path)
 
@@ -123,8 +114,7 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
     # Convert values to uint8
     if to_uint8:
         # Data is originally uint12, and is loaded as float 32, but is 16 bit range.
-        scale_factor = 255 / (2**16-1)
-        mcorr_movie_ = to_uint8_robust(loaded_mcorr_movie) #(loaded_mcorr_movie * scale_factor).astype('uint8')
+        mcorr_movie_ = to_uint8_robust(loaded_mcorr_movie)
     else:
         mcorr_movie_ = loaded_mcorr_movie.astype(np.uint16)
     
@@ -139,8 +129,7 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
 
             # Convert values to uint8
             if to_uint8:
-                scale_factor = 255 / (2**16-1)
-                original_movie_ = to_uint8_robust(original_movie) #(original_movie * scale_factor).astype('uint8')
+                original_movie_ = to_uint8_robust(original_movie)
             else:
                 original_movie_ = original_movie.astype(np.uint16)
             # Set the path of the mp4 movie
@@ -177,9 +166,6 @@ def compute_movie_residuals(mcorr_movie_path, zcorr_movie, export_path):
     Compute the residuals between the motion corrected movie (x/y), and the z-motion corrected movie (z).
     """
     # Load the motion corrected movie
-    # loaded_mcorr_movie , dims, T = load_memmap(clipped_mcorr_path)
-    # loaded_mcorr_movie = np.reshape(loaded_mcorr_movie.T, [T] + list(dims), order='F')
-    # loaded_mcorr_movie = loaded_mcorr_movie.transpose(0, 2, 1)
     loaded_mcorr_movie = load_caiman_memmap(mcorr_movie_path)
 
     # Compute the difference between the motion corrected movie and the z-motion corrected movie (residuals for each frame)
@@ -393,13 +379,6 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
     running_min = np.inf
     running_max = -np.inf
 
-    # Create a figure of pixel values histograms
-    # fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    # axs[0].hist(adapter.flatten(), bins=100, color='gray')
-    # axs[0].set_title('Histogram of Pixel Values (Memmap)')
-    # axs[0].set_xlabel('Pixel Value')
-    # axs[0].set_ylabel('Frequency')
-
     with h5py.File(h5_path, 'w') as f:
         if dtype_out == 'uint16':
             dset = f.create_dataset('data', shape=(T, Ly, Lx), dtype='uint16', compression=None)
@@ -447,27 +426,6 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
     except Exception as e:
         log_and_print(f"H5 verification failed: {e}", level='warning')
 
-    # choose bin edges using running_min/running_max computed above
-    # nbins = 100
-    # bin_edges = np.linspace(running_min, running_max, nbins + 1)
-    # hist_counts = np.zeros(nbins, dtype=np.int64)
-
-    # # Compute histogram of pixel values on h5 file
-    # with h5py.File(h5_path, 'r') as f:
-    #     data = f['data'][:]
-    #     hist_counts, _ = np.histogram(data, bins=bin_edges)
-
-    # axs[1].bar(bin_edges[:-1], hist_counts, width=np.diff(bin_edges), color='gray')
-    # axs[1].set_title('Histogram of Pixel Values (H5)')
-    # axs[1].set_xlabel('Pixel Value')
-    # axs[1].set_ylabel('Frequency')
-    # plt.tight_layout()
-
-    # # Save figure
-    # histo_fig_path = h5_path.parent / "plots" / "pixel_value_histogram_h5.png"
-    # plt.savefig(histo_fig_path)
-    # plt.close(fig)
-
     adapter.close()
     # Copy concatenation sidecar JSON next to the new file
     allow_suite2p_dir = (
@@ -488,13 +446,6 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
 
     running_min = np.inf
     running_max = -np.inf
-
-    # Create a figure of pixel values histograms
-    # fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    # axs[0].hist(adapter.flatten(), bins=100, color='gray')
-    # axs[0].set_title('Histogram of Pixel Values (Memmap)')
-    # axs[0].set_xlabel('Pixel Value')
-    # axs[0].set_ylabel('Frequency')
 
     with open(bin_path, 'wb') as f:
         for start in range(0, T, chunk_size):
@@ -524,19 +475,6 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     except Exception as e:
         log_and_print(f"Read-back failed: {e}", level='warning')
 
-    # # Compute histogram of pixel values
-    # hist, bin_edges = np.histogram(np.fromfile(bin_path, dtype=np.int16), bins=100)
-    # axs[1].bar(bin_edges[:-1], hist, width=np.diff(bin_edges), color='gray')
-    # axs[1].set_title('Histogram of Pixel Values (Bin)')
-    # axs[1].set_xlabel('Pixel Value')
-    # axs[1].set_ylabel('Frequency')
-    # plt.tight_layout()
-
-    # # Save figure
-    # histo_fig_path = bin_path.parent / "plots" / "pixel_value_histogram_bin.png"
-    # plt.savefig(histo_fig_path)
-    # plt.close(fig)
-
     log_and_print(f"Range across stream: min={running_min:.2f}, max={running_max:.2f}")
     adapter.close()
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
@@ -560,13 +498,6 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
 
     running_min = np.inf
     running_max = -np.inf
-
-    # # Create a figure of pixel values histograms
-    # fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    # axs[0].hist(adapter.flatten(), bins=100, color='gray')
-    # axs[0].set_title('Histogram of Pixel Values (Memmap)')
-    # axs[0].set_xlabel('Pixel Value')
-    # axs[0].set_ylabel('Frequency')
 
     # choose converter
     def to_dtype(frames: np.ndarray) -> np.ndarray:
@@ -600,30 +531,6 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
         and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
     )
     _copy_concat_sidecar(Path(tiff_path).parent, Path(tiff_path), allow_suite2p_dir=allow_suite2p_dir)
-
-    # # choose bin edges using running_min/running_max computed above
-    # nbins = 100
-    # bin_edges = np.linspace(running_min, running_max, nbins + 1)
-    # hist_counts = np.zeros(nbins, dtype=np.int64)
-
-    # with TiffFile(str(tiff_path)) as tif:
-    #     for page in tif.pages:
-    #         arr = page.asarray()
-    #         c, _ = np.histogram(arr, bins=bin_edges)
-    #         hist_counts += c
-
-    # # plot as bar (centers and widths)
-    # centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    # axs[1].bar(centers, hist_counts, width=np.diff(bin_edges), color='gray')
-    # axs[1].set_title('Histogram of Pixel Values (TIFF)')
-    # axs[1].set_xlabel('Pixel Value')
-    # axs[1].set_ylabel('Frequency')
-    # plt.tight_layout()
-
-    # # Save figure
-    # histo_fig_path = tiff_path.parent / "plots" / "pixel_value_histogram_tiff.png"
-    # fig.savefig(histo_fig_path, dpi=300)
-    # plt.close(fig)
 
     return Path(tiff_path)
 
@@ -859,30 +766,35 @@ def run_motion_correction_workflow(
         if 'zstack_path' in parameters and 'z_motion_correction' in parameters.get('params_mcorr', {}):
             log_and_print("Starting z-motion correction...")
             time_z0 = time.time()
-            
-            zcorr_movie_path, _, _ = cz.z_motion(
-                movie_path, parameters, scale_range=scale_range
-            )
-            
-            # Save corrected movie, overwriting the original
-            if zcorr_movie_path is not None:
-                overwrite_movie_memmap(
-                    zcorr_movie_path,
-                    movie_path,
-                    clip=clip_movie,
-                    movie_type='zcorr',
-                    save_original=False,
-                    remove_input=True
+
+            try:
+                zcorr_movie_path, z_motion_scaling_factors, _ = cz.z_motion(
+                    movie_path, parameters, scale_range=scale_range
                 )
-                results['z_corrected'] = True
-            else:
+                results['z_motion_scaling_factors'] = z_motion_scaling_factors
+
+                # Save corrected movie, overwriting the original
+                if zcorr_movie_path is not None:
+                    overwrite_movie_memmap(
+                        zcorr_movie_path,
+                        movie_path,
+                        clip=clip_movie,
+                        movie_type='zcorr',
+                        save_original=False,
+                        remove_input=True
+                    )
+                    results['z_corrected'] = True
+                else:
+                    results['z_corrected'] = False
+
+                formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time_z0))
+                if zcorr_movie_path is not None:
+                    log_and_print(f"Z-motion correction completed in {formatted_time}.")
+                else:
+                    log_and_print(f"Z-motion computation completed in {formatted_time}.")
+            except Exception as e:
+                log_and_print(f"Z-motion correction failed: {e}", level='error')
                 results['z_corrected'] = False
-            
-            formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time_z0))
-            if zcorr_movie_path is not None:
-                log_and_print(f"Z-motion correction completed in {formatted_time}.")
-            else:
-                log_and_print(f"Z-motion computation completed in {formatted_time}.")
         
         # Create output movies (optional)
         if create_movies:
@@ -959,8 +871,8 @@ if __name__ == "__main__":
     pattern = args.pattern
     recompute = args.recompute
     create_movies = args.create_movies
-    save_mcorr_movie = args.format
-    
+    output_format = args.format
+
     # Load parameters from JSON file if provided
     parameters = {}
     if args.params:
@@ -978,5 +890,5 @@ if __name__ == "__main__":
         regex_pattern=pattern,
         recompute=recompute,
         create_movies=create_movies,
-        save_mcorr_movie=save_mcorr_movie
+        output_format=output_format
     )
