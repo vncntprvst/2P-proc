@@ -22,6 +22,11 @@ scripts/*
 !scripts/prepare_aind_test_data.py
 !scripts/validate_capsule_output.py
 !scripts/sbatch_benchmark_zcorr.sh
+!scripts/make_test_fixture.py
+
+# Test fixtures (generated; distributed as GitHub release assets)
+Mesmerize/test_data/
+Mesmerize/test_data.tar.gz
 
 # Build files
 dist/
