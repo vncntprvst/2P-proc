@@ -23,6 +23,7 @@ scripts/*
 !scripts/validate_capsule_output.py
 !scripts/sbatch_benchmark_zcorr.sh
 !scripts/make_test_fixture.py
+!scripts/download_test_data.sh
 
 # Test fixtures (generated; distributed as GitHub release assets)
 Mesmerize/test_data/

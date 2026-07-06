@@ -246,17 +246,30 @@ Jupyter notebooks in `Mesmerize/` for systematic parameter exploration:
 - `pipeline_notebook_template.ipynb`: Complete pipeline template (**Needs to be updated**)
 
 ## Testing
-**Note: the tests are outdated and may not reflect the current state of the pipeline.**
+
+Unit tests and the z-motion benchmark run on a small real-anatomy fixture
+(a downsampled subset of `C57_O1M2/10022023`: one short TSeries + its ZSeries
+reference stack), published as a GitHub release asset.
+
 ```bash
-# Download test data (~1.2GB)
+# Download the test fixture (~9 MB) into Mesmerize/test_data
 ./scripts/download_test_data.sh
 
-# Run motion correction test
-./scripts/run_motion_correction_test.sh
-
-# Run full test suite
+# Fast unit tests + synthetic z-motion benchmark (no data download needed)
 pytest tests/
+
+# Proper z-motion benchmark on real anatomy: impose a known 3D trajectory on
+# the real z-stack and check compute_zcorrel recovers it, then run a
+# qualitative pass on the actual recording.
+python tests/benchmarks/benchmark_zcorr.py \
+    --real-zstack Mesmerize/test_data/ZSeries-10022023-1300-004 \
+    --real-movie  Mesmerize/test_data/TSeries-10022023-1300-001 \
+    --xy-amplitude 1 --deform-amp 0.5 --save-results results/
 ```
+
+The fixture is regenerated from raw Bruker data with
+`scripts/make_test_fixture.py` (kept as small as possible so it can live as a
+release asset).
 
 ## Container Support
 
