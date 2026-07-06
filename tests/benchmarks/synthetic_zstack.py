@@ -32,14 +32,22 @@ import numpy as np
 import tifffile
 from scipy.ndimage import gaussian_filter, map_coordinates
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Volume generation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def make_3d_volume(n_z, height, width, n_cells=120,
-                   sigma_xy=6.0, sigma_z=1.5,
-                   bg_level=200.0, cell_brightness=2000.0, seed=42):
+
+def make_3d_volume(
+    n_z,
+    height,
+    width,
+    n_cells=120,
+    sigma_xy=6.0,
+    sigma_z=1.5,
+    bg_level=200.0,
+    cell_brightness=2000.0,
+    seed=42,
+):
     """Generate a synthetic 3D fluorescence volume.
 
     Parameters
@@ -81,9 +89,12 @@ def make_3d_volume(n_z, height, width, n_cells=120,
 
     for z0, y0, x0, amp in zip(cz, cy, cx, amplitudes):
         blob = amp * np.exp(
-            -0.5 * (((zz - z0) / sigma_z) ** 2
-                    + ((yy - y0) / sigma_xy) ** 2
-                    + ((xx - x0) / sigma_xy) ** 2)
+            -0.5
+            * (
+                ((zz - z0) / sigma_z) ** 2
+                + ((yy - y0) / sigma_xy) ** 2
+                + ((xx - x0) / sigma_xy) ** 2
+            )
         )
         volume += blob.astype(np.float32)
 
@@ -95,8 +106,8 @@ def make_3d_volume(n_z, height, width, n_cells=120,
 # Z-motion trajectories
 # ──────────────────────────────────────────────────────────────────────────────
 
-def make_rigid_z_trajectory(n_frames, amplitude_planes, temporal_smoothness,
-                             seed=42):
+
+def make_rigid_z_trajectory(n_frames, amplitude_planes, temporal_smoothness, seed=42):
     """Rigid per-frame z-offset (same across the whole FOV).
 
     Parameters
@@ -121,9 +132,15 @@ def make_rigid_z_trajectory(n_frames, amplitude_planes, temporal_smoothness,
     return smooth.astype(np.float32)
 
 
-def make_nonrigid_z_trajectory(n_frames, n_patches_y, n_patches_x,
-                                amplitude_planes, temporal_smoothness,
-                                spatial_smoothness=1.5, seed=42):
+def make_nonrigid_z_trajectory(
+    n_frames,
+    n_patches_y,
+    n_patches_x,
+    amplitude_planes,
+    temporal_smoothness,
+    spatial_smoothness=1.5,
+    seed=42,
+):
     """Non-rigid per-patch z-offsets with zero global mean per frame.
 
     The zero-mean constraint means a global (rigid) estimator should return
@@ -150,7 +167,9 @@ def make_nonrigid_z_trajectory(n_frames, n_patches_y, n_patches_x,
     rng = np.random.default_rng(seed)
     raw = rng.standard_normal((n_frames, n_patches_y, n_patches_x))
     # Smooth in time and space
-    smooth = gaussian_filter(raw, sigma=[temporal_smoothness, spatial_smoothness, spatial_smoothness])
+    smooth = gaussian_filter(
+        raw, sigma=[temporal_smoothness, spatial_smoothness, spatial_smoothness]
+    )
     # Remove global mean at each frame (enforce zero-mean non-rigid motion)
     smooth -= smooth.mean(axis=(1, 2), keepdims=True)
     # Normalise amplitude: mean std across patches
@@ -161,34 +180,96 @@ def make_nonrigid_z_trajectory(n_frames, n_patches_y, n_patches_x,
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Lateral (x/y) motion and anisotropic deformation
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def make_xy_trajectory(n_frames, amplitude_px, temporal_smoothness, seed=42):
+    """Rigid lateral (y, x) translation per frame, in pixels.
+
+    Real z-motion is never purely axial: the sample also drifts laterally.
+    compute_zcorrel registers each z-plane to the FOV before correlating, so a
+    faithful benchmark must include this in-plane motion for the estimator to
+    contend with.
+
+    Returns
+    -------
+    xy_offsets : ndarray, shape (n_frames, 2), float32  — (dy, dx) per frame.
+    """
+    rng = np.random.default_rng(seed + 1)
+    out = np.zeros((n_frames, 2), dtype=np.float32)
+    for k in range(2):
+        raw = rng.standard_normal(n_frames)
+        s = gaussian_filter(raw, sigma=temporal_smoothness)
+        s -= s.mean()
+        if s.std() > 0:
+            s = s / s.std() * amplitude_px
+        out[:, k] = s
+    return out
+
+
+def _deformation_field(H, W, amplitude_px, scale_px, rng):
+    """Smooth per-pixel (dy, dx) elastic displacement field.
+
+    A low-spatial-frequency random field warps the frame anisotropically —
+    modelling non-uniform in-plane tissue deformation that a rigid shift cannot
+    capture.
+    """
+    dy = gaussian_filter(rng.standard_normal((H, W)), sigma=scale_px)
+    dx = gaussian_filter(rng.standard_normal((H, W)), sigma=scale_px)
+    for f in (dy, dx):
+        if f.std() > 0:
+            f *= amplitude_px / f.std()
+    return dy.astype(np.float32), dx.astype(np.float32)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Movie generation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _sample_at_z_field(volume, z_field):
-    """Trilinear interpolation of volume at spatially varying z-positions.
+
+def _sample_fields(volume, z_field, y_field, x_field):
+    """Trilinear interpolation of volume at per-pixel (z, y, x) coordinates.
 
     Parameters
     ----------
     volume : ndarray, shape (n_z, H, W)
-    z_field : ndarray, shape (H, W) — z-coordinate for each pixel
+    z_field, y_field, x_field : ndarray, shape (H, W)
+        Sampling coordinate for every pixel.
 
     Returns
     -------
     frame : ndarray, shape (H, W), float32
     """
-    n_z, H, W = volume.shape
-    yy, xx = np.mgrid[0:H, 0:W]
-    coords = np.array([z_field.ravel(), yy.ravel(), xx.ravel()])
-    frame = map_coordinates(volume, coords, order=1, mode='nearest', prefilter=False)
+    H, W = z_field.shape
+    coords = np.array([z_field.ravel(), y_field.ravel(), x_field.ravel()])
+    frame = map_coordinates(volume, coords, order=1, mode="nearest", prefilter=False)
     return frame.reshape(H, W).astype(np.float32)
 
 
-def make_functional_movie(volume, z_nominal, z_offsets,
-                           patch_size_y=None, patch_size_x=None,
-                           noise_factor=0.02, seed=42):
+def _sample_at_z_field(volume, z_field):
+    """Trilinear interpolation at spatially varying z (no lateral warp)."""
+    n_z, H, W = volume.shape
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    return _sample_fields(volume, z_field, yy, xx)
+
+
+def make_functional_movie(
+    volume,
+    z_nominal,
+    z_offsets,
+    patch_size_y=None,
+    patch_size_x=None,
+    xy_offsets=None,
+    deform_amp=0.0,
+    deform_scale=None,
+    noise_factor=0.02,
+    seed=42,
+):
     """Generate a synthetic functional movie from a 3D volume.
 
-    Supports both rigid and non-rigid z-motion.
+    Supports rigid and non-rigid z-motion, optional rigid lateral (x/y)
+    translation, and optional anisotropic in-plane deformation.
 
     Parameters
     ----------
@@ -201,6 +282,14 @@ def make_functional_movie(volume, z_nominal, z_offsets,
     patch_size_y, patch_size_x : int or None
         When z_offsets is non-rigid, defines the pixel size of each
         spatial patch. If None, inferred from volume shape / n_patches.
+    xy_offsets : ndarray, shape (T, 2) or None
+        Per-frame rigid lateral (dy, dx) translation in pixels.
+    deform_amp : float
+        RMS amplitude (pixels) of a per-frame anisotropic elastic warp.
+        0 disables deformation.
+    deform_scale : float or None
+        Spatial correlation length (pixels) of the deformation field.
+        Defaults to H / 8.
     noise_factor : float
         Gaussian noise amplitude as a fraction of mean signal.
     seed : int
@@ -215,6 +304,9 @@ def make_functional_movie(volume, z_nominal, z_offsets,
     n_z, H, W = volume.shape
     rigid = z_offsets.ndim == 1
     T = z_offsets.shape[0]
+    if deform_scale is None:
+        deform_scale = H / 8.0
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 
     if not rigid:
         n_py, n_px = z_offsets.shape[1], z_offsets.shape[2]
@@ -246,8 +338,21 @@ def make_functional_movie(volume, z_nominal, z_offsets,
         # Clip to valid z-range (with half-plane margin for interpolation)
         np.clip(z_field, 0.5, n_z - 1.5, out=z_field)
 
+        # Lateral sampling coordinates: base grid + rigid shift + elastic warp
+        y_field, x_field = yy, xx
+        if xy_offsets is not None:
+            y_field = yy + xy_offsets[t, 0]
+            x_field = xx + xy_offsets[t, 1]
+        if deform_amp > 0:
+            dy, dx = _deformation_field(H, W, deform_amp, deform_scale, rng)
+            y_field = y_field + dy
+            x_field = x_field + dx
+        if xy_offsets is not None or deform_amp > 0:
+            y_field = np.clip(y_field, 0, H - 1)
+            x_field = np.clip(x_field, 0, W - 1)
+
         z_field_per_frame[t] = z_field
-        frame = _sample_at_z_field(volume, z_field)
+        frame = _sample_fields(volume, z_field, y_field, x_field)
 
         if noise_factor > 0:
             noise = rng.normal(0, noise_factor * frame.mean(), frame.shape)
@@ -261,6 +366,7 @@ def make_functional_movie(volume, z_nominal, z_offsets,
 # ──────────────────────────────────────────────────────────────────────────────
 # File I/O helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def save_zstack_tiff(volume, path):
     """Save 3D volume as a multi-page TIFF.
@@ -276,10 +382,10 @@ def save_zstack_tiff(volume, path):
     # compute_zcorrel does: Z_stack = np.flip(Z_stack, axis=1)
     # Pre-flip so that after compute_zcorrel's flip the stack is correct.
     to_save = np.flip(volume.astype(np.uint16), axis=1)
-    tifffile.imwrite(str(path), to_save, photometric='minisblack')
+    tifffile.imwrite(str(path), to_save, photometric="minisblack")
 
 
-def save_caiman_memmap(movie, out_dir, base_name='Yr'):
+def save_caiman_memmap(movie, out_dir, base_name="Yr"):
     """Save a movie as a CaImAn-format memmap file.
 
     The filename encodes shape in the CaImAn convention so that
@@ -299,9 +405,9 @@ def save_caiman_memmap(movie, out_dir, base_name='Yr'):
     fname = f"{base_name}_d1_{H}_d2_{W}_d3_1_order_F_frames_{T}_.mmap"
     fpath = Path(out_dir) / fname
     # CaImAn layout: float32, shape (H*W, T), Fortran column-major pixel order
-    mmap = np.memmap(fpath, dtype=np.float32, mode='w+', shape=(H * W, T), order='F')
+    mmap = np.memmap(fpath, dtype=np.float32, mode="w+", shape=(H * W, T), order="F")
     for t in range(T):
-        mmap[:, t] = movie[t].ravel(order='F')
+        mmap[:, t] = movie[t].ravel(order="F")
     mmap.flush()
     del mmap
     return fpath
