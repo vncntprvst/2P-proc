@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.10.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.10.1 -f Dockerfile context --no-cache
 
 # Version history:
+# v0.10.1: Fixing data_paths being sorted in alphabetical order.
 # v0.10.0: Adding Suite2P ops overrides.
 # v0.9.0: Initial container using optimouse package.
 
