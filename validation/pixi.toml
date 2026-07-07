@@ -12,7 +12,7 @@
 # Run something in the env:
 #   pixi run python -m pipeline.pipeline_mcorr <config.json>
 
-[project]
+[workspace]
 name = "optimouse-validation"
 version = "0.1.0"
 description = "Validation/benchmarking sandbox for 2P z-motion correction"
