@@ -24,6 +24,7 @@ scripts/*
 !scripts/sbatch_benchmark_zcorr.sh
 !scripts/make_test_fixture.py
 !scripts/download_test_data.sh
+!scripts/sbatch_zmotion_correction.sh
 
 # Test fixtures (generated; distributed as GitHub release assets)
 Mesmerize/test_data/

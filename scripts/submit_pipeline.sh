@@ -10,6 +10,11 @@
 #   2. sbatch_aind_extraction.sh  — AIND Suite2p extraction
 #   3. sbatch_roi_zcorr.sh        — ROI z-motion correction
 #
+# Alternative z-motion step: sbatch_zmotion_correction.sh runs the standalone
+# AIND z-motion correction capsule (aind_zmotion_correction) directly on the
+# motion-correction output + z-stack. Submit it manually after step 1, e.g.:
+#   sbatch --dependency=afterok:<mcorr_job> sbatch_zmotion_correction.sh config.json
+#
 # Flags:
 #   --skip-mcorr     Skip step 1; steps 2 and 3 run (3 depends on 2).
 #   --skip-extract   Skip step 2; step 3 runs immediately after step 1
