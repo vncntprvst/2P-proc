@@ -563,3 +563,11 @@ def export_cnmf_results(df, cnmf_obj, export_path, z_correlation=None):
     )
 
     log_and_print(f"Saved results to {export_path}/results_caiman.mat.")
+
+    # Also save the CNMF object as HDF5 so run_roi_zcorr can load it directly
+    # (it looks for export_path/cnmf_result.hdf5).
+    try:
+        cnmf_obj.save(str(Path(export_path) / "cnmf_result.hdf5"))
+        log_and_print(f"Saved CNMF result to {export_path}/cnmf_result.hdf5.")
+    except Exception as e:
+        log_and_print(f"Warning: could not save cnmf_result.hdf5: {e}", level="warning")
