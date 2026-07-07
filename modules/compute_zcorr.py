@@ -272,6 +272,7 @@ def compute_zcorr_for_frame(nfr, Treg, refAndMasks, ops):
     - xshift: float, the x-shift
     - zcorr: float, the z-correlation
     """
+    rigid = _get_suite2p_rigid()  # fetch here so joblib workers have it in scope
     data = Treg[nfr:nfr + 1]  # Get the current frame
     yshift = np.zeros((len(refAndMasks), 1), np.int32)
     xshift = np.zeros((len(refAndMasks), 1), np.int32)
@@ -581,13 +582,15 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
     Z_stack = np.stack(Z_stack, axis=0)
     zstack_tiff_file.close()
     
-    # Flip Z_stack to match the orientation of the movie
-    Z_stack = np.flip(Z_stack, axis=1)
+    # Flip Z_stack to match the orientation of the movie. np.flip returns a
+    # negative-stride view; make it contiguous because Suite2p's torch backend
+    # rejects negative strides in torch.from_numpy.
+    Z_stack = np.ascontiguousarray(np.flip(Z_stack, axis=1))
 
     # Load the movie
     movie_16bit, dims, T = load_memmap(movie_mmap_path)
     T_series = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
-    
+
     # Get the size of the movie
     Ny, Nx = T_series.shape[1], T_series.shape[2]
     
