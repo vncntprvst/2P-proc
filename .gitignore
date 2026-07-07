@@ -43,6 +43,9 @@ build/
 environments/.a2P/
 environments/*/
 
+# Pixi validation env (12+ GB solved env; pixi.lock is committed for reproducibility)
+validation/.pixi/
+
 # Large binary files
 *.mmap
 *.hdf5

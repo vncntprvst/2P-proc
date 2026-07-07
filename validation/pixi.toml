@@ -1,0 +1,45 @@
+# Pixi environment for z-motion correction validation / benchmarking.
+#
+# Production runs use containers; this pixi env is the reproducible *testing*
+# sandbox. The default `stable` feature pins the versions currently used in
+# production (CaImAn v1.12.2, Suite2p v0.14.0) so validation matches what users
+# run. A second `latest` environment (unpinned) lets us later test newer
+# releases without disturbing the stable baseline.
+#
+# Setup:
+#   cd validation && pixi install
+#   pixi run setup-caiman        # one-time: caimanmanager install
+# Run something in the env:
+#   pixi run python -m pipeline.pipeline_mcorr <config.json>
+
+[project]
+name = "optimouse-validation"
+version = "0.1.0"
+description = "Validation/benchmarking sandbox for 2P z-motion correction"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.10.*"
+pip = "*"
+
+[pypi-dependencies]
+# The pipeline package (editable, from the repo root one level up).
+optimouse = { path = "..", editable = true }
+
+[feature.stable.pypi-dependencies]
+# Production stability pins.
+caiman = { git = "https://github.com/flatironinstitute/CaImAn.git", tag = "v1.12.2" }
+suite2p = { git = "https://github.com/MouseLand/suite2p.git", tag = "v0.14.0", extras = ["all"] }
+
+[feature.latest.pypi-dependencies]
+# Latest releases — for compatibility testing only.
+caiman = { git = "https://github.com/flatironinstitute/CaImAn.git" }
+suite2p = { version = "*", extras = ["all"] }
+
+[environments]
+default = ["stable"]
+latest = ["latest"]
+
+[tasks]
+setup-caiman = "caimanmanager install"
