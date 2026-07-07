@@ -171,8 +171,16 @@ def test_motion_correction(run_on_subset=False, regex_pattern='*_Ch2_*.ome.tif',
     """
     print("Starting motion correction test...")
 
-    # Prepare test environment
-    test_data_dir = download_test_data_if_needed()
+    # Data-dependent integration test: skip under `pytest` when the fixture is
+    # not already present (don't trigger a multi-MB download mid-suite). Fetch it
+    # with scripts/download_test_data.sh, then run this test directly.
+    test_data_dir = repo_root / "Mesmerize" / "test_data"
+    if not test_data_dir.exists() or not list(test_data_dir.glob("*")):
+        try:
+            import pytest
+            pytest.skip("test_data fixture not present; run scripts/download_test_data.sh")
+        except ImportError:
+            test_data_dir = download_test_data_if_needed()
     print(f"Test data directory: {test_data_dir}")
     
     # # Create an output directory for test results
