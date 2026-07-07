@@ -1,14 +1,17 @@
-"""Validate the outputs of the aind_nonrigid_mcorr capsule.
+"""Validate the outputs of the AIND capsules (mcorr and z-motion).
 
 Run this after a test run to confirm the capsule produced well-formed outputs
-before submitting a PR to the AIND pipeline.
+before submitting a PR to the AIND pipeline. The capsule type is auto-detected
+from the marker file present in RESULTS_DIR (motion_corrected.h5 vs
+z_correlation.npz).
 
 Usage
 -----
     python validate_capsule_output.py RESULTS_DIR [INPUT_H5]
 
     RESULTS_DIR   Directory written by the capsule (/results mount target).
-    INPUT_H5      (Optional) Original input HDF5 to check shape consistency.
+    INPUT_H5      (Optional) Original input HDF5 to check shape consistency
+                  (motion-correction capsule only).
 
 Exit code 0 = all checks passed.  Non-zero = at least one check failed.
 """
@@ -31,16 +34,89 @@ def check(label, condition, detail=""):
     return condition
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("results_dir", type=Path)
-    parser.add_argument("input_h5", type=Path, nargs="?", default=None)
-    args = parser.parse_args()
-
-    results = args.results_dir
+def validate_processing_json(results):
+    """Shared processing.json check. Returns failure count."""
     failures = 0
+    print("\nprocessing.json:")
+    proc_path = results / "processing.json"
+    if not check("file exists", proc_path.exists()):
+        return failures + 1
+    try:
+        with open(proc_path) as f:
+            proc = json.load(f)
+        required_keys = {
+            "capsule_name",
+            "version",
+            "algorithm",
+            "start_time",
+            "end_time",
+            "parameters",
+        }
+        missing = required_keys - proc.keys()
+        if not check("required keys present", not missing, f"missing: {missing}"):
+            failures += 1
+        if not check("parameters non-empty", bool(proc.get("parameters", {}))):
+            failures += 1
+    except Exception as exc:
+        print(f"  [FAIL] could not parse JSON: {exc}")
+        failures += 1
+    return failures
 
-    print(f"\nValidating capsule outputs in: {results}\n")
+
+def validate_zmotion(results):
+    """Validate z-motion capsule outputs (z_correlation.npz, z_drift.png)."""
+    failures = 0
+    print(f"\nValidating z-motion capsule outputs in: {results}\n")
+
+    print("z_correlation.npz:")
+    npz_path = results / "z_correlation.npz"
+    if not check("file exists", npz_path.exists()):
+        failures += 1
+    else:
+        try:
+            d = np.load(npz_path)
+            has_keys = {"zcorr", "zpos"}.issubset(d.files)
+            if not check("'zcorr' and 'zpos' present", has_keys, str(d.files)):
+                failures += 1
+            else:
+                zcorr, zpos = d["zcorr"], d["zpos"]
+                if not check("zcorr is 2-D (n_z, T)", zcorr.ndim == 2, f"shape={zcorr.shape}"):
+                    failures += 1
+                if not check("zpos is 1-D (T)", zpos.ndim == 1, f"shape={zpos.shape}"):
+                    failures += 1
+                # zpos indices must fall within the z-stack range
+                in_range = zpos.min() >= 0 and zpos.max() < zcorr.shape[0]
+                if not check(
+                    "zpos within z-stack range",
+                    in_range,
+                    f"[{int(zpos.min())}, {int(zpos.max())}] vs n_z={zcorr.shape[0]}",
+                ):
+                    failures += 1
+                if not check(
+                    "zpos length matches zcorr T",
+                    zpos.shape[0] == zcorr.shape[1],
+                    f"{zpos.shape[0]} vs {zcorr.shape[1]}",
+                ):
+                    failures += 1
+        except Exception as exc:
+            print(f"  [FAIL] could not load npz: {exc}")
+            failures += 1
+
+    print("\nz_drift.png:")
+    png = results / "z_drift.png"
+    if not check("exists", png.exists()):
+        failures += 1
+    elif not check("size > 1 KB", png.stat().st_size > 1000, f"{png.stat().st_size} bytes"):
+        failures += 1
+
+    failures += validate_processing_json(results)
+    return failures
+
+
+def validate_mcorr(results, input_h5):
+    """Validate motion-correction capsule outputs."""
+    failures = 0
+    print(f"\nValidating mcorr capsule outputs in: {results}\n")
 
     # ── motion_corrected.h5 ──────────────────────────────────────────────────
     print("motion_corrected.h5:")
@@ -63,8 +139,8 @@ def main():
                         if not check("dtype is float", dtype_ok, str(arr.dtype)):
                             failures += 1
                         # Compare shape with input if provided
-                        if args.input_h5 and args.input_h5.exists():
-                            with h5py.File(args.input_h5, "r") as fin:
+                        if input_h5 and input_h5.exists():
+                            with h5py.File(input_h5, "r") as fin:
                                 for key in ("data", "mov", "movie"):
                                     if key in fin:
                                         in_shape = fin[key].shape
@@ -87,14 +163,18 @@ def main():
         failures += 1
     else:
         import csv
+
         for csv_path in csv_files:
             try:
                 with open(csv_path) as f:
                     reader = csv.DictReader(f)
                     rows = list(reader)
                     has_cols = {"frame", "x_shift", "y_shift"}.issubset(reader.fieldnames or [])
-                    if not check(f"{csv_path.name}: required columns present", has_cols,
-                                 str(reader.fieldnames)):
+                    if not check(
+                        f"{csv_path.name}: required columns present",
+                        has_cols,
+                        str(reader.fieldnames),
+                    ):
                         failures += 1
                     if not check(f"{csv_path.name}: non-empty ({len(rows)} rows)", len(rows) > 0):
                         failures += 1
@@ -114,31 +194,33 @@ def main():
             if not check(f"{name} size > 1 KB", size_ok, f"{png_path.stat().st_size} bytes"):
                 failures += 1
 
-    # ── processing.json ─────────────────────────────────────────────────────
-    print("\nprocessing.json:")
-    proc_path = results / "processing.json"
-    if not check("file exists", proc_path.exists()):
-        failures += 1
-    else:
-        try:
-            with open(proc_path) as f:
-                proc = json.load(f)
-            required_keys = {"capsule_name", "version", "algorithm", "start_time", "end_time", "parameters"}
-            missing = required_keys - proc.keys()
-            if not check("required keys present", not missing, f"missing: {missing}"):
-                failures += 1
-            # Sanity-check parameters
-            params = proc.get("parameters", {})
-            if not check("parameters non-empty", bool(params)):
-                failures += 1
-        except Exception as exc:
-            print(f"  [FAIL] could not parse JSON: {exc}")
-            failures += 1
+    failures += validate_processing_json(results)
+    return failures
 
-    # ── summary ─────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("results_dir", type=Path)
+    parser.add_argument("input_h5", type=Path, nargs="?", default=None)
+    args = parser.parse_args()
+
+    results = args.results_dir
+
+    # Auto-detect capsule type from the marker output file.
+    if (results / "z_correlation.npz").exists():
+        failures = validate_zmotion(results)
+    elif (results / "motion_corrected.h5").exists():
+        failures = validate_mcorr(results, args.input_h5)
+    else:
+        print(
+            f"No recognised capsule output found in {results} "
+            "(expected motion_corrected.h5 or z_correlation.npz)."
+        )
+        return 1
+
     print(f"\n{'─' * 50}")
     if failures == 0:
-        print(f"All checks passed. Capsule output looks good.")
+        print("All checks passed. Capsule output looks good.")
     else:
         print(f"{failures} check(s) FAILED. Review output above before submitting PR.")
     return failures
