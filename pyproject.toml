@@ -85,3 +85,8 @@ target-version = "py310"
 testpaths = ["tests"]
 # Collect the z-motion benchmark's fast synthetic cases alongside unit tests.
 python_files = ["test_*.py", "benchmark_*.py"]
+
+[tool.uv]
+# fastplotlib (viz extra) is only published as pre-releases; allow them so the
+# lockfile and `uv sync` agree. CaImAn is installed separately (see note above).
+prerelease = "allow"
