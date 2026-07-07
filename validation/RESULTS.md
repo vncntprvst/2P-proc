@@ -70,8 +70,18 @@ pixi run python ../tests/benchmarks/benchmark_correction_methods.py --real-zstac
 python plot_roi_zcorr.py <export_dir>   # real-data raw-vs-corrected trace figure + roi_zcorr_viz.npz
 ```
 
+## Coverage
+
+- **Both extraction backends validated** end-to-end (mcorr → z-motion → extraction →
+  `run_roi_zcorr` → `F_roi_zcorrected`): CNMF and Suite2p (the Suite2p ROI branch reads
+  `F.npy`/`stat.npy` and worked without further fixes).
+- **Full TSeries-001** (1600 frames) runs end-to-end: real z-drift planes 9–16 (~7 µm,
+  σ≈1 µm); CNMF → 593 ROIs → `F_roi_zcorrected` (593×1600). See `plot_roi_zcorr.py` output.
+
 ## Open / next
 
-- Validate the **Suite2p ROI-correction path** (`run_roi_zcorr` reading `F.npy`/`stat.npy`).
-- Run the **full TSeries-001** (single session; concatenated set only after).
-- Consider the `compute_zcorrel` sub-plane improvement suggested by stage 1.
+- Concatenated 4-session run (expected z-pos artifacts at session boundaries — validate
+  single-session first, done).
+- Possible `compute_zcorrel` improvement: sub-plane interpolation of the correlation peak
+  (stage 1 shows it floors at ~1 plane vs Suite2p's finer estimate).
+- Larger cell counts / activity regimes in the stage-3 sweep to further separate methods.
