@@ -21,8 +21,10 @@ if str(PROJECT_ROOT) not in sys.path:
 # Set a consistent seed
 random_seed = 42
 import numpy as np
+
 np.random.seed(random_seed)
 import random
+
 random.seed(random_seed)
 
 import time
@@ -46,7 +48,15 @@ from tifffile import TiffFile, TiffWriter, imread
 from modules import bruker_concat_tif as ct
 from pipeline.utils.pipeline_utils import log_and_print
 
-from scipy.ndimage import gaussian_filter, map_coordinates, shift, affine_transform, label, find_objects, median_filter
+from scipy.ndimage import (
+    gaussian_filter,
+    map_coordinates,
+    shift,
+    affine_transform,
+    label,
+    find_objects,
+    median_filter,
+)
 from scipy.stats import mode, linregress
 from scipy.io import savemat
 
@@ -65,17 +75,17 @@ import argparse
 
 def _resolve_zshift_geometry(zshift_params, imaging_params=None):
     """Return frame dimensions and micron scaling from z-shift params or imaging metadata."""
-    Nx = zshift_params.get('Nx')
-    Ny = zshift_params.get('Ny')
-    micron_per_pixel = zshift_params.get('micron_per_pixel')
+    Nx = zshift_params.get("Nx")
+    Ny = zshift_params.get("Ny")
+    micron_per_pixel = zshift_params.get("micron_per_pixel")
 
     if imaging_params:
         if Nx is None:
-            Nx = imaging_params.get('Npixel_x', Nx)
+            Nx = imaging_params.get("Npixel_x", Nx)
         if Ny is None:
-            Ny = imaging_params.get('Npixel_y', Ny)
+            Ny = imaging_params.get("Npixel_y", Ny)
         if micron_per_pixel is None:
-            micron_per_pixel = imaging_params.get('microns_per_pixel', micron_per_pixel)
+            micron_per_pixel = imaging_params.get("microns_per_pixel", micron_per_pixel)
 
     if Nx is None or Ny is None:
         raise KeyError(
@@ -91,9 +101,11 @@ def _resolve_zshift_geometry(zshift_params, imaging_params=None):
 
     return int(Nx), int(Ny), float(micron_per_pixel)
 
+
 # Type checking imports (not loaded at runtime)
 if TYPE_CHECKING:
     from suite2p.registration import rigid
+
 
 def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Initialize storage for the aligned images
@@ -108,7 +120,11 @@ def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Specify the number of iterations and the termination threshold
     number_of_iterations = 5000
     termination_eps = 1e-10
-    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, number_of_iterations, termination_eps)
+    criteria = (
+        cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+        number_of_iterations,
+        termination_eps,
+    )
 
     # Run the registration
     for iz in range(Zstack.shape[0]):
@@ -119,14 +135,26 @@ def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
             warp_matrix = np.eye(2, 3, dtype=np.float32)
 
         # Perform alignment using the ECC algorithm
-        (cc, warp_matrix) = cv2.findTransformECC(reference_image, Zstack[iz, :, :], warp_matrix, method, criteria)
+        cc, warp_matrix = cv2.findTransformECC(
+            reference_image, Zstack[iz, :, :], warp_matrix, method, criteria
+        )
 
         # Apply the transformation to align the images
         if method == cv2.MOTION_HOMOGRAPHY:
-            aligned_images[iz, :, :] = cv2.warpPerspective(Zstack[iz, :, :], warp_matrix, (Zstack.shape[2], Zstack.shape[1]), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
+            aligned_images[iz, :, :] = cv2.warpPerspective(
+                Zstack[iz, :, :],
+                warp_matrix,
+                (Zstack.shape[2], Zstack.shape[1]),
+                flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+            )
         else:
-            aligned_images[iz, :, :] = cv2.warpAffine(Zstack[iz, :, :], warp_matrix, (Zstack.shape[2], Zstack.shape[1]), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
-        
+            aligned_images[iz, :, :] = cv2.warpAffine(
+                Zstack[iz, :, :],
+                warp_matrix,
+                (Zstack.shape[2], Zstack.shape[1]),
+                flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+            )
+
         # Extract and store the shifts
         if method != cv2.MOTION_HOMOGRAPHY:  # Homography involves complex transformations
             dx, dy = warp_matrix[0, 2], warp_matrix[1, 2]
@@ -135,8 +163,8 @@ def self_align_zstack(Zstack, method=cv2.MOTION_TRANSLATION):
     # Return both the aligned images and the shifts
     return aligned_images, shifts
 
-def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, imaging_params=None):
 
+def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, imaging_params=None):
     """
     Shift images in zstack by dx and dy to compensate for drift due to objective angle.
 
@@ -163,12 +191,12 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, im
 
     """
     # Extract parameters
-    Ch = zshift_params['Ch']
-    alpha = zshift_params['alpha']
-    beta = zshift_params['beta']
-    step = zshift_params['step']
+    Ch = zshift_params["Ch"]
+    alpha = zshift_params["alpha"]
+    beta = zshift_params["beta"]
+    step = zshift_params["step"]
     Nx, Ny, micron_per_pixel = _resolve_zshift_geometry(zshift_params, imaging_params)
-    Nz = zshift_params['Nz']
+    Nz = zshift_params["Nz"]
 
     # Compute shifts in microns
     dx = np.tan(np.radians(alpha)) * step
@@ -189,11 +217,15 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, im
                 dyi = dy * (iz - Nz // 2)
 
                 # Create a grid for the shifted image
-                X, Y = np.meshgrid(np.arange(Nx) * micron_per_pixel - dxi, np.arange(Ny) * micron_per_pixel - dyi)
+                X, Y = np.meshgrid(
+                    np.arange(Nx) * micron_per_pixel - dxi, np.arange(Ny) * micron_per_pixel - dyi
+                )
 
                 # Interpolate the image on the new grid
                 coordinates = np.array([Y.ravel() / micron_per_pixel, X.ravel() / micron_per_pixel])
-                shifted_Zstack[iz] = map_coordinates(V, coordinates, order=1, mode='nearest').reshape(Ny, Nx)
+                shifted_Zstack[iz] = map_coordinates(
+                    V, coordinates, order=1, mode="nearest"
+                ).reshape(Ny, Nx)
     else:
         for iz in range(Nz):
             filename_temp = f"{zstack_in}/{zstack_in.name}_Cycle00001_Ch{Ch}_{iz + 1:06d}.ome.tif"
@@ -207,81 +239,87 @@ def shift_zstack(zshift_params, zstack_in, z_shifted_file, scale_range=False, im
             dyi = dy * (iz - Nz // 2)
 
             # Create a grid for the shifted image
-            X, Y = np.meshgrid(np.arange(Nx) * micron_per_pixel - dxi, np.arange(Ny) * micron_per_pixel - dyi)
+            X, Y = np.meshgrid(
+                np.arange(Nx) * micron_per_pixel - dxi, np.arange(Ny) * micron_per_pixel - dyi
+            )
 
             # Interpolate the image on the new grid
             coordinates = np.array([Y.ravel() / micron_per_pixel, X.ravel() / micron_per_pixel])
-            shifted_Zstack[iz] = map_coordinates(V, coordinates, order=1, mode='nearest').reshape(Ny, Nx)
-    
+            shifted_Zstack[iz] = map_coordinates(V, coordinates, order=1, mode="nearest").reshape(
+                Ny, Nx
+            )
+
     if scale_range:
-        # Normalize to uint16 range, from uint12 range (even though in float64 format at that point)    
+        # Normalize to uint16 range, from uint12 range (even though in float64 format at that point)
         shifted_Zstack = (shifted_Zstack * ((2**16 - 1) / (2**12 - 1))).astype(np.float32)
     else:
         shifted_Zstack = shifted_Zstack.astype(np.float32)
 
     # print(f"Aligned zstack shape: {shifted_Zstack.shape}, data type: {shifted_Zstack.dtype}, min: {shifted_Zstack.min()}, max: {shifted_Zstack.max()}")
-    
+
     # Refine alignment by registering the z-stack to iself
     registered_Zstack, shifts = self_align_zstack(shifted_Zstack)
 
     # Clip and convert to uint16
-    registered_Zstack = np.clip(registered_Zstack, 0, 2**16-1).astype(np.uint16)
-    
+    registered_Zstack = np.clip(registered_Zstack, 0, 2**16 - 1).astype(np.uint16)
+
     # print(f"Aligned zstack shape: {registered_Zstack.shape}, data type: {registered_Zstack.dtype}, min: {registered_Zstack.min()}, max: {registered_Zstack.max()}")
-        
+
     # # Concatenate the zstack and the aligned zstack horizontally
     # zstack_concat = np.concatenate((np.moveaxis(shifted_Zstack.astype(np.uint16), 0, -1), np.moveaxis(registered_Zstack.astype(np.uint16), 0, -1)), axis=1)
     # #  Save the concatenated zstacks as tiff
     # tiff_save_path = zstack_in / 'zstack_aligned.tif'
     # with TiffWriter(tiff_save_path, bigtiff=True) as tif:
     #     for iz in range(zstack_concat.shape[2]):
-    #         tif.write(zstack_concat[:, :, iz].astype(np.uint16), photometric='minisblack') 
-    
+    #         tif.write(zstack_concat[:, :, iz].astype(np.uint16), photometric='minisblack')
+
     zstack_out = zstack_in / z_shifted_file
     with TiffWriter(zstack_out, bigtiff=True) as writer:
         for iz in range(Nz):
             writer.write(registered_Zstack[iz])
-            
+
     print("Shifted and self-registered z-stack saved.")
-    
-    return zstack_out            
+
+    return zstack_out
+
 
 def default_zcorr_params():
     return {
-        "smooth_sigma": 1.15,                   
-        "pre_smooth": 0,             
-        "spatial_hp_reg": 42,       
-        "spatial_taper": 40,        
-        "maxregshift": 0.1,        
-        "smooth_sigma_time": 0,      
-        "nonrigid": False
+        "smooth_sigma": 1.15,
+        "pre_smooth": 0,
+        "spatial_hp_reg": 42,
+        "spatial_taper": 40,
+        "maxregshift": 0.1,
+        "smooth_sigma_time": 0,
+        "nonrigid": False,
     }
-    
+
+
 def compute_zcorr_for_frame(nfr, Treg, refAndMasks, ops):
     """
     Compute the z-correlation for a single frame, using phase correlation between the current frame and the cross-correlation reference image.
-    
+
     Parameters:
     - nfr: int, the frame number
     - Treg: 3D numpy array, the registered movie
     - refAndMasks: list of tuples, each tuple containing the maskMul, maskOffset, and cfRefImg
     - ops: dictionary, the parameters for z-correlation-
-    
+
     Returns:
     - yshift: float, the y-shift
     - xshift: float, the x-shift
     - zcorr: float, the z-correlation
     """
     rigid = _get_suite2p_rigid()  # fetch here so joblib workers have it in scope
-    data = Treg[nfr:nfr + 1]  # Get the current frame
+    data = Treg[nfr : nfr + 1]  # Get the current frame
     yshift = np.zeros((len(refAndMasks), 1), np.int32)
     xshift = np.zeros((len(refAndMasks), 1), np.int32)
     zcorr = np.zeros((len(refAndMasks), 1), np.float32)
-    
+
     for z, ref in enumerate(refAndMasks):
         maskMul, maskOffset, cfRefImg = ref
         cfRefImg = cfRefImg.squeeze()
-        
+
         # _, _, zcorr[z] = rigid.phasecorr(
         yshift[z], xshift[z], zcorr[z] = rigid.phasecorr(
             data=rigid.apply_masks(data=data, maskMul=maskMul, maskOffset=maskOffset),
@@ -293,6 +331,7 @@ def compute_zcorr_for_frame(nfr, Treg, refAndMasks, ops):
     # return zcorr
     return yshift, xshift, zcorr
 
+
 def compute_zcorrel_for_frame(frame, Z_stack, compute_shifts=False):
     """
     Compute correlation between the current frame and each frame in the Z-stack
@@ -302,40 +341,41 @@ def compute_zcorrel_for_frame(frame, Z_stack, compute_shifts=False):
     if compute_shifts:
         yshift = np.zeros(Z_stack.shape[0], np.float32)
         xshift = np.zeros(Z_stack.shape[0], np.float32)
-    
+
     for z_idx in range(Z_stack.shape[0]):
         if compute_shifts:
-            shift_values, _, _ = phase_cross_correlation(frame,
-                                                Z_stack[z_idx],
-                                                upsample_factor=100)
+            shift_values, _, _ = phase_cross_correlation(frame, Z_stack[z_idx], upsample_factor=100)
             yshift[z_idx] = shift_values[0]
             xshift[z_idx] = shift_values[1]
-            
+
             # Apply the computed shifts to align the z-stack frame with the current frame
-            shifted_z_frame = shift(Z_stack[z_idx], shift=(shift_values[0], shift_values[1]), mode='constant', cval=0.0)
+            shifted_z_frame = shift(
+                Z_stack[z_idx], shift=(shift_values[0], shift_values[1]), mode="constant", cval=0.0
+            )
 
             # Compute correlation coefficient after alignment
             zcorr[z_idx] = np.corrcoef(frame.ravel(), shifted_z_frame.ravel())[0, 1]
-            
+
         else:
             # Compute correlation coefficient without computing shifts
             zcorr[z_idx] = np.corrcoef(frame.ravel(), Z_stack[z_idx].ravel())[0, 1]
-            
+
     if compute_shifts:
         return zcorr, yshift, xshift
-    else: 
-        return zcorr       
-    
+    else:
+        return zcorr
+
 
 def plot_z_position(zpos, export_path):
     """
     Plot the Z-position over time and its histogram.
-    
+
     Args:
         zpos: Array of best z-positions per frame
         export_path: Path to save the plot
     """
     import matplotlib.pyplot as plt
+
     try:
         # Check if zpos is valid (not all NaNs)
         if zpos is None or not np.any(np.isfinite(zpos)):
@@ -343,68 +383,72 @@ def plot_z_position(zpos, export_path):
             return
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
-        
+
         # Plot 1: Z-position over time
-        ax1.plot(zpos, label='zpos')
-        ax1.set_xlabel('T-series Frame')
-        ax1.set_ylabel('Z-stack Frame')
-        ax1.set_title('Z Position over Frames')
+        ax1.plot(zpos, label="zpos")
+        ax1.set_xlabel("T-series Frame")
+        ax1.set_ylabel("Z-stack Frame")
+        ax1.set_title("Z Position over Frames")
         ax1.grid(True, alpha=0.3)
-        
+
         # Plot 2: Histogram of Z-positions
         # Handle scaling/centering text if needed, similar to the Matlab "mean +/- sd"
         z_mean = np.nanmean(zpos)
         z_std = np.nanstd(zpos)
-        
-        ax2.hist(zpos, bins=30, color='gray', edgecolor='black', alpha=0.7)
-        ax2.set_xlabel('Z-stack Frame')
-        ax2.set_ylabel('Frequency')
-        ax2.set_title(f'Z-position Distribution: {z_mean:.2f} +/- {z_std:.2f}')
+
+        ax2.hist(zpos, bins=30, color="gray", edgecolor="black", alpha=0.7)
+        ax2.set_xlabel("Z-stack Frame")
+        ax2.set_ylabel("Frequency")
+        ax2.set_title(f"Z-position Distribution: {z_mean:.2f} +/- {z_std:.2f}")
         ax2.grid(True, alpha=0.3)
-        
+
         plt.tight_layout()
-        
-        plot_export_path = export_path / 'plots'
+
+        plot_export_path = export_path / "plots"
         plot_export_path.mkdir(parents=True, exist_ok=True)
-        
+
         plt.savefig(plot_export_path / "z_drift.png", dpi=150)
         plt.close(fig)
         print(f"Saved Z-position drift plot to {plot_export_path / 'z_drift.png'}")
     except Exception as e:
         print(f"Error plotting z-position: {e}")
 
-def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=False,
-                    export_path=None, edge_crop=0.05, temporal_smooth=5, z_corr_params=None):
-    """Optimized z-position estimator.
 
-    Improvements over `compute_zcorrel_legacy`, each validated in `validation/`:
-      - **Masked phase correlation** (Suite2p's approach) instead of full-frame
-        Pearson: markedly more accurate and robust to residual lateral motion
-        (synthetic RMSE ~0.74 vs 1.74 planes).
-      - **Edge cropping** (`edge_crop`, fraction of each side): rejects the
-        NoRMCorre border region (`border_nan="copy"`), which otherwise drives the
-        phase-correlation estimate to the z-stack boundary on mcorr'd movies.
-      - **Temporal median smoothing** of `zpos` (`temporal_smooth` frames) to
-        suppress isolated multi-plane misassignments.
+def compute_zcorrel(
+    zstack_file,
+    movie_mmap_path,
+    smooth_sigma=3,
+    return_shifts=False,
+    export_path=None,
+    method="pearson",
+    edge_crop=0.0,
+    temporal_smooth=5,
+    z_corr_params=None,
+):
+    """Optimized z-position estimator (drop-in replacement for the legacy version).
 
-    Drop-in replacement for the legacy function; falls back to it if Suite2p is
-    not installed. Returns {'zcorr', 'zpos'} (+ 'yshift'/'xshift' if requested).
+    The default (`method="pearson"`, `edge_crop=0.0`, `temporal_smooth=5`) is the
+    legacy full-frame Pearson correlation plus **temporal median smoothing** of
+    `zpos` — the one improvement validated as safe on real (NoRMCorre-corrected)
+    data: real z-drift is smooth, so isolated multi-plane misassignments are
+    filtered out.
+
+    Two other options were tested and are OFF by default because they degrade on
+    mcorr'd production movies (validated in `validation/`), despite helping on
+    clean synthetic data:
+      - ``method="phasecorr"`` — Suite2p-style masked phase correlation. More
+        accurate on synthetic (RMSE ~0.65 vs ~1.7 planes) but latches onto the
+        deepest low-contrast plane on mcorr'd movies. Requires Suite2p; falls
+        back to Pearson if unavailable. Use only on raw / lightly-registered data.
+      - ``edge_crop`` (fraction per side) — meant to drop the NoRMCorre border,
+        but collapses the Pearson estimate to plane 0 on real data. Leave at 0.
+
+    See `compute_zcorrel_legacy` for the exact pre-smoothing behaviour.
     """
-    try:
-        rigid = _get_suite2p_rigid()
-    except ImportError:
-        print("Suite2p unavailable — falling back to compute_zcorrel_legacy.")
-        return compute_zcorrel_legacy(
-            zstack_file, movie_mmap_path, smooth_sigma=smooth_sigma,
-            return_shifts=return_shifts, export_path=export_path,
-        )
-
-    # Load and orient the z-stack (contiguous: Suite2p's torch backend rejects
-    # the negative strides from np.flip).
+    # ── Load z-stack + movie (shared) ────────────────────────────────────────
     with TiffFile(zstack_file) as f:
         Z_stack = np.stack([p.asarray() for p in f.pages], axis=0).astype(np.float32)
     Z_stack = np.ascontiguousarray(np.flip(Z_stack, axis=1))
-
     movie_16bit, dims, T = load_memmap(movie_mmap_path)
     T_series = np.reshape(movie_16bit.T, [T] + list(dims), order="F")
     nFrames, Ny, Nx = T_series.shape
@@ -412,53 +456,84 @@ def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=
         print("Z-stack dimensions do not match the movie dimensions.")
         return None
 
-    # Edge crop: drop the mcorr border artifacts from both movie and z-stack.
+    # ── Edge crop (reject mcorr border artifacts) ────────────────────────────
     my, mx = int(round(edge_crop * Ny)), int(round(edge_crop * Nx))
     if my > 0 and mx > 0:
-        T_series = np.ascontiguousarray(T_series[:, my:Ny - my, mx:Nx - mx])
-        Z_stack = np.ascontiguousarray(Z_stack[:, my:Ny - my, mx:Nx - mx])
-
-    ops = z_corr_params if z_corr_params is not None else default_zcorr_params()
-    ops["nonrigid"] = False
-    ops["smooth_sigma"] = smooth_sigma
-
-    # Build the phase-correlation reference (mask + FFT) for each z-plane.
-    refAndMasks = []
-    for Z in Z_stack:
-        maskMul, maskOffset = rigid.compute_masks(refImg=Z, maskSlope=3 * ops["smooth_sigma"])
-        cfRefImag = rigid.phasecorr_reference(refImg=Z, smooth_sigma=ops["smooth_sigma"])[np.newaxis]
-        refAndMasks.append((maskMul, maskOffset, cfRefImag))
-
+        T_series = np.ascontiguousarray(T_series[:, my : Ny - my, mx : Nx - mx])
+        Z_stack = np.ascontiguousarray(Z_stack[:, my : Ny - my, mx : Nx - mx])
     n_z = Z_stack.shape[0]
-    yshift = np.zeros((n_z, nFrames), np.float32)
-    xshift = np.zeros((n_z, nFrames), np.float32)
+
+    if method == "phasecorr":
+        try:
+            rigid = _get_suite2p_rigid()
+        except ImportError:
+            print("Suite2p unavailable — using Pearson method.")
+            method = "pearson"
+
+    yshift = xshift = None
     zcorr = np.zeros((n_z, nFrames), np.float32)
     t0 = time.time()
-    results = Parallel(n_jobs=-1)(
-        delayed(compute_zcorr_for_frame)(nfr, T_series, refAndMasks, ops)
-        for nfr in tqdm(range(nFrames), desc="Computing z-correlations (phasecorr)")
-    )
-    for i, (ys, xs, zc) in enumerate(results):
-        yshift[:, i] = np.asarray(ys, np.float32).squeeze()
-        xshift[:, i] = np.asarray(xs, np.float32).squeeze()
-        zcorr[:, i] = np.asarray(zc, np.float32).squeeze()
-    if os.name == "nt":
-        for p in multiprocessing.active_children():
-            if "LokyProcess" in p.name:
-                p.terminate()
-    print(f"Correlations for {nFrames} frames computed in {time.time() - t0:.2f} sec.")
 
-    # Best plane per frame, then a short temporal median filter to remove
-    # isolated jumps (real z-drift is smooth).
+    if method == "phasecorr":
+        ops = z_corr_params if z_corr_params is not None else default_zcorr_params()
+        ops["nonrigid"] = False
+        ops["smooth_sigma"] = smooth_sigma
+        refAndMasks = []
+        for Z in Z_stack:
+            maskMul, maskOffset = rigid.compute_masks(refImg=Z, maskSlope=3 * ops["smooth_sigma"])
+            cfRef = rigid.phasecorr_reference(refImg=Z, smooth_sigma=ops["smooth_sigma"])[
+                np.newaxis
+            ]
+            refAndMasks.append((maskMul, maskOffset, cfRef))
+        yshift = np.zeros((n_z, nFrames), np.float32)
+        xshift = np.zeros((n_z, nFrames), np.float32)
+        results = Parallel(n_jobs=-1)(
+            delayed(compute_zcorr_for_frame)(nfr, T_series, refAndMasks, ops)
+            for nfr in tqdm(range(nFrames), desc="z-correlations (phasecorr)")
+        )
+        for i, (ys, xs, zc) in enumerate(results):
+            yshift[:, i] = np.asarray(ys, np.float32).squeeze()
+            xshift[:, i] = np.asarray(xs, np.float32).squeeze()
+            zcorr[:, i] = np.asarray(zc, np.float32).squeeze()
+        if os.name == "nt":
+            for p in multiprocessing.active_children():
+                if "LokyProcess" in p.name:
+                    p.terminate()
+    else:  # pearson
+        # Register each z-plane to the movie's mean FOV, then Pearson-correlate.
+        fov = T_series.mean(axis=0)
+        corrs = np.zeros(n_z, np.float32)
+        for z in range(n_z):
+            sh, _, _ = phase_cross_correlation(Z_stack[z], fov, upsample_factor=10)
+            warped = warp(Z_stack[z], AffineTransform(translation=(sh[1], sh[0])))
+            corrs[z] = np.corrcoef(fov.ravel(), gaussian_filter(warped, 1).ravel())[0, 1]
+        best = int(np.argmax(corrs))
+        sh, _, _ = phase_cross_correlation(Z_stack[best], fov, upsample_factor=10)
+        tform = AffineTransform(translation=(sh[1], sh[0]))
+        Zreg = np.stack([warp(Z_stack[z], tform) for z in range(n_z)]).astype(np.float32)
+        sf = gaussian_filter(T_series, sigma=[0, smooth_sigma, smooth_sigma])
+        sz = gaussian_filter(Zreg, sigma=[0, smooth_sigma, smooth_sigma])
+        results = Parallel(n_jobs=-1)(
+            delayed(compute_zcorrel_for_frame)(frame, sz)
+            for frame in tqdm(sf, desc="z-correlations (pearson)")
+        )
+        for i, zc in enumerate(results):
+            zcorr[:, i] = np.asarray(zc, np.float32).squeeze()
+
+    print(f"Correlations ({method}) for {nFrames} frames in {time.time() - t0:.2f} sec.")
+
+    # ── Best plane per frame + temporal median smoothing ─────────────────────
     zpos = np.argmax(gaussian_filter(zcorr, sigma=3, axes=0), axis=0).astype(np.float32)
     if temporal_smooth and temporal_smooth > 1:
         zpos = median_filter(zpos, size=int(temporal_smooth), mode="nearest")
     zpos = zpos.astype(np.uint16)
 
-    if return_shifts:
+    if return_shifts and yshift is not None:
         z_correlation = {
-            "yshift": yshift.astype(np.float32), "xshift": xshift.astype(np.float32),
-            "zcorr": zcorr.astype(np.float32), "zpos": zpos,
+            "yshift": yshift,
+            "xshift": xshift,
+            "zcorr": zcorr.astype(np.float32),
+            "zpos": zpos,
         }
     else:
         z_correlation = {"zcorr": zcorr.astype(np.float32), "zpos": zpos}
@@ -474,7 +549,9 @@ def compute_zcorrel(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=
     return z_correlation
 
 
-def compute_zcorrel_legacy(zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=False, export_path=None):
+def compute_zcorrel_legacy(
+    zstack_file, movie_mmap_path, smooth_sigma=3, return_shifts=False, export_path=None
+):
     """
     Legacy z-position estimator: full-frame Pearson correlation of each movie
     frame against the FOV-registered anatomical z-stack. Kept for comparison and
@@ -487,38 +564,38 @@ def compute_zcorrel_legacy(zstack_file, movie_mmap_path, smooth_sigma=3, return_
     #####################################
     ## 1. Load and prepare the z-stack ##
     #####################################
-    
+
     # Load the z-stack and stack frames into a 3D array
     with TiffFile(zstack_file) as zstack_tiff_file:
         pages = [page.asarray() for page in zstack_tiff_file.pages]
     Z_stack = np.stack(pages, axis=0).astype(np.float32)
-    
+
     # Flip Z_stack to match the orientation of the movie
     Z_stack = np.flip(Z_stack, axis=1)
-    
+
     # Convert to float (not strictly necessary, but better be consistent with the movie data type)
     Z_stack = Z_stack.astype(np.float32)
 
     ###################################
     ## 2. Load and prepare the movie ##
-    ################################### 
-    
+    ###################################
+
     # Load the movie
     movie_16bit, dims, T = load_memmap(movie_mmap_path)
-    T_series = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
-    
+    T_series = np.reshape(movie_16bit.T, [T] + list(dims), order="F")
+
     # Get the number of frames and the size of the movie
     nFrames, Ny, Nx = T_series.shape
-    
+
     # Check that Z-stack matches the size of the movie
     if Z_stack.shape[1] != Ny or Z_stack.shape[2] != Nx:
         print("Z-stack dimensions do not match the movie dimensions.")
         return None
-    
+
     ########################################################
     ## 3. Register the z-stack to the movie’s average FOV ##
     ########################################################
-    
+
     # Zstack_0 is the frame in the z-stack with the best correlation with the mean of the T-series
     # To find it, we first realign each frame of the zstack to the mean of the T-series
 
@@ -530,11 +607,11 @@ def compute_zcorrel_legacy(zstack_file, movie_mmap_path, smooth_sigma=3, return_
     #     For each plane z, compute the rigid shift needed to align Z_stack[z] with fov_image using phase_cross_correlation.
     #     Apply the shift, then compute the correlation coefficient.
     #     Select the plane with the highest correlation as the “best” reference plane Zstack_0.
-    
+
     correlations = np.zeros(Z_stack.shape[0], np.float32)
     for z_idx in range(Z_stack.shape[0]):
         # Perform z-stack image registration
-        shift, _ , _ = phase_cross_correlation(Z_stack[z_idx], fov_image, upsample_factor=100)
+        shift, _, _ = phase_cross_correlation(Z_stack[z_idx], fov_image, upsample_factor=100)
         print(f"Shift for z-stack frame {z_idx}: {shift}")
         # Create the transformation matrix (for translation only)
         tform = AffineTransform(translation=(shift[1], shift[0]))
@@ -551,11 +628,11 @@ def compute_zcorrel_legacy(zstack_file, movie_mmap_path, smooth_sigma=3, return_
     Zstack_0 = Z_stack[best_z_index]
 
     # Print the index of the frame in the z-stack
-    print(f'The frame in the z-stack with the best correlation is frame {best_z_index}')
+    print(f"The frame in the z-stack with the best correlation is frame {best_z_index}")
 
     # Apply the best-plane alignment to the whole stack
     # We perform image registration again, but just between the best frame (reference) in the z-stack and the FOV
-    shift, _ , _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=100)
+    shift, _, _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=100)
 
     # Create the transformation matrix (for translation only)
     tform = AffineTransform(translation=(shift[1], shift[0]))
@@ -564,80 +641,77 @@ def compute_zcorrel_legacy(zstack_file, movie_mmap_path, smooth_sigma=3, return_
     Zstack_reg = np.zeros_like(Z_stack)
     for iz in range(Z_stack.shape[0]):
         Zstack_reg[iz, :, :] = warp(np.float32(Z_stack[iz, :, :]), tform)
-    
+
     ###################################################
     ## 4. Compute z-correlation for each movie frame ##
     ###################################################
-    
+
     # For each frame in the movie:
 
     # Compare it to each plane z in the registered z-stack.
     # If return_shifts=True, use phase_cross_correlation to find sub-pixel x–y shifts and align that z-plane.
     # Compute the correlation coefficient of the aligned plane vs. the frame.
     # Store the correlation in zcorr[z, frame].
-    
+
     # Initialize arrays
     zcorr = np.zeros((Z_stack.shape[0], nFrames), np.float32)
     if return_shifts:
         yshift = np.zeros((Z_stack.shape[0], nFrames), np.float32)
         xshift = np.zeros((Z_stack.shape[0], nFrames), np.float32)
-    
+
     del Z_stack, Zstack_0, shift
     gc.collect()
-    
+
     t0 = time.time()
-     
+
     smoothed_f_func = gaussian_filter(T_series, sigma=[0, smooth_sigma, smooth_sigma])
     smoothed_z_stack = gaussian_filter(Zstack_reg, sigma=[0, smooth_sigma, smooth_sigma])
-                   
-    # Use Parallel 
+
+    # Use Parallel
     results = Parallel(n_jobs=-1)(
         delayed(compute_zcorrel_for_frame)(frame, smoothed_z_stack, compute_shifts=return_shifts)
         for frame in tqdm(smoothed_f_func, desc="Computing z-correlations")
     )
-                
-    if return_shifts:    
+
+    if return_shifts:
         for frameNum, result in enumerate(results):
-            zcorr[:, frameNum], yshift[:, frameNum], xshift[:, frameNum]= result
+            zcorr[:, frameNum], yshift[:, frameNum], xshift[:, frameNum] = result
     else:
         for frameNum, result in enumerate(results):
             zcorr[:, frameNum] = result
-    
+
     # Kill all LokyProcess workers (Windows only)
-    if os.name == 'nt':
+    if os.name == "nt":
         for p in multiprocessing.active_children():
-            if 'LokyProcess' in p.name:
+            if "LokyProcess" in p.name:
                 p.terminate()
-    
-    print (f"Correlations for {nFrames} frames computed in {time.time() - t0:.2f} sec.")               
+
+    print(f"Correlations for {nFrames} frames computed in {time.time() - t0:.2f} sec.")
 
     # Get the optimal z position for each frame
     zpos = np.argmax(gaussian_filter(zcorr, sigma=3, axes=0), axis=0)
     zpos = zpos.astype(np.uint16)
-    
+
     ###################################
     ## 5. Return correlation results ##
     ###################################
-    
+
     # The function returns a dictionary containing:
 
     #     zcorr: A 2D array [z, frame] of correlation coefficients.
     #     zpos: The chosen best z-plane per frame.
     #     (Optional) yshift and xshift arrays if return_shifts=True.
-    
+
     # Save z-correlation variables to a file
     if return_shifts:
         z_correlation = {
-            'yshift': yshift.astype(np.float32),
-            'xshift': xshift.astype(np.float32),
-            'zcorr': zcorr.astype(np.float32),
-            'zpos': zpos.astype(np.uint16)
+            "yshift": yshift.astype(np.float32),
+            "xshift": xshift.astype(np.float32),
+            "zcorr": zcorr.astype(np.float32),
+            "zpos": zpos.astype(np.uint16),
         }
     else:
-        z_correlation = {
-            'zcorr': zcorr.astype(np.float32),
-            'zpos': zpos.astype(np.uint16)
-        }
+        z_correlation = {"zcorr": zcorr.astype(np.float32), "zpos": zpos.astype(np.uint16)}
 
     if export_path is None:
         export_path = movie_mmap_path.parents[1]
@@ -646,40 +720,46 @@ def compute_zcorrel_legacy(zstack_file, movie_mmap_path, smooth_sigma=3, return_
 
     del zcorr, zpos, smoothed_f_func, smoothed_z_stack, T_series, movie_16bit
     gc.collect()
-    
+
     # Plot results
     try:
-        plot_z_position(
-            z_correlation['zpos'],
-            export_path
-        )
+        plot_z_position(z_correlation["zpos"], export_path)
     except Exception as e:
         print(f"Failed to plot z-position summary: {e}")
 
     return z_correlation
 
+
 def _get_suite2p_rigid():
     """Lazy import of Suite2p registration functions"""
     try:
         from suite2p.registration import rigid
+
         return rigid
     except ImportError:
         raise ImportError(
-            "Suite2p required for this function. "
-            "Install with: pip install suite2p"
+            "Suite2p required for this function. " "Install with: pip install suite2p"
         )
 
-def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, smoothing=False, smooth_sigma=1, return_shifts=False):
+
+def compute_zcorrel_suite2p(
+    zstack_file,
+    movie_mmap_path,
+    z_corr_params=None,
+    smoothing=False,
+    smooth_sigma=1,
+    return_shifts=False,
+):
     """
     Computes correlation and x/y shifts in z for each frame in the movie, using the anatomical z-stack as reference.
     Computes z-position for each frame by finding the z-stack frame with the highest correlation.
-    
+
     The function is adapted from Suite2P's function `compute_zpos`:
     https://github.com/MouseLand/suite2p/blob/193e7f1f656bfbd1c100eb51411737c80f54ac3c/suite2p/registration/zalign.py#L125
     Copyright © 2023 Howard Hughes Medical Institute, Authored by Carsen Stringer and Marius Pachitariu.
     """
     rigid = _get_suite2p_rigid()
-    
+
     # Load the z-stack and stack frames into a 3D array
     zstack_tiff_file = TiffFile(zstack_file)
     Z_stack = []
@@ -687,7 +767,7 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
         Z_stack.append(page.asarray())
     Z_stack = np.stack(Z_stack, axis=0)
     zstack_tiff_file.close()
-    
+
     # Flip Z_stack to match the orientation of the movie. np.flip returns a
     # negative-stride view; make it contiguous because Suite2p's torch backend
     # rejects negative strides in torch.from_numpy.
@@ -695,34 +775,34 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
 
     # Load the movie
     movie_16bit, dims, T = load_memmap(movie_mmap_path)
-    T_series = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
+    T_series = np.reshape(movie_16bit.T, [T] + list(dims), order="F")
 
     # Get the size of the movie
     Ny, Nx = T_series.shape[1], T_series.shape[2]
-    
+
     # Check that Z-stack matches the size of the movie
     if Z_stack.shape[1] != Ny or Z_stack.shape[2] != Nx:
         print("Z-stack dimensions do not match the movie dimensions.")
         return None
-            
+
     # Get the number of frames in the movie
     nFrames, _, _ = T_series.shape
-    
+
     # Initialize arrays
     # if return_shifts:
     yshift = np.zeros((Z_stack.shape[0], nFrames), np.float32)
     xshift = np.zeros((Z_stack.shape[0], nFrames), np.float32)
     zcorr = np.zeros((Z_stack.shape[0], nFrames), np.float32)
-    
+
     t0 = time.time()
-    
+
     # Set z_corr_params to default if not provided
     if z_corr_params is None:
         ops = default_zcorr_params()
-    else:     
+    else:
         ops = z_corr_params
     ops["nonrigid"] = False
-    
+
     refAndMasks = []
     for Z in Z_stack:
         maskMul, maskOffset = rigid.compute_masks(
@@ -735,7 +815,7 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
         cfRefImag = cfRefImag[np.newaxis, :, :]
         # Append the maskMul, maskOffset, and cfRefImag to refAndMasks
         refAndMasks.append((maskMul, maskOffset, cfRefImag))
-  
+
     # # Compute zcorr for each frame
     # with concurrent.futures.ThreadPoolExecutor() as executor:
     #     # Submit the compute_zcorr_for_frame function to the executor
@@ -749,9 +829,12 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
     #             np.asarray(zcorr_res, dtype=np.float32).squeeze()
     #         )
     # print (f"{nFrames} frames processed in {time.time() - t0:.2f} sec.")
-    
-    # Use joblib.Parallel 
-    results = Parallel(n_jobs=-1)(delayed(compute_zcorr_for_frame)(nfr, T_series, refAndMasks, ops) for nfr in tqdm(range(nFrames), desc="Processing frames"))
+
+    # Use joblib.Parallel
+    results = Parallel(n_jobs=-1)(
+        delayed(compute_zcorr_for_frame)(nfr, T_series, refAndMasks, ops)
+        for nfr in tqdm(range(nFrames), desc="Processing frames")
+    )
 
     # As the threads complete, store the results in the yshift, xshift, and zcorr arrays
     for i, result in enumerate(results):
@@ -759,17 +842,17 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
         yshift[:, i], xshift[:, i], zcorr[:, i] = (
             np.asarray(yshift_res, dtype=np.int32).squeeze(),
             np.asarray(xshift_res, dtype=np.int32).squeeze(),
-            np.asarray(zcorr_res, dtype=np.float32).squeeze()
+            np.asarray(zcorr_res, dtype=np.float32).squeeze(),
         )
 
     # Kill all LokyProcess workers (Windows only)
-    if os.name == 'nt':
+    if os.name == "nt":
         for p in multiprocessing.active_children():
-            if 'LokyProcess' in p.name:
+            if "LokyProcess" in p.name:
                 p.terminate()
-    
-    print (f"{nFrames} frames processed in {time.time() - t0:.2f} sec.")
-                    
+
+    print(f"{nFrames} frames processed in {time.time() - t0:.2f} sec.")
+
     # # Without threading
     # for frameNum in range(nFrames):
     #     yshift_res, xshift_res, zcorr_res = compute_zcorr_for_frame(frameNum, T_series, refAndMasks, ops)
@@ -777,14 +860,14 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
     #     yshift[:, frameNum] = yshift_res.squeeze()
     #     xshift[:, frameNum] = xshift_res.squeeze()
     #     if frameNum % 10 == 0:
-    #         print(f"{frameNum}/{nFrames} frames, {time.time() - t0:.2f} sec.")            
-        
+    #         print(f"{frameNum}/{nFrames} frames, {time.time() - t0:.2f} sec.")
+
     # print(f"{frameNum}/{nFrames} frames, {time.time() - t0:.2f} sec.")
 
     # Get the optimal z position for each frame
     zpos = np.argmax(gaussian_filter(zcorr, sigma=3, axes=0), axis=0)
     zpos = zpos.astype(np.uint16)
-    
+
     # import matplotlib.pyplot as plt
     # plt.figure()
     # plt.plot(zpos)
@@ -793,25 +876,25 @@ def compute_zcorrel_suite2p(zstack_file, movie_mmap_path, z_corr_params=None, sm
     # plt.title('Z Position over Frames')
     # plt.grid(True)
     # plt.savefig(movie_mmap_path.parents[1] / "z_drift_s3.png")
-    
+
     # Save z-correlation variables to a file in the mesmerize folder, preserving data types and accuracy
     if return_shifts:
         z_correlation = {
-            'yshift': yshift.astype(np.int32),
-            'xshift': xshift.astype(np.int32),
-            'zcorr': zcorr.astype(np.float32),
-            'zpos': zpos.astype(np.uint16)
+            "yshift": yshift.astype(np.int32),
+            "xshift": xshift.astype(np.int32),
+            "zcorr": zcorr.astype(np.float32),
+            "zpos": zpos.astype(np.uint16),
         }
-        warnings.warn("compute_zcorrel_suite2p returns x/y shifts as integers. Use compute_zcorrel for float x/y shifts.")
+        warnings.warn(
+            "compute_zcorrel_suite2p returns x/y shifts as integers. Use compute_zcorrel for float x/y shifts."
+        )
     else:
-        z_correlation = {
-            'zcorr': zcorr.astype(np.float32),
-            'zpos': zpos.astype(np.uint16)
-        }
-                    
+        z_correlation = {"zcorr": zcorr.astype(np.float32), "zpos": zpos.astype(np.uint16)}
+
     np.savez(movie_mmap_path.parents[1] / "z_correlation.npz", **z_correlation)
 
     return z_correlation
+
 
 def save_mmap_movie(movie, movie_path):
     """
@@ -823,87 +906,96 @@ def save_mmap_movie(movie, movie_path):
     # Transpose the array to (y, x, T)
     transposed_array = movie.transpose(1, 2, 0)
     # Flatten the transposed array in 'F' order (to align with the loading code)
-    flattened_array = transposed_array.flatten(order='F')
+    flattened_array = transposed_array.flatten(order="F")
     # Create a new memmap file with write access
-    movie_ = np.memmap(movie_path, dtype='float32', mode='w+', shape=flattened_array.shape)
+    movie_ = np.memmap(movie_path, dtype="float32", mode="w+", shape=flattened_array.shape)
     movie_[:] = flattened_array[:]
     # Flush changes to disk and close the memmap
     del movie_
-    del flattened_array    
+    del flattened_array
     gc.collect()
-    
+
     # Add the path to the memmap file to the memmap_paths.json file
-    memmap_paths = {'zcorr_movie_path': str(movie_path)}
-    with open(movie_path.parent / 'memmap_paths.json', 'w') as f:
+    memmap_paths = {"zcorr_movie_path": str(movie_path)}
+    with open(movie_path.parent / "memmap_paths.json", "w") as f:
         json.dump(memmap_paths, f)
-        
+
     return movie_path
 
 
 def patch_regress(frame_data, shift_patches=False):
     """
-    Calculate the linear least-squares regression between the F_func movie and the z-stack 
+    Calculate the linear least-squares regression between the F_func movie and the z-stack
     for each patch at several depths around zpos.
-    
-    Inputs: 
-    - frame_data: tuple containing the frame number, the frame data, the z-stack, 
+
+    Inputs:
+    - frame_data: tuple containing the frame number, the frame data, the z-stack,
                     the dimensions of the movie, the patch size,
                     the step size, the current zpos, and the valid indices.
-    
+
     Outputs:
     - results: list of dictionaries containing the r_squared, slope,
                 intercept, frame number, patch number, patch x/y limits,
-                patch z index, and patch z position. 
+                patch z index, and patch z position.
     """
-    
+
     # np.seterr(over='raise')
-        
+
     # fram_start_time = time.time()
-    
+
     if shift_patches:
         print("Shifting patches option is not tested yet.")
 
-    frameNum, frame_F_func, Zstack, Nx, Ny, patch_size, step_size, current_zpos, valid_indices = frame_data
-        
+    frameNum, frame_F_func, Zstack, Nx, Ny, patch_size, step_size, current_zpos, valid_indices = (
+        frame_data
+    )
+
     patch_regress_results = []
-        
+
     # Clip Z_frame_shifted to uint16 range
-    Z_frame_clipped = np.clip(Zstack, 0, 2**16-1)
-        
+    Z_frame_clipped = np.clip(Zstack, 0, 2**16 - 1)
+
     # Initialize patch number
     patch_num = -1
-    
-    # Loop over patches, moving vertically (along columns) first, then horizontally (along rows)    
+
+    # Loop over patches, moving vertically (along columns) first, then horizontally (along rows)
     for i in range(0, Nx, step_size[1]):
         for j in range(0, Ny, step_size[0]):
             # Allow for a last partial patch on the right and bottom borders, but not more
-            if i + patch_size[1] > Nx and patch_size_x < patch_size[1] and patch_size_y < patch_size[0]:
-                continue 
+            if (
+                i + patch_size[1] > Nx
+                and patch_size_x < patch_size[1]
+                and patch_size_y < patch_size[0]
+            ):
+                continue
             if j + patch_size[0] > Ny and patch_size_y < patch_size[0]:
-                continue 
+                continue
             # Adjust the patch size for patches on the bottom and right borders
             patch_size_x = patch_size[1] if i + patch_size[1] <= Nx else Nx - i
             patch_size_y = patch_size[0] if j + patch_size[0] <= Ny else Ny - j
 
             # Get the patch from the frame data
-            T_patch = frame_F_func[j:j+patch_size_y, i:i+patch_size_x, ].ravel()
+            T_patch = frame_F_func[
+                j : j + patch_size_y,
+                i : i + patch_size_x,
+            ].ravel()
             # Increment patch number
             patch_num += 1
-            
+
             # print(f"Frame {frameNum}, Patch {patch_num}, Patch Size: {patch_size_y}x{patch_size_x}")
-            
+
             if shift_patches:
                 # Define the maximum shift in pixels (both directions)
                 max_shift = 3
                 best_corr = -np.inf
                 best_shift = (0, 0)
-    
+
             # Initialize results list
             patch_results = []
             # Loop over valid depth indices
             for z_idx in valid_indices:
-                Z_patch = Z_frame_clipped[j:j+patch_size_y, i:i+patch_size_x, z_idx].ravel()
-                
+                Z_patch = Z_frame_clipped[j : j + patch_size_y, i : i + patch_size_x, z_idx].ravel()
+
                 if T_patch.size == Z_patch.size:
                     # If shift_patches is True, find the best shift for T_patch
                     if shift_patches:
@@ -916,67 +1008,75 @@ def patch_regress(frame_data, shift_patches=False):
                                 if corr > best_corr:
                                     best_corr = corr
                                     best_shift = (dy, dx)
-                        
+
                         # Apply the best shift to T_patch_img and flatten it for regression
                         T_patch = np.roll(T_patch, shift=best_shift, axis=(0, 1)).ravel()
-    
+
                     _, _, r_value, _, _ = linregress(T_patch, Z_patch)
                     # try:
-                    patch_results.append({
-                    'r_squared': r_value**2, 'Z_patch': Z_patch, 
-                    'frame_num': frameNum, 'patch_number': patch_num,
-                    'patch_x_lims': [i, i+patch_size_x], 'patch_y_lims': [j, j+patch_size_y],
-                    'patch_z_idx': int(z_idx) - int(current_zpos), 'patch_z_pos': z_idx
-                    })
+                    patch_results.append(
+                        {
+                            "r_squared": r_value**2,
+                            "Z_patch": Z_patch,
+                            "frame_num": frameNum,
+                            "patch_number": patch_num,
+                            "patch_x_lims": [i, i + patch_size_x],
+                            "patch_y_lims": [j, j + patch_size_y],
+                            "patch_z_idx": int(z_idx) - int(current_zpos),
+                            "patch_z_pos": z_idx,
+                        }
+                    )
                     if shift_patches:
                         # Append the best shift to the results
-                        patch_results[-1]['best_shift'] = best_shift
-                        
+                        patch_results[-1]["best_shift"] = best_shift
+
                     # not needed: 'slope': slope, 'intercept': intercept,
-                    
+
                     # except FloatingPointError:
                     #     print("Overflow Error")
                     #     # print(f"z_idx: {z_idx}, current_zpos: {current_zpos}")
-                        
+
             # Smooth R^2 values over valid depth indices
-            r_squares = [result['r_squared'] for result in patch_results]
+            r_squares = [result["r_squared"] for result in patch_results]
             r_squares = gaussian_filter(r_squares, sigma=1)
             # Get the max R^2 value's index
             max_r_square_idx = np.argmax(r_squares)
             # Append the result corresponding to the max R^2 value to patch_regress_results
-            patch_regress_results.append(patch_results[max_r_square_idx])                      
-                        
+            patch_regress_results.append(patch_results[max_r_square_idx])
+
     # frame_end_time = time.time()
     # print(f"Frame {frameNum} processed in {frame_end_time - fram_start_time:.2f} seconds")
-            
+
     return patch_regress_results
 
 
 def calculate_zones(patch_correlations, Ny, Nx):
     """
     Find zones (i.e., how patches overlap) in the patch_correlations table.
-    
+
     Inputs:
     - patch_correlations: DataFrame containing the patch correlations.
     - Ny: int, the number of columns in the movie.
     - Nx: int, the number of rows in the movie.
-    
+
     Outputs:
     - zone_pattern_contig: 2D numpy array containing the zone pattern with continuous zone IDs.
-    - zone_pattern: 2D numpy array containing the zone pattern with non-contiguous unique zone IDs, for display purposes.   
+    - zone_pattern: 2D numpy array containing the zone pattern with non-contiguous unique zone IDs, for display purposes.
     """
     start_time = time.time()
-    
+
     # Initialize a mask for zone calculation
     mask = np.zeros((Ny, Nx), dtype=int)
 
     # Use the first frame's patches to define zones
-    first_frame_patches = patch_correlations[patch_correlations['frame_num'] == patch_correlations['frame_num'].min()]
+    first_frame_patches = patch_correlations[
+        patch_correlations["frame_num"] == patch_correlations["frame_num"].min()
+    ]
     for _, row in first_frame_patches.iterrows():
-        x_start, x_end = row['patch_x_lims']
-        y_start, y_end = row['patch_y_lims']
+        x_start, x_end = row["patch_x_lims"]
+        y_start, y_end = row["patch_y_lims"]
         mask[y_start:y_end, x_start:x_end] += 1
-    
+
     # Label zones based on overlapping patches. Assign a unique number to each zone
 
     # Initialize the zone_pattern array to store zone identifiers
@@ -1005,93 +1105,105 @@ def calculate_zones(patch_correlations, Ny, Nx):
         zone_pattern[labeled_zones_even == i] = zone_id_offset + i
 
     # Flatten the array column-wise
-    zone_pattern_col_flat = zone_pattern.flatten(order='F')
+    zone_pattern_col_flat = zone_pattern.flatten(order="F")
 
     # Get the unique zones and their unique indices
     _, inverse_indices = np.unique(zone_pattern_col_flat, return_inverse=True)
     unique_indices = pd.unique(inverse_indices) + 1
-    
+
     # Re-label zones to have continuous IDs
     zone_pattern_contig = np.zeros_like(zone_pattern, dtype=np.uint16)
     for new_id, zone_id in enumerate(unique_indices):
         zone_pattern_contig[zone_pattern == zone_id] = new_id
 
     print(f"Patches divided into zones in {time.time() - start_time:.2f} seconds")
-        
+
     return zone_pattern_contig, zone_pattern
+
 
 def make_composite_f_anat(patch_correlations, labeled_zones):
     """
     Create a composite anatomical image from the patch correlations DataFrame.
-    
+
     Inputs:
     - patch_correlations_df: DataFrame containing the patch correlations.
     - labeled_zones: 2D numpy array containing the labeled zones.
-    
+
     Outputs:
     - F_anat_non_rigid: 3D numpy array containing the composite anatomical image.
     - zone_df: DataFrame containing the zone data.
     """
-    
-    fields = ['r_squared', 'patch_number', 'patch_z_pos', 'Z_patch'] #'patch_x_shift', 'patch_y_shift',
-    
+
+    fields = [
+        "r_squared",
+        "patch_number",
+        "patch_z_pos",
+        "Z_patch",
+    ]  #'patch_x_shift', 'patch_y_shift',
+
     # start_time = time.time()
-    
+
     zone_data = []
-    
-    F_anat_non_rigid = np.zeros((len(np.unique(patch_correlations['frame_num'])), *labeled_zones.shape))
+
+    F_anat_non_rigid = np.zeros(
+        (len(np.unique(patch_correlations["frame_num"])), *labeled_zones.shape)
+    )
 
     # Iterate over frames
-    for frame_idx, (frame_num, group) in enumerate(patch_correlations.groupby('frame_num')): 
+    for frame_idx, (frame_num, group) in enumerate(patch_correlations.groupby("frame_num")):
         # `frame_num` is the current frame number
-        # `group` is a DataFrame containing all rows for `frame_num`       
+        # `group` is a DataFrame containing all rows for `frame_num`
 
-        sums = {field: np.zeros((np.max(labeled_zones)+1,)) for field in fields if field != 'Z_patch'}
-        sums['Z_patch'] = {zone_id: [] for zone_id in np.unique(labeled_zones)}
+        sums = {
+            field: np.zeros((np.max(labeled_zones) + 1,)) for field in fields if field != "Z_patch"
+        }
+        sums["Z_patch"] = {zone_id: [] for zone_id in np.unique(labeled_zones)}
 
-        count = np.zeros((np.max(labeled_zones)+1,))
-        
+        count = np.zeros((np.max(labeled_zones) + 1,))
+
         composite_f_anat_frame = np.zeros(labeled_zones.shape)
 
-        # Populate sums and counts per zone                
+        # Populate sums and counts per zone
         for _, row in group.iterrows():
             # `index` is the index of the row in `patch_correlations_df`
-            # `row` is a Series containing the data for the current row 
-            
-            x_start, x_end = row['patch_x_lims']
-            y_start, y_end = row['patch_y_lims']
-            
+            # `row` is a Series containing the data for the current row
+
+            x_start, x_end = row["patch_x_lims"]
+            y_start, y_end = row["patch_y_lims"]
+
             # Extract the patch area from the labeled_zones
-            patch_2D = row['Z_patch'].reshape(y_end - y_start, x_end - x_start)
-            
+            patch_2D = row["Z_patch"].reshape(y_end - y_start, x_end - x_start)
+
             patch_zone_labels = labeled_zones[y_start:y_end, x_start:x_end]
             zone_ids = np.unique(patch_zone_labels)
 
             for zone_id in zone_ids:
                 # Find coordinates of the current zone_id within the patch
-                zone_mask = (patch_zone_labels == zone_id)
+                zone_mask = patch_zone_labels == zone_id
                 # Get bounding box of the zone for 2d zone_specific_patch
                 rows, cols = np.where(zone_mask)
                 min_row, max_row = rows.min(), rows.max()
                 min_col, max_col = cols.min(), cols.max()
                 for field in fields:
-                    if field == 'Z_patch':
+                    if field == "Z_patch":
                         # Extract the part of Z_patch that corresponds to the current zone_id.
                         # This returns a 1D array, ordered row-wise.
                         # zone_specific_patch = patch_2D[zone_mask]
                         #  in 2D for sanity check
-                        zone_specific_patch = patch_2D[min_row:max_row+1, min_col:max_col+1]
+                        zone_specific_patch = patch_2D[min_row : max_row + 1, min_col : max_col + 1]
                         sums[field][zone_id].append(zone_specific_patch)
                     else:
                         sums[field][zone_id] += row[field]
                 count[zone_id] += 1
 
-        # Calculate averages for each zone            
-        averages = {field: np.zeros((np.max(labeled_zones)+1,)) for field in fields if field != 'Z_patch'}
-        averages['Z_patch'] = {}
+        # Calculate averages for each zone
+        averages = {
+            field: np.zeros((np.max(labeled_zones) + 1,)) for field in fields if field != "Z_patch"
+        }
+        averages["Z_patch"] = {}
 
         for field in sums:
-            if field == 'Z_patch':
+            if field == "Z_patch":
                 for zone_id, arrays in sums[field].items():
                     try:
                         if arrays:
@@ -1105,7 +1217,7 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
         # Collect data per zone
         unique_zones = np.unique(labeled_zones)
         for zone_id in unique_zones:
-            zone_info = {'frame_num': frame_num, 'zone_id': zone_id}
+            zone_info = {"frame_num": frame_num, "zone_id": zone_id}
             if count[zone_id] > 0:
                 y_indices, x_indices = np.where(labeled_zones == zone_id)
                 y_min, y_max = y_indices.min(), y_indices.max() + 1
@@ -1113,10 +1225,10 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                 for field in fields[:-1]:
                     zone_info[field] = averages[field][zone_id]
                 zone_data.append(zone_info)
-                # reshape Zpatch to 2D and insert into composite_f_anat_frame               
-                if 'Z_patch' in averages and zone_id in averages['Z_patch']:
+                # reshape Zpatch to 2D and insert into composite_f_anat_frame
+                if "Z_patch" in averages and zone_id in averages["Z_patch"]:
                     # zone_2D = averages['Z_patch'][zone_id].reshape((y_max - y_min, x_max - x_min))
-                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = averages['Z_patch'][zone_id]
+                    composite_f_anat_frame[y_min:y_max, x_min:x_max] = averages["Z_patch"][zone_id]
 
                 # When this is the first zone in the first frame, print some info
                 # if frame_idx == 0 and zone_id == unique_zones[0]:
@@ -1127,34 +1239,33 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
                 #     print(f"  Patch x limits: {x_min}, {x_max}")
                 #     print(f"  Patch y limits: {y_min}, {y_max}")
                 #     print(f"  Range of values: {np.min(averages['Z_patch'][zone_id]):.2f} to {np.max(averages['Z_patch'][zone_id]):.2f}")
-        
+
         F_anat_non_rigid[frame_idx, :, :] = composite_f_anat_frame
-    
-    # print(f"Zone data computed in {time.time() - start_time:.2f} seconds")   
-    
-    zone_df = pd.DataFrame(zone_data)  
-    
+
+    # print(f"Zone data computed in {time.time() - start_time:.2f} seconds")
+
+    zone_df = pd.DataFrame(zone_data)
+
     return F_anat_non_rigid, zone_df
 
+
 def format_patch_correl_for_mat(zone_df):
-    
+
     # Get fields from the dataframe
-    fields = zone_df.columns[zone_df.columns != 'zone_id']
-    
+    fields = zone_df.columns[zone_df.columns != "zone_id"]
+
     # Pivot to create a 3D structure: zones * fields * frames
-    data_3d = zone_df.set_index(['zone_id', 'frame_num']).unstack(fill_value=0).to_numpy()
-    data_3d = data_3d.reshape((len(zone_df['zone_id'].unique()), len(fields), -1))
-    
+    data_3d = zone_df.set_index(["zone_id", "frame_num"]).unstack(fill_value=0).to_numpy()
+    data_3d = data_3d.reshape((len(zone_df["zone_id"].unique()), len(fields), -1))
+
     # Create descriptors for each field
-    field_descriptors = {field: 'Average ' + field for field in fields}
-    
+    field_descriptors = {field: "Average " + field for field in fields}
+
     # Prepare data for MAT file
-    mat_data = {
-        'zone_data': data_3d,
-        'descriptors': field_descriptors
-    }
-    
+    mat_data = {"zone_data": data_3d, "descriptors": field_descriptors}
+
     return mat_data
+
 
 def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
     """
@@ -1168,15 +1279,24 @@ def compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_data):
         # Get the mean fluorescence value for that zone
         zone_mean_fluorescence.append(np.mean(fov_image[zone_indices]))
         # Get the R2 value for that zone
-        zone_rsquare.append(zone_data[zone_data['zone_id'] == zone_id]['r_squared'].values[0])
-        
+        zone_rsquare.append(zone_data[zone_data["zone_id"] == zone_id]["r_squared"].values[0])
+
     return zone_mean_fluorescence, zone_rsquare
 
-def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_pattern, fov_image, z_correlation, export_path):
+
+def patch_correl_plots(
+    patch_correlations_df,
+    labeled_zones,
+    zone_df,
+    zone_pattern,
+    fov_image,
+    z_correlation,
+    export_path,
+):
     """
     Summary plots
-    Plot the zone pattern, the R^2 heatmap, the distribution of patch z indices, 
-    the distribution of R^2 values from compute_zcorrel, the R^2 histogram, 
+    Plot the zone pattern, the R^2 heatmap, the distribution of patch z indices,
+    the distribution of R^2 values from compute_zcorrel, the R^2 histogram,
     the curve of average R2 values as a function of fluorescence, and an example zone.
     """
 
@@ -1184,66 +1304,87 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     fig, ax = plt.subplots(2, 4, figsize=(20, 10))
 
     # Plot the zone pattern
-    ax[0, 0].imshow(zone_pattern, cmap='plasma')
+    ax[0, 0].imshow(zone_pattern, cmap="plasma")
     ax[0, 0].set_xticks([])
     ax[0, 0].set_yticks([])
-    ax[0, 0].set_title('Patch overlap zone pattern')
-    
+    ax[0, 0].set_title("Patch overlap zone pattern")
+
     # Plot the R^2 heatmap
     # plot zone_data's average r_squared values as a heatmap
     dim_num_zones = int(np.sqrt(np.max(labeled_zones) + 1))
 
     # Get zone_df data corresponding to the first frame
-    frame_num = zone_df['frame_num'].min()
-    zone_data = zone_df[zone_df['frame_num'] == frame_num]
+    frame_num = zone_df["frame_num"].min()
+    zone_data = zone_df[zone_df["frame_num"] == frame_num]
 
-    r_squared_values = zone_data['r_squared'].values.reshape((dim_num_zones, dim_num_zones), order='F')
-    im = ax[1, 0].imshow(r_squared_values, cmap='viridis')
+    r_squared_values = zone_data["r_squared"].values.reshape(
+        (dim_num_zones, dim_num_zones), order="F"
+    )
+    im = ax[1, 0].imshow(r_squared_values, cmap="viridis")
     fig.colorbar(im, ax=ax[1, 0])
     ax[1, 0].set_title(f"Average $R^2$ values per zone for frame {frame_num}")
 
     # Plot distribution of correlation for all patches across depth
-    patch_z_idx = patch_correlations_df['patch_z_idx']
+    patch_z_idx = patch_correlations_df["patch_z_idx"]
     bin_num = len(np.unique(patch_z_idx))
-    bin_edges = np.arange(-bin_num/2, bin_num//2 + 1, 1)
-    ax[0, 1].hist(patch_z_idx, bins=bin_edges, edgecolor='black')
-    ax[0, 1].set_xlabel('Patch z index')
-    ax[0, 1].set_ylabel('Frequency')
-    ax[0, 1].set_title('Distribution of patch z indices, w/r to zpos')
-    ax[0, 1].set_xticks(np.arange(-bin_num//2 + 1, bin_num//2 + 1, 1))
+    bin_edges = np.arange(-bin_num / 2, bin_num // 2 + 1, 1)
+    ax[0, 1].hist(patch_z_idx, bins=bin_edges, edgecolor="black")
+    ax[0, 1].set_xlabel("Patch z index")
+    ax[0, 1].set_ylabel("Frequency")
+    ax[0, 1].set_title("Distribution of patch z indices, w/r to zpos")
+    ax[0, 1].set_xticks(np.arange(-bin_num // 2 + 1, bin_num // 2 + 1, 1))
 
     # Plot the distribution of R^2 values from compute_zcorrel
-    zcorrel = z_correlation['zcorr']
+    zcorrel = z_correlation["zcorr"]
     max_vals = np.max(zcorrel, axis=0)
     rsquare_corr = np.square(max_vals)
-    ax[1, 1].hist(rsquare_corr, bins=50, edgecolor='black')
-    ax[1, 1].set_xlabel('$R^2$ value')
-    ax[1, 1].set_ylabel('Frequency')
-    ax[1, 1].set_title('Distribution of $R^2$ values from compute_zcorrel (whole frames)')
+    ax[1, 1].hist(rsquare_corr, bins=50, edgecolor="black")
+    ax[1, 1].set_xlabel("$R^2$ value")
+    ax[1, 1].set_ylabel("Frequency")
+    ax[1, 1].set_title("Distribution of $R^2$ values from compute_zcorrel (whole frames)")
 
     # Plot the R2 histogram
-    patch_rsquare_vals = patch_correlations_df['r_squared']
-    ax[0, 2].hist(patch_rsquare_vals, bins=50, label='R-squared', edgecolor='black', color='blue') #alpha=0.5
-    ax[0, 2].set_xlabel('$R^2$ value')
-    ax[0, 2].set_ylabel('Frequency')
-    ax[0, 2].set_title('Distribution of $R^2$ values for patches')
+    patch_rsquare_vals = patch_correlations_df["r_squared"]
+    ax[0, 2].hist(
+        patch_rsquare_vals, bins=50, label="R-squared", edgecolor="black", color="blue"
+    )  # alpha=0.5
+    ax[0, 2].set_xlabel("$R^2$ value")
+    ax[0, 2].set_ylabel("Frequency")
+    ax[0, 2].set_title("Distribution of $R^2$ values for patches")
 
     # Plot the curve of average R2 values as a function of fluorescence
-    zone_mean_fluorescence, zone_rsquare = compute_zone_mean_fluorescence(fov_image, labeled_zones, zone_df)
-    ax[1, 2].scatter(zone_mean_fluorescence, zone_rsquare, alpha=0.5, edgecolor='black', s=10, facecolors='none', marker='o')
-    ax[1, 2].set_xlabel('Average Fluorescence')
-    ax[1, 2].set_ylabel('Average $R^2$')
-    ax[1, 2].set_title('Average $R^2$ vs Average Fluorescence')
+    zone_mean_fluorescence, zone_rsquare = compute_zone_mean_fluorescence(
+        fov_image, labeled_zones, zone_df
+    )
+    ax[1, 2].scatter(
+        zone_mean_fluorescence,
+        zone_rsquare,
+        alpha=0.5,
+        edgecolor="black",
+        s=10,
+        facecolors="none",
+        marker="o",
+    )
+    ax[1, 2].set_xlabel("Average Fluorescence")
+    ax[1, 2].set_ylabel("Average $R^2$")
+    ax[1, 2].set_title("Average $R^2$ vs Average Fluorescence")
 
     # Plot an example zone
     zone_id = np.argmax(zone_mean_fluorescence)
     zone_indices = np.where(labeled_zones == zone_id)
     min_row, max_row = np.min(zone_indices[0]), np.max(zone_indices[0])
     min_col, max_col = np.min(zone_indices[1]), np.max(zone_indices[1])
-    ax[0, 3].imshow(fov_image, cmap='gray')
-    rect = patches.Rectangle((min_col, min_row), max_col-min_col+1, max_row-min_row+1, linewidth=1, edgecolor='r', facecolor='none')
+    ax[0, 3].imshow(fov_image, cmap="gray")
+    rect = patches.Rectangle(
+        (min_col, min_row),
+        max_col - min_col + 1,
+        max_row - min_row + 1,
+        linewidth=1,
+        edgecolor="r",
+        facecolor="none",
+    )
     ax[0, 3].add_patch(rect)
-    ax[0, 3].axis('off')
+    ax[0, 3].axis("off")
     ax[0, 3].set_title(f"FOV with Zone {zone_id} Highlighted")
 
     # Plot the zone fluorescence
@@ -1252,19 +1393,19 @@ def patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_patte
     for i, row in enumerate(zone_indices[0]):
         col = zone_indices[1][i]
         fluorescence_image[row - min_row, col - min_col] = zone_fluorescence[i]
-    ax[1, 3].imshow(fluorescence_image, cmap='gray')
-    ax[1, 3].axis('off')
+    ax[1, 3].imshow(fluorescence_image, cmap="gray")
+    ax[1, 3].axis("off")
     ax[1, 3].set_title(f"Zone {zone_id} Fluorescence")
-    
+
     # Save the figure
     plt.tight_layout()
-    plot_export_path = export_path / 'plots'
+    plot_export_path = export_path / "plots"
     plot_export_path.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_export_path / 'patches_summary_plots.png') 
-    
+    plt.savefig(plot_export_path / "patches_summary_plots.png")
+
     # Close the figure
     plt.close(fig)
-    
+
     print(f"Summary plots saved to {plot_export_path}")
 
 
@@ -1274,7 +1415,10 @@ def fit_huber_regressor(i_pixel, F_anat, F_anat_mean, F_func, F_func_mean):
     """
     huber = HuberRegressor(fit_intercept=False)
     try:
-        huber.fit(F_anat[i_pixel, :].reshape(-1, 1) - F_anat_mean[i_pixel], F_func[i_pixel, :] - F_func_mean[i_pixel])
+        huber.fit(
+            F_anat[i_pixel, :].reshape(-1, 1) - F_anat_mean[i_pixel],
+            F_func[i_pixel, :] - F_func_mean[i_pixel],
+        )
         b = huber.coef_[0]
     except ValueError as e:
         if "HuberRegressor convergence failed" in str(e):
@@ -1283,6 +1427,7 @@ def fit_huber_regressor(i_pixel, F_anat, F_anat_mean, F_func, F_func_mean):
         else:
             raise e
     return b
+
 
 # def fit_huber_regressor(F_anat_pixel, F_func_pixel):
 #     """
@@ -1299,6 +1444,7 @@ def fit_huber_regressor(i_pixel, F_anat, F_anat_mean, F_func, F_func_mean):
 #         else:
 #             raise e
 #     return b
+
 
 def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar=None):
     """
@@ -1342,10 +1488,10 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     z_motion_scaling_factors = {'slope': slope, 'intercept': intercept}
 #     print(f"R^2 value between F_func and F_anat_non_rigid: {r_value**2}")
 #     print(f"Slope: {slope}, Intercept: {intercept}")
-    
+
 #     # Rescale and subtract the movement-induced changes from F_func
 #     print("Rescaling and subtracting the movement-induced changes from F_func")
-#     # We do not add intercept here, because that would bring the mean of F_corrected to 0, which is not desired when computing dF/F later. 
+#     # We do not add intercept here, because that would bring the mean of F_corrected to 0, which is not desired when computing dF/F later.
 #     # Instead, we subtract the mean of F_anat_non_rigid, which is a better approach.
 #     F_anat_non_rigid_adjusted = slope * (F_anat - np.mean(F_anat, axis=0))
 #     F_corrected = F_func - F_anat_non_rigid_adjusted
@@ -1356,55 +1502,55 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     return F_corrected, z_motion_scaling_factors
 
 # def subtract_z_motion_hr_frames(F_func, F_anat, smoothing_factor=1):
-    
+
 #     # Get the dimensions of the F_func and F_anat movies (must be the same)
 #     Nframe, Ny, Nx = F_func.shape
-    
+
 #     if Nframe != F_anat.shape[0]:
 #         raise ValueError("The number of frames in the functional and anatomical movies must be the same.")
-    
+
 #     # Smooth the F_func and F_anat movies in x and y but not T
 #     F_func = gaussian_filter(F_func, sigma=[0, smoothing_factor, smoothing_factor])
 #     F_anat = gaussian_filter(F_anat, sigma=[0, smoothing_factor, smoothing_factor])
-    
+
 #     # # Reshape the "functional" fluorescence movie
 #     # F_func = F_func.reshape(Nframe, Ny * Nx).T
-        
+
 #     # # Get the average image of the functional fluorescence movie
 #     # F_func_mean = np.mean(F_func, axis=1)
-    
+
 #     # # Reshape the "anatomical" fluorescence movie
 #     # F_anat = F_anat.reshape(Nframe, Ny * Nx).T
 
 #     # # Get the average image of the z-stack movie
 #     # F_anat_mean = np.mean(F_anat, axis=1)
-    
+
 #     F_func_flattened = F_func.ravel()
 #     F_anat_flattened = F_anat.ravel()
 #     F_func_mean = np.mean(F_func_flattened)
 #     F_anat_mean = np.mean(F_anat_flattened)
-    
+
 #     # Fit a linear regression model between the non-rigid F_anat and the F_func movie, using fit_huber_regressor_on_region
 #     with tqdm(total=1, desc='Fitting regressors on frames to find z motion scaling factors') as pbar:
-#             z_motion_scaling_factors = fit_huber_regressor_on_region(F_anat_flattened, F_anat_mean, F_func_flattened, F_func_mean, pbar)  
-    
+#             z_motion_scaling_factors = fit_huber_regressor_on_region(F_anat_flattened, F_anat_mean, F_func_flattened, F_func_mean, pbar)
+
 #     z_motion_scaling_factors = np.array(z_motion_scaling_factors).astype(np.float32)
 #     print(f"z_motion_scaling_factors: {z_motion_scaling_factors}")
-    
+
 #     # Rescale and subtract the movement-induced changes from the original F matrix
 #     F_anat_rescaled = z_motion_scaling_factors * (F_anat - F_anat_mean)
-#     # F_anat_rescaled = z_motion_scaling_factors * (F_anat_flattened - F_anat_mean)   
-    
+#     # F_anat_rescaled = z_motion_scaling_factors * (F_anat_flattened - F_anat_mean)
+
 #     # Subtract the rescaled F_anat from the F_func movie
 #     print("Rescaling and subtracting the movement-induced changes from F_func")
 #     F_corrected = F_func - F_anat_rescaled
 #     # Fcorrected = F_func_flattened - F_anat_rescaled
 #     # Fcorrected = Fcorrected.reshape(F_func.shape)
-    
+
 #     print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
 #     # Clip F_corrected to uint16 range
 #     F_corrected = np.clip(F_corrected, 0, 2**16-1)
-    
+
 #     # # # Compute R^2 of the correction by frames
 #     # # # 1   –   ( sum(Vcorr2)    /   sum( (Vfunc - <Vfunc>)2 ))
 #     # # # Sum of squares of the residuals
@@ -1413,7 +1559,7 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     # # sum_corrected = np.sum(F_corrected ** 2)
 #     # # # Compute the R^2 value
 #     # # R2 = 1 - sum_corrected / sum_resid
-    
+
 #     # # Compute the sum of squared residuals
 #     # sum_res = np.sum(((F_func - F_func_mean) - F_anat_rescaled) ** 2, axis=0)
 #     # # Compute the total sum of squares
@@ -1433,10 +1579,10 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 
 #     # Reshape the "functional" fluorescence movie
 #     F_func = F_func.reshape(Nframe, Ny * Nx).T
-        
+
 #     # Get the average image of the functional fluorescence movie
 #     F_func_mean = np.mean(F_func, axis=1)
-    
+
 #     # Reshape the "anatomical" fluorescence movie
 #     F_anat = F_anat.reshape(Nframe, Ny * Nx).T
 
@@ -1448,7 +1594,7 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #                                                     (i_pixel, F_anat, F_anat_mean, F_func, F_func_mean)
 #                                                     for i_pixel in tqdm(range(Ny * Nx),
 #                                                     desc='Fitting regressors to find z motion scaling factors'))
-        
+
 #     # # Subtract mean values before passing to the regressor
 #     # F_anat_adjusted = [F_anat[i_pixel, :] - F_anat_mean[i_pixel] for i_pixel in range(Ny * Nx)]
 #     # F_func_adjusted = [F_func[i_pixel, :] - F_func_mean[i_pixel] for i_pixel in range(Ny * Nx)]
@@ -1458,7 +1604,7 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     #                                                 (F_anat_adjusted[i], F_func_adjusted[i])
 #     #                                                 for i in tqdm(range(Ny * Nx),
 #     #                                                 desc='Fitting regressors to find z motion scaling factors'))
-#     # Run as regular loop for debugging purposes: 
+#     # Run as regular loop for debugging purposes:
 #     # z_motion_scaling_factors = [fit_huber_regressor(F_anat_adjusted[i], F_func_adjusted[i]) for i in range(Ny * Nx)]
 
 #     # Change the list to a numpy array and cast to float32
@@ -1477,9 +1623,9 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     # Reshape the corrected F matrix to the original shape
 #     Fcorrected = Fcorrected.T.reshape(Nframe, Ny, Nx)
 #     Fcorrected = np.clip(Fcorrected, 0, 2**16-1)
-    
+
 #     # print(f"F_corrected shape: {F_corrected.shape}, data type: {F_corrected.dtype}, min: {F_corrected.min()}, max: {F_corrected.max()}")
-       
+
 #     # # Compute R^2 of the correction for each pixel
 #     # # # 1   –   ( sum(Fxycorr(t)2)xyt    /   sum( (Fxyfunc(t) - <Fxyfunc(t)>t)2 )xyt )
 #     # # # Total sum of squares, proportional to the variance of the data. We use the residuals of F_func when we remove the mean of F_func)
@@ -1489,7 +1635,7 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     # # # sum_res = np.sum((F_func - Fcorrected.T.reshape(Nframe, Ny * Nx).T) ** 2)
 #     # # # Compute the R^2 value
 #     # # R2 = 1 - sum_res / sum_tot
-    
+
 #     # #     R2 = 1 – sum((Fxyfunc(t) - <Fxyfunc(t)>t) - bxy * (Fxyanat(t) - <Fxyanat(t)>t))^2)
 #     # # / sum((Fxyfunc(t) - <Fxyfunc(t)>t)^2)
 
@@ -1501,91 +1647,106 @@ def fit_huber_regressor_on_region(F_anat, F_anat_mean, F_func, F_func_mean, pbar
 #     # r_square_map = 1 - sum_res / sum_tot
 #     # # re-shape r_square_map to the original shape
 #     # r_square_map = r_square_map.reshape(Ny, Nx)
-    
+
 #     # # print("sum_res shape:", sum_res.shape)
 #     # # print("sum_tot shape:", sum_tot.shape)
 #     # # print("r_square_map shape:", r_square_map.shape)
-    
+
 #     # # Print the formulas
 #     # # print("Sum of squared residuals: sum_res = ∑ [ (F_func - F_func_mean) - z_motion_scaling_factors * (F_anat - F_anat_mean) ]^2")
 #     # # print("Total sum of squares: sum_tot = ∑ (F_func - F_func_mean)^2")
 #     # # print(f"R² map: r_square_map = 1 - sum_res / sum_tot")
-    
+
 #     # # # Compute correlation coefficient between F_func and F_anat
 #     # # # Compute the correlation coefficient for each pixel over time
 #     # # corr_coef = np.array([np.corrcoef(F_func[i_pix], F_anat[i_pix])[0, 1] for i_pix in range(Ny * Nx)])
 #     # # # Reshape the correlation coefficients back to the original 2D shape (y, x)
 #     # # corr_coef_map = corr_coef.reshape(Ny, Nx)
-    
+
 #     # #   Save corr_coef_map as a png image
 #     # #  Reshape z_motion_scaling_factors
 #     # z_motion_scaling_factors_map = z_motion_scaling_factors.reshape(Ny, Nx)
-    
+
 #     # fov_image = np.mean(F_func.T.reshape(Nframe, Ny, Nx), axis=0)
 
 #     return Fcorrected, z_motion_scaling_factors
 
-def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, mcorr_params, 
-                              subtract_method='huber_regression_pixels', 
-                              save_tiffs=False,
-                              save_correl=False, save_format='parquet'):
+
+def subtract_z_motion_patches(
+    movie_mmap_path,
+    zstack_filepath,
+    z_correlation,
+    mcorr_params,
+    subtract_method="huber_regression_pixels",
+    save_tiffs=False,
+    save_correl=False,
+    save_format="parquet",
+):
     """
     Find the correlation between patches in the F_func movie and the anat z-stack.
     Create a composite anatomical image, using patch correlations to identify the best depth for each zone.
     Fit a linear regression between the non-rigid F_anat and the F_func movie.
-    Subtract the scaled F_anat from the F_func movie to correct for z-motion.    
+    Subtract the scaled F_anat from the F_func movie to correct for z-motion.
     """
     print("Starting z-motion correction with patch correlations...")
     # Load the motion-corrected functional movie
     movie_16bit, dims, T = load_memmap(movie_mmap_path)
-    F_func = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
-    # Get dimensions    
+    F_func = np.reshape(movie_16bit.T, [T] + list(dims), order="F")
+    # Get dimensions
     Nframe, Ny, Nx = F_func.shape
     # Clip the movie range to uint16
-    F_func = np.clip(F_func, 0, 2**16-1)
-    
-    # Load the shifted z-stack    
+    F_func = np.clip(F_func, 0, 2**16 - 1)
+
+    # Load the shifted z-stack
     with TiffFile(zstack_filepath) as info_zstack:
         Nz = len(info_zstack.pages)
         Zstack = np.zeros((Ny, Nx, Nz), dtype=np.float32)
         for iz, page in enumerate(info_zstack.pages):
             Zstack[:, :, iz] = page.asarray()
-      
+
     # TODO: check why on Windows F_anat bit depth is 8 and not 16. Use other method to load z-stack (append to list)?
-    
+
     # Clip the z-stack range to uint16
-    Zstack = np.clip(Zstack, 0, 2**16-1)
-    
+    Zstack = np.clip(Zstack, 0, 2**16 - 1)
+
     # Flip Zstack upside-down to match the orientation of the movie
     Zstack = np.flip(Zstack, axis=0)
-    
-    # Get dimensions 
+
+    # Get dimensions
     Zstack_shape = Zstack.shape
-    
+
     # Print F_func and Zstack shapes, data type and min/max range
-    print(f"F_func shape: {F_func.shape}, data type: {F_func.dtype}, min: {F_func.min()}, max: {F_func.max()}")
-    print(f"Zstack shape: {Zstack.shape}, data type: {Zstack.dtype}, min: {Zstack.min()}, max: {Zstack.max()}")
+    print(
+        f"F_func shape: {F_func.shape}, data type: {F_func.dtype}, min: {F_func.min()}, max: {F_func.max()}"
+    )
+    print(
+        f"Zstack shape: {Zstack.shape}, data type: {Zstack.dtype}, min: {Zstack.min()}, max: {Zstack.max()}"
+    )
 
     export_path = movie_mmap_path.parent.parent
-    
-    # TODO: Update options to reload patch correlations: 
-    if (export_path / 'patch_correlations.parquet').exists(): 
+
+    # TODO: Update options to reload patch correlations:
+    if (export_path / "patch_correlations.parquet").exists():
         print(f"Loading patch correlations from {export_path / 'patch_correlations.parquet'}")
-        patch_correlations_df = pd.read_parquet(export_path / 'patch_correlations.parquet') 
-        patch_correlations_df['Z_patch'] = patch_correlations_df['Z_patch'].apply(lambda x: np.frombuffer(x, dtype=np.uint16))
+        patch_correlations_df = pd.read_parquet(export_path / "patch_correlations.parquet")
+        patch_correlations_df["Z_patch"] = patch_correlations_df["Z_patch"].apply(
+            lambda x: np.frombuffer(x, dtype=np.uint16)
+        )
     else:
         # Define patch size based on Caiman's parameters. Width of patch = strides+overlaps.
-        step_size = mcorr_params['strides'] 
-        patch_overlap = mcorr_params['overlaps']
-        # Calculate patch size for both x and y dimensions 
+        step_size = mcorr_params["strides"]
+        patch_overlap = mcorr_params["overlaps"]
+        # Calculate patch size for both x and y dimensions
         patch_size = [step + overlap for step, overlap in zip(step_size, patch_overlap)]
         print()
-        print("Calling patch_regress to find the correlation between patches in the F_func movie and the anat z-stack over frames")
+        print(
+            "Calling patch_regress to find the correlation between patches in the F_func movie and the anat z-stack over frames"
+        )
         print(f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}")
 
         # Get zpos, x and y shifts
-        zpos = z_correlation['zpos']
-        
+        zpos = z_correlation["zpos"]
+
         # Time the execution
         start_time = time.time()
 
@@ -1598,62 +1759,93 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
             # Check for valid z indices
             valid_indices = [index for index in indices if 0 <= index < Zstack_shape[2]]
             # Append the frame data to the list
-            frame_data_list.append((frameNum, F_func[frameNum, :, :],
-                            Zstack, Nx, Ny, patch_size, step_size,
-                            zpos[frameNum], valid_indices))
-            
+            frame_data_list.append(
+                (
+                    frameNum,
+                    F_func[frameNum, :, :],
+                    Zstack,
+                    Nx,
+                    Ny,
+                    patch_size,
+                    step_size,
+                    zpos[frameNum],
+                    valid_indices,
+                )
+            )
+
             if frameNum == 0:
                 print(f"Displaying values for frame {frameNum}")
                 print(f"Current zpos is: {current_zpos}")
                 print(f"F_func shape: {F_func[frameNum, :, :].shape}, Zstack shape: {Zstack.shape}")
                 print(f"Number of frames: {Nframe}, Number of z-stack frames: {Zstack_shape[2]}")
-                print(f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}")
+                print(
+                    f"Patch size: {patch_size}, Step size: {step_size}, Patch overlap: {patch_overlap}"
+                )
                 print(f"Number of valid z indices per frame: {len(valid_indices)}")
-                
+
         # Call patch_regress in parallel
-        patch_regress_results = Parallel(n_jobs=-1)(delayed(patch_regress)(frame_data) for frame_data in tqdm(frame_data_list, desc="Find the correlation between patches in the F_func movie and the anat z-stack over frames"))
-                    
+        patch_regress_results = Parallel(n_jobs=-1)(
+            delayed(patch_regress)(frame_data)
+            for frame_data in tqdm(
+                frame_data_list,
+                desc="Find the correlation between patches in the F_func movie and the anat z-stack over frames",
+            )
+        )
+
         # Flatten list of lists returned by map
         patch_correlations = [item for sublist in patch_regress_results for item in sublist]
 
         # Kill all LokyProcess workers (Windows only)
-        if os.name == 'nt':
+        if os.name == "nt":
             for p in multiprocessing.active_children():
-                if 'LokyProcess' in p.name:
+                if "LokyProcess" in p.name:
                     p.terminate()
 
         # Convert to DataFrame
         patch_correlations_df = pd.DataFrame(patch_correlations)
-        
+
         # Display execution time in mn and seconds
         exect_time = time.time() - start_time
 
-        print("Patch correlation computation took ", exect_time // 60, "mn and ", exect_time % 60, "seconds")
-    
+        print(
+            "Patch correlation computation took ",
+            exect_time // 60,
+            "mn and ",
+            exect_time % 60,
+            "seconds",
+        )
+
     # Calculate patch overlap zones
-    labeled_zones, zone_pattern= calculate_zones(patch_correlations_df, Ny, Nx)
+    labeled_zones, zone_pattern = calculate_zones(patch_correlations_df, Ny, Nx)
 
     print("Calculated labeled zones and zone pattern")
     print(f"Number of zones: {len(labeled_zones)}")
-    print(f"Zone pattern shape: {zone_pattern.shape}, data type: {zone_pattern.dtype}, min: {zone_pattern.min()}, max: {zone_pattern.max()}")
-        
+    print(
+        f"Zone pattern shape: {zone_pattern.shape}, data type: {zone_pattern.dtype}, min: {zone_pattern.min()}, max: {zone_pattern.max()}"
+    )
+
     # Create non-rigid F_anat, using ProcessPoolExecutor to parallelize
-    groups = list(patch_correlations_df.groupby('frame_num'))
+    groups = list(patch_correlations_df.groupby("frame_num"))
     with ProcessPoolExecutor() as executor:
         # Submit frames to make_composite_f_anat
-        futures = {executor.submit(make_composite_f_anat, group, labeled_zones): frame_num for frame_num, group in groups}
+        futures = {
+            executor.submit(make_composite_f_anat, group, labeled_zones): frame_num
+            for frame_num, group in groups
+        }
 
         # Collect results as they complete
         results = []
         frame_arrays = []
-        frame_nums = [] 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Generating composite F_anat"):
+        frame_nums = []
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Generating composite F_anat"
+        ):
             frame_num = futures[future]  # Retrieve frame number from the dictionary
             image_data, zone_data = future.result()
             results.append(zone_data)
             frame_arrays.append(image_data)
-            frame_nums.append(frame_num) 
-            
+            frame_nums.append(frame_num)
+
     # Concatenate all DataFrame results
     zone_df = pd.concat(results)
 
@@ -1662,45 +1854,59 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     sorted_indices = np.argsort(frame_nums)
     F_anat_non_rigid = np.concatenate([frame_arrays[idx] for idx in sorted_indices], axis=0)
     # Clip to uint16 range
-    F_anat_non_rigid = np.clip(F_anat_non_rigid, 0, 2**16-1).astype(np.float32)
+    F_anat_non_rigid = np.clip(F_anat_non_rigid, 0, 2**16 - 1).astype(np.float32)
 
     # Plot the first frame of mcorr movie, the first frame of the z-stack, and the first frame of the composite F_anat side by side
     fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-    ax[0].imshow(F_func[0, :, :], cmap='gray')
-    ax[0].set_title('First frame of F_func movie')
-    ax[1].imshow(Zstack[:, :, 0], cmap='gray')
-    ax[1].set_title('First frame of Zstack movie')
-    ax[2].imshow(F_anat_non_rigid[0, :, :], cmap='gray')
-    ax[2].set_title('First frame of composite F_anat movie')
+    ax[0].imshow(F_func[0, :, :], cmap="gray")
+    ax[0].set_title("First frame of F_func movie")
+    ax[1].imshow(Zstack[:, :, 0], cmap="gray")
+    ax[1].set_title("First frame of Zstack movie")
+    ax[2].imshow(F_anat_non_rigid[0, :, :], cmap="gray")
+    ax[2].set_title("First frame of composite F_anat movie")
     plt.tight_layout()
     # save the figure
-    plot_dir = movie_mmap_path.parent.parent / 'plots'
+    plot_dir = movie_mmap_path.parent.parent / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir / 'first_frames_comparison.png')
+    plt.savefig(plot_dir / "first_frames_comparison.png")
     plt.close(fig)
-    
+
     ###################################################
     ### Subtract z motion from the functional movie ###
     ###################################################
-    
-    if subtract_method == 'linear_regression_frames':
-        F_corrected, z_motion_scaling_factors = subtract_z_motion_lr_frames(F_func, F_anat_non_rigid)
-    elif subtract_method == 'huber_regression_pixels':
-        F_corrected, z_motion_scaling_factors = subtract_z_motion_hr_pixels(F_func, F_anat_non_rigid)
-    elif subtract_method == 'huber_regression_frames':
-        F_corrected, z_motion_scaling_factors = subtract_z_motion_hr_frames(F_func, F_anat_non_rigid)
+
+    if subtract_method == "linear_regression_frames":
+        F_corrected, z_motion_scaling_factors = subtract_z_motion_lr_frames(
+            F_func, F_anat_non_rigid
+        )
+    elif subtract_method == "huber_regression_pixels":
+        F_corrected, z_motion_scaling_factors = subtract_z_motion_hr_pixels(
+            F_func, F_anat_non_rigid
+        )
+    elif subtract_method == "huber_regression_frames":
+        F_corrected, z_motion_scaling_factors = subtract_z_motion_hr_frames(
+            F_func, F_anat_non_rigid
+        )
     else:
         F_corrected = None
         z_motion_scaling_factors = None
-        
-    # Make summary plots 
-    patch_correl_plots(patch_correlations_df, labeled_zones, zone_df, zone_pattern, np.mean(F_func, axis=0), z_correlation, export_path)
-    
+
+    # Make summary plots
+    patch_correl_plots(
+        patch_correlations_df,
+        labeled_zones,
+        zone_df,
+        zone_pattern,
+        np.mean(F_func, axis=0),
+        z_correlation,
+        export_path,
+    )
+
     print("Saving labeled_zones")
     labeled_zones_df = pd.DataFrame(labeled_zones)
-    labeled_zones_filepath = export_path / 'labeled_zones.csv'
+    labeled_zones_filepath = export_path / "labeled_zones.csv"
     labeled_zones_df.to_csv(labeled_zones_filepath, index=False, header=False)
-    
+
     #  Save r_square_map as heatmap figure
     # if subtract_method == 'huber_regression_pixels' or subtract_method == 'huber_regression_frames':
     #     print("Saving R^2 heatmap")
@@ -1711,82 +1917,98 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
     #     plt.tight_layout()
     #     r_square_map_filepath = export_path / 'r_square_map.png'
     #     plt.savefig(r_square_map_filepath)
-    
+
     # Save videos
     if save_tiffs:
         if F_corrected is not None:
             print("Saving F_corrected")
-            # Save to tiff 
+            # Save to tiff
             f_corrected_filepath = export_path / f"F_func_corrected_T_{Nframe}_Y_{Ny}_X_{Nx}.tiff"
             with TiffWriter(f_corrected_filepath, bigtiff=True) as tif:
-                tif.write(F_corrected.astype(np.uint16), photometric='minisblack')
-                
+                tif.write(F_corrected.astype(np.uint16), photometric="minisblack")
+
         if F_anat_non_rigid is not None:
             print("Saving composite F_anat")
             # Save F_anat_non_rigid
-            composite_f_anat_filepath = export_path / f"F_anat_non_rigid_T_{Nframe}_Y_{Ny}_X_{Nx}.tiff"
+            composite_f_anat_filepath = (
+                export_path / f"F_anat_non_rigid_T_{Nframe}_Y_{Ny}_X_{Nx}.tiff"
+            )
             # Save movie to a tiff file
             with TiffWriter(composite_f_anat_filepath, bigtiff=True) as tif:
-                tif.write(F_anat_non_rigid.astype(np.uint16), photometric='minisblack') 
-    
+                tif.write(F_anat_non_rigid.astype(np.uint16), photometric="minisblack")
+
     if save_correl:
         print("Saving patch correlations")
         start_time = time.time()
-        if save_format == 'mat':
-        # # Save to a .mat file
+        if save_format == "mat":
+            # # Save to a .mat file
 
-            patch_correlations_filepath = export_path / 'patch_correlations.mat'
+            patch_correlations_filepath = export_path / "patch_correlations.mat"
             # zone_df_mat = format_patch_correl_for_mat(zone_df)
             # savemat(patch_correlations_filepath, zone_df_mat)
-        
+
             # Specifying the exact dtype
             dtype = [
-                ('frame_num', 'uint32'),
-                ('zone_id', 'int16'),
-                ('r_squared', 'float32'),
-                ('patch_number', 'uint16'),
-                ('patch_z_pos', 'int16'),
+                ("frame_num", "uint32"),
+                ("zone_id", "int16"),
+                ("r_squared", "float32"),
+                ("patch_number", "uint16"),
+                ("patch_z_pos", "int16"),
             ]
 
             # Convert zone_df to structured NumPy array
-            structured_array = np.array(list(zone_df.itertuples(index=False, name=None)), dtype=dtype)
+            structured_array = np.array(
+                list(zone_df.itertuples(index=False, name=None)), dtype=dtype
+            )
 
             # Prepare data to save
             mat_dict = {
-                'patch_data_averaged_by_zone': structured_array,
-                'zone_index': labeled_zones
+                "patch_data_averaged_by_zone": structured_array,
+                "zone_index": labeled_zones,
             }
 
             # Save to .mat file, displaying a counter for progress
             savemat(patch_correlations_filepath, mat_dict)
-        
-        elif save_format == 'parquet':
-            # Save to a Parquet file            
-            patch_correlations_filepath = export_path / 'patch_correlations.parquet' 
-            # Saving / loading the Z_patch column is tricky, as its quite large. 
+
+        elif save_format == "parquet":
+            # Save to a Parquet file
+            patch_correlations_filepath = export_path / "patch_correlations.parquet"
+            # Saving / loading the Z_patch column is tricky, as its quite large.
             # One option is to convert it to binary before saving
-            patch_correlations_df['Z_patch'] = patch_correlations_df['Z_patch'].apply(lambda x: x.tobytes())  
+            patch_correlations_df["Z_patch"] = patch_correlations_df["Z_patch"].apply(
+                lambda x: x.tobytes()
+            )
             patch_correlations_df.to_parquet(patch_correlations_filepath, index=False)
             # Another option would be to save it separately.
-                
-        elif save_format == 'csv':
+
+        elif save_format == "csv":
             # Save to a csv file
-            patch_correlations_filepath = export_path / 'patch_correlations.csv'
+            patch_correlations_filepath = export_path / "patch_correlations.csv"
             zone_df.to_csv(patch_correlations_filepath, index=False, header=True)
-                
+
         print(f"Patch correlations saved in {time.time() - start_time:.2f} seconds")
-            
-    # clean up            
-    del F_func, movie_16bit, Zstack, F_anat_non_rigid, patch_regress_results, patch_correlations_df, labeled_zones_df, patch_correlations
+
+    # clean up
+    del (
+        F_func,
+        movie_16bit,
+        Zstack,
+        F_anat_non_rigid,
+        patch_regress_results,
+        patch_correlations_df,
+        labeled_zones_df,
+        patch_correlations,
+    )
     gc.collect()
 
     return F_corrected, z_motion_scaling_factors
+
 
 # def subtract_z_motion_neurons(components, fov_image, zpos, shifted_zstack_filename, zparams_path):
 #     """
 #     Subtract z motion from the fluorescence traces of neurons.
 #     """
-    
+
 #     F=components.C
 #     spatial_components=components.A
 #     Nneuron, Nframe = F.shape
@@ -1868,24 +2090,24 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 #     # plt.xlabel('frames')
 #     # plt.ylabel('z')
 
-#     # x,y,t  
+#     # x,y,t
 #     return  Fcorrected, Fz_scale_factor
 
 # def subtract_z_motion_pixels(movie_mmap_path, zpos, zstack_filepath, n_jobs=-1):
 #     """
-#     Fit a Huber regressor to find the scaling factor for each pixel. 
+#     Fit a Huber regressor to find the scaling factor for each pixel.
 #     Subtract the movement-induced changes from the original F matrix per pixel.
 #     """
 #     # Load the movie
 #     movie_16bit, dims, T = load_memmap(movie_mmap_path)
 #     pixels = np.reshape(movie_16bit.T, [T] + list(dims), order='F')
 #     Nframe, Ny, Nx = pixels.shape
-    
+
 #     # Load the FOV file
 #     mcorr_batch_dir = movie_mmap_path.parent
 #     fov_file_path = Path.joinpath(mcorr_batch_dir, f"{mcorr_batch_dir.stem}_mean_projection.npy")
 #     fov_image = np.load(fov_file_path)
-    
+
 #     # Load the z-stack
 #     info_zstack = Image.open(zstack_filepath)
 #     Nz = info_zstack.n_frames
@@ -1893,7 +2115,7 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 #     for iz in range(Nz):
 #         info_zstack.seek(iz)
 #         Zstack[:, :, iz] = np.array(info_zstack)
-#     info_zstack.close()        
+#     info_zstack.close()
 #     # TODO: check why on Windows F_anat bit depth is 8 and not 16
 
 #     # Flip Zstack up-down to match the orientation of the movie
@@ -1901,17 +2123,17 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 
 #     # Reshape the "functional" fluorescence movie
 #     F_func = pixels.reshape(Nframe, Ny * Nx).T
-        
+
 #     # Get the average image of the functional fluorescence movie
 #     F_func_mean = np.mean(F_func, axis=1)
-    
+
 #     # Translate zstack frames to minimize shift with mean of registered tseries frames
 #     zpos_0 = mode(zpos).mode
 #     Zstack_0 = Zstack[:, :, zpos_0]
-    
+
 #     # Perform image registration
 #     shift, _ , _ = phase_cross_correlation(Zstack_0, fov_image, upsample_factor=10)
-    
+
 #     # Create the transformation matrix (for translation only)
 #     tform = np.eye(3)
 #     tform[0, 2] = -shift[1]
@@ -1929,19 +2151,19 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 
 #     # Get the average image of the z-stack movie
 #     F_anat_mean = np.mean(F_anat, axis=1)
-        
+
 #     # Fit a Huber regressor to find the scaling factor
 #     # with Parallel(n_jobs=n_jobs) as parallel:
 #     #     z_motion_scaling_factors = parallel(
 #     #         delayed(fit_huber_regressor)(
-#     #             i_pixel, 
-#     #             F_anat, 
-#     #             F_anat_mean, 
-#     #             F_func, 
+#     #             i_pixel,
+#     #             F_anat,
+#     #             F_anat_mean,
+#     #             F_func,
 #     #             F_func_mean
-#     #         ) 
+#     #         )
 #     #         for i_pixel in tqdm(
-#     #             range(Nx * Ny), 
+#     #             range(Nx * Ny),
 #     #             desc='Fitting regressors to find z motion scaling factors'
 #     #         )
 #     #     )
@@ -1949,7 +2171,7 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 #     # parallel._backend.terminate()
 
 #     z_motion_scaling_factors = Parallel(n_jobs=n_jobs)(delayed(fit_huber_regressor)(i_pixel, F_anat, F_anat_mean, F_func, F_func_mean) for i_pixel in tqdm(range(Ny * Nx), desc='Fitting regressors to find z motion scaling factors'))
-                   
+
 #     # Change the list to a numpy array and cast to float32
 #     z_motion_scaling_factors = np.array(z_motion_scaling_factors)
 #     z_motion_scaling_factors = z_motion_scaling_factors.astype(np.float32)
@@ -1971,7 +2193,7 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 #         Fcorrected[:, missing_F] = np.nan
 #         Fcorrected = pd.DataFrame(Fcorrected).interpolate(method='linear', axis=1, limit_direction='both').values
 #         # TODO: check that it only interpolates NaNs
-        
+
 #     # Reshape Fcorrected to the original shape
 #     F_func_reshaped = F_func.T.reshape(Nframe, Ny, Nx)
 #     F_anat_rescaled_reshaped = F_anat_rescaled.T.reshape(Nframe, Ny, Nx)
@@ -1988,30 +2210,31 @@ def subtract_z_motion_patches(movie_mmap_path, zstack_filepath, z_correlation, m
 #     Fcorrected_reshaped_excerpt = Fcorrected_reshaped[:80]
 #     F_anat_rescaled_reshaped_excerpt = F_anat_rescaled_reshaped[:80]
 #     F_func_reshaped_excerpt = F_func_reshaped[:80]
-    
+
 #     # Assign data type to uint16
 #     F_func_reshaped_excerpt = F_func_reshaped_excerpt.astype(np.uint16)
 #     F_anat_rescaled_reshaped_excerpt = F_anat_rescaled_reshaped_excerpt.astype(np.uint16)
 #     Fcorrected_reshaped_excerpt = Fcorrected_reshaped_excerpt.astype(np.uint16)
 #     F_anat_reshaped_excerpt = F_anat_reshaped_excerpt.astype(np.uint16)
-    
+
 #     # Concatenate horizontally
 #     top = np.concatenate((F_func_reshaped_excerpt, F_anat_reshaped_excerpt), axis=2)
 #     bottom = np.concatenate((F_anat_rescaled_reshaped_excerpt, Fcorrected_reshaped_excerpt), axis=2)
-    
+
 #     # Concatenate vertically
 #     F_concat = np.concatenate((top, bottom), axis=1)
-    
+
 #     # Save the concatenated array to a video file
 #     F_concat_img = Image.fromarray(F_concat[0])
 #     F_concat_img.save(movie_mmap_path.parent.parent / "F_concat.tif", save_all=True, append_images=[Image.fromarray(F_concat[i]) for i in range(1, 80)])
-    
-#     # clean up            
+
+#     # clean up
 #     del pixels, movie_16bit
 #     gc.collect()
 
 #     # Return the corrected F matrix and the scaling factor
 #     return Fcorrected_reshaped, z_motion_scaling_factors
+
 
 def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     """
@@ -2030,11 +2253,11 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
       z_motion_scaling_factors:  The scaling factors used during z-motion subtraction (or None).
       z_correlation:  The computed z-correlation data.
     """
-    
+
     # --- Parameter Setup ---
     # Extract z-stack parameters and the z-stack file path from the input parameters.
-    z_parameters = parameters['params_mcorr'].get('z_motion_correction', {})
-    zstack_path = parameters.get('zstack_path', None)
+    z_parameters = parameters["params_mcorr"].get("z_motion_correction", {})
+    zstack_path = parameters.get("zstack_path", None)
 
     # If zstack_path is not found, log an error and return None
     if zstack_path is None:
@@ -2043,33 +2266,33 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
 
     # If z_parameters is not already a dict, assume it is a path to a JSON file and load it.
     if not isinstance(z_parameters, dict):
-        with open(z_parameters, 'r') as file:
+        with open(z_parameters, "r") as file:
             z_parameters = json.load(file)
-    
+
     # Retrieve the expected file name for the shifted z-stack.
-    z_shifted_file = 'zstack_shifted.tif'# z_parameters['zstack_shift']['file_name']
-    
+    z_shifted_file = "zstack_shifted.tif"  # z_parameters['zstack_shift']['file_name']
+
     # Ensure zstack_path is a Path object.
     if isinstance(zstack_path, str):
         zstack_path = Path(zstack_path)
-        
+
     # --- Generate Shifted Z-stack ---
     try:
         # If the shifted z-stack file doesn't exist, generate it using the shift_zstack function.
         # if not os.path.exists(zstack_path / z_shifted_file) or recompute:
         shift_zstack_path = shift_zstack(
-            z_parameters['zstack_shift'], 
-            zstack_path, 
+            z_parameters["zstack_shift"],
+            zstack_path,
             z_shifted_file,
             scale_range=scale_range,
-            imaging_params=parameters.get('imaging')
+            imaging_params=parameters.get("imaging"),
         )
         # else:
         #     shift_zstack_path = zstack_path / z_shifted_file
     except Exception as e:
         print(f"Error in compute_zcorr - generate zstack_shifted: {e}")
         return None, None, None
-    
+
     # --- Compute Z-correlation ---
     try:
         # Determine the directory where the z_correlation file should be saved.
@@ -2086,17 +2309,17 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
     except Exception as e:
         print(f"Error in compute_zcorr - compute z-correlation: {e}")
         return None, None, None
-    
+
     # --- Compute non-rigid z-motion computation if specified ---
     try:
-        compute_non_rigid = z_parameters.get('non_rigid', None)
+        compute_non_rigid = z_parameters.get("non_rigid", None)
 
         if compute_non_rigid is not None:
-            
+
             # Initialize variables for the z-motion subtraction results.
             zcorr_movie = None
             z_motion_scaling_factors = None
-            movie_path = None      
+            movie_path = None
 
             if compute_non_rigid:
                 # Compute non-rigid functional-anatomical correlation
@@ -2105,34 +2328,37 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
                         mcorr_movie_path,
                         zstack_path / z_shifted_file,
                         z_correlation,
-                        parameters['params_mcorr']['main'],
+                        parameters["params_mcorr"]["main"],
                         subtract_method=None,
-                        save_tiffs=True
+                        save_tiffs=True,
                     )
                     # Save the scaling factors if they have been computed.
                     if z_motion_scaling_factors is not None:
-                        np.save(mesmerize_path / "non_rigid_z_motion_scaling_factors.npy", z_motion_scaling_factors)
+                        np.save(
+                            mesmerize_path / "non_rigid_z_motion_scaling_factors.npy",
+                            z_motion_scaling_factors,
+                        )
                 else:
                     print("Z-motion subtraction already performed.")
-                    
+
             # --- Save Corrected Movie ---
             # If a corrected movie has been generated, save it to a memmap file.
             if zcorr_movie is not None:
                 movie_path = save_mmap_movie(
-                    zcorr_movie, 
-                    mcorr_movie_path.parent / f"zcorr_movie_{mcorr_movie_path.name}"
+                    zcorr_movie, mcorr_movie_path.parent / f"zcorr_movie_{mcorr_movie_path.name}"
                 )
-                    
+
             return movie_path, z_motion_scaling_factors, z_correlation
-    
+
         else:
             # If no subtraction is specified, return the computed z_correlation only.
             return None, None, z_correlation
-    
+
     except Exception as e:
         print(f"Error in compute_zcorr - computing non-rigid F_anat: {e}")
         return None, None, None
-     
+
+
 if __name__ == "__main__":
     # Get arguements from command line
     parser = argparse.ArgumentParser(description="Compute z-motion correction for a movie")

@@ -69,8 +69,16 @@ def synthetic(vol, seeds):
             dd.mkdir(parents=True)
             mp = save_caiman_memmap(mov, dd)
             calls = [
-                ("legacy", lambda: compute_zcorrel_legacy(tmp / "z.tif", mp, smooth_sigma=3, export_path=tmp)),
-                ("new", lambda: compute_zcorrel(tmp / "z.tif", mp, smooth_sigma=3, export_path=tmp)),
+                (
+                    "legacy",
+                    lambda: compute_zcorrel_legacy(
+                        tmp / "z.tif", mp, smooth_sigma=3, export_path=tmp
+                    ),
+                ),
+                (
+                    "new",
+                    lambda: compute_zcorrel(tmp / "z.tif", mp, smooth_sigma=3, export_path=tmp),
+                ),
                 ("suite2p", lambda: compute_zcorrel_suite2p(tmp / "z.tif", mp, smooth_sigma=3)),
             ]
             for name, call in calls:
