@@ -328,6 +328,45 @@ def section_roi_figure(pdf, results):
     plt.close(fig)
 
 
+def section_new_zcorrel(pdf, results):
+    png = results / "new_zcorrel_real.png"
+    if not png.exists():
+        return
+    import matplotlib.image as mpimg
+
+    fig = plt.figure(figsize=(8.27, 11.69))
+    fig.text(0.08, 0.95, "6b. Optimized compute_zcorrel", fontsize=14, fontweight="bold")
+    lines = [
+        "compute_zcorrel_legacy = full-frame Pearson (kept for comparison).",
+        "New compute_zcorrel default = Pearson + temporal median smoothing of zpos.",
+        "",
+        "Synthetic ground truth (4 seeds): suite2p/phasecorr is most accurate "
+        "(RMSE ~0.7 planes) but — see below — fails on mcorr'd data. Pearson+smoothing "
+        "edges out legacy (r 0.935 vs 0.920).",
+        "",
+        "Two synthetic-motivated options were tested and left OFF by default because "
+        "they DEGRADE on NoRMCorre-corrected production movies:",
+        "• phasecorr (Suite2p): latches onto the deepest low-contrast plane (→ plane 40).",
+        "• edge_crop: collapses the Pearson estimate to plane 0.",
+        "",
+        "The one safe win — temporal smoothing — cuts spurious ≥2-plane jumps on the "
+        "real mcorr'd run from 290 (legacy) to 44, tracking the same drift (r=0.85):",
+    ]
+    y = 0.90
+    import textwrap
+
+    for ln in lines:
+        wrapped = textwrap.fill(ln, width=92) if ln else ""
+        n = wrapped.count("\n") + 1 if ln else 1
+        fig.text(0.10 if ln.startswith("•") else 0.08, y, wrapped, fontsize=10, va="top")
+        y -= 0.022 * n + 0.010
+    ax = fig.add_axes([0.06, 0.10, 0.88, 0.32])
+    ax.imshow(mpimg.imread(png))
+    ax.axis("off")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def section_conclusions(pdf):
     _text_page(
         pdf,
@@ -337,17 +376,17 @@ def section_conclusions(pdf):
             "• The z-motion chain is validated end-to-end on real data, both CNMF and "
             "Suite2p backends. 7 latent bugs were fixed in the per-ROI path.",
             "",
-            "z-position estimation (compute_zcorrel vs Suite2p port):",
-            "• Synthetic ground truth: Suite2p is clearly more accurate and far more "
-            "consistent (r 0.97±0.00 vs 0.91±0.03; RMSE 0.74 vs 1.74 planes).",
-            "• Real data: the two agree well (single r=0.75, concat r=0.76); Suite2p is "
-            "marginally noisier frame-to-frame but handles concatenation boundaries better "
-            "(mean |jump| 0.33 vs 1.00 planes).",
-            "• Caveat: Suite2p's z-pos is sensitive to NoRMCorre edge artifacts on the "
-            "mcorr'd movie — must be handled, since z-pos runs after mcorr.",
-            "• Recommendation: adopt Suite2p for z-position (worth the 3–6× cost for the "
-            "accuracy gain), ideally with light temporal smoothing to curb frame-to-frame "
-            "noise; verify on the mcorr'd movie before switching production.",
+            "z-position estimation:",
+            "• Synthetic ground truth: phase correlation (Suite2p) is most accurate "
+            "(RMSE ~0.7 vs ~1.7 planes for Pearson).",
+            "• BUT on real NoRMCorre-corrected movies this does not transfer: phasecorr "
+            "latches onto the deepest plane, and edge-cropping collapses Pearson to plane 0. "
+            "Since z-pos runs after mcorr, neither is usable there.",
+            "• The robust improvement is Pearson + temporal median smoothing of zpos: same "
+            "drift as legacy but 44 vs 290 spurious ≥2-plane jumps on the real run.",
+            "• Recommendation: keep Pearson (now the default in compute_zcorrel) with "
+            "temporal smoothing; do NOT adopt phasecorr/edge-crop for production despite "
+            "their synthetic accuracy. Revisit phasecorr only for raw/lightly-registered data.",
             "",
             "F_anat & correction:",
             "• Per-ROI fit-and-subtract removes the most z-contamination at every drift "
@@ -396,6 +435,7 @@ def main():
         section_stage3(pdf, args.results)
         section_zpos_deepdive(pdf, args.results)
         section_roi_figure(pdf, args.results)
+        section_new_zcorrel(pdf, args.results)
         section_conclusions(pdf)
 
     print(f"Wrote {out}")

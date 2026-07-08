@@ -70,12 +70,32 @@ Both methods run on identical inputs (`zpos_compare_data.py`); see PDF §5.
 | real concat (4×1600) | agreement r | 0.761 | (vs caiman) |
 | real concat | mean \|jump\| at boundaries | 1.00 | **0.33** |
 
-**Suite2p is decisively more accurate on ground truth** and far more consistent; on
-real data the two agree well, Suite2p is marginally noisier frame-to-frame but handles
-concatenation boundaries **better**. Caveat: Suite2p's z-pos is unstable on the *mcorr'd*
-movie (NoRMCorre edge artifacts drive it to the stack boundary) — must be handled since
-z-pos runs after mcorr. **Recommendation:** adopt Suite2p for z-position (worth the 3–6×
-cost) with light temporal smoothing; verify on the mcorr'd movie before switching.
+**Suite2p is decisively more accurate on synthetic ground truth**, but this does NOT
+transfer to real production data. On the mcorr'd movie phase correlation latches onto the
+deepest low-contrast plane, and edge-cropping collapses the Pearson estimate to plane 0 —
+both unusable since z-pos runs after NoRMCorre.
+
+### Stage 1d — optimized `compute_zcorrel` (implemented)
+
+`compute_zcorrel_legacy` (Pearson) is kept for comparison; the new `compute_zcorrel`
+defaults to **Pearson + temporal median smoothing of zpos**, with phasecorr/edge-crop as
+opt-in (off by default). Validated:
+
+| test | legacy | new (default) | suite2p/phasecorr |
+|---|---|---|---|
+| synthetic r (4 seeds) | 0.920 | 0.935 | 0.973 |
+| real mcorr'd: ≥2-plane jumps | 290 | **44** | slams to plane 40 |
+
+**Recommendation:** keep Pearson (now the default) with temporal smoothing — same drift as
+legacy, 6.6× fewer spurious jumps. Do **not** adopt phasecorr/edge-crop for production
+despite their synthetic accuracy; revisit phasecorr only for raw/lightly-registered data.
+
+### ROI correction fixed to match the MATLAB reference
+
+`run_roi_zcorr` was reimplemented per `analyze_2p_with_Beh_func.m` (l.313+): works in
+ΔF/F, 3-point temporal smoothing of `F_anat_non_rigid`, uniform mean over ROI pixels,
+OLS slope, subtract — **removing the NaN-and-interpolate step** that produced the earlier
+straight-line/flat-ending artifacts.
 
 ## 3. Stage 3 — correction method (recovery of injected synthetic activity)
 
