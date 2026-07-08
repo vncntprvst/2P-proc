@@ -186,3 +186,94 @@ def make_active_functional_movie(
         "z_true": z_focal.astype(np.float32),
     }
     return movie.astype(np.float32), ground_truth
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stimulus/response-locked activity and motion (realistic coupling)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def make_stimulus_locked_traces(
+    n_cells,
+    n_frames,
+    framerate=20.0,
+    decay_time=0.15,
+    n_events=12,
+    resp_fraction=0.6,
+    resp_prob=0.8,
+    event_jitter=3,
+    amp_range=(0.8, 2.0),
+    background_rate=0.2,
+    seed=42,
+):
+    """Population responses time-locked to stimulus events + background firing.
+
+    Mimics a stimulus protocol: at each event a responsive subset of cells fires
+    (near the event, with jitter), on top of low background Poisson activity.
+
+    Returns
+    -------
+    trueC : (n_cells, n_frames) float32   ground-truth calcium
+    trueS : (n_cells, n_frames) float32   spikes
+    events : (n_events,) int              stimulus/response onset frames
+    responsive : (n_cells,) bool          which cells respond to the stimulus
+    """
+    rng = np.random.default_rng(seed)
+    gamma = np.exp(-1.0 / (decay_time * framerate))
+    margin = int(0.05 * n_frames) + 5
+    events = np.linspace(margin, n_frames - margin, n_events).round().astype(int)
+    trueS = (rng.random((n_cells, n_frames)) < background_rate / framerate).astype(np.float32)
+    responsive = rng.random(n_cells) < resp_fraction
+    for c in np.where(responsive)[0]:
+        for e in events:
+            if rng.random() < resp_prob:
+                t = int(np.clip(e + rng.integers(-event_jitter, event_jitter + 1), 0, n_frames - 1))
+                trueS[c, t] += rng.uniform(*amp_range)
+    trueC = trueS.copy()
+    for t in range(1, n_frames):
+        trueC[:, t] += gamma * trueC[:, t - 1]
+    return trueC.astype(np.float32), trueS, events, responsive
+
+
+def make_response_coupled_zmotion(
+    n_frames,
+    events,
+    base_zoff=None,
+    framerate=20.0,
+    kick_amp=3.0,
+    kick_prob=0.8,
+    kick_tau=0.4,
+    kick_delay=1,
+    event_jitter=2,
+    seed=42,
+):
+    """z-trajectory whose (downward) movement onsets cluster around response events.
+
+    Real brain motion is not random: the animal reacts to the stimulus, so z tends
+    to move (downward) around response onset. Each event triggers, with probability
+    `kick_prob`, a downward (negative) displacement that onsets near the event and
+    decays with `kick_tau`. An optional `base_zoff` (e.g. a real estimated zpos) is
+    added as the ongoing background fluctuation.
+
+    Returns z_offsets : (n_frames,) float32  (centred on 0).
+    """
+    rng = np.random.default_rng(seed + 2)
+    zoff = np.zeros(n_frames, np.float32)
+    if base_zoff is not None:
+        b = np.asarray(base_zoff, np.float32)[:n_frames]
+        zoff[: len(b)] = b - b.mean()
+    gamma = np.exp(-1.0 / (kick_tau * framerate))
+    for e in events:
+        if rng.random() < kick_prob:
+            t0 = int(
+                np.clip(
+                    e + kick_delay + rng.integers(-event_jitter, event_jitter + 1), 0, n_frames - 1
+                )
+            )
+            amp = -abs(kick_amp) * rng.uniform(0.6, 1.2)  # downward = negative
+            kick = np.zeros(n_frames, np.float32)
+            kick[t0] = amp
+            for t in range(t0 + 1, n_frames):
+                kick[t] = gamma * kick[t - 1]
+            zoff += kick
+    return (zoff - zoff.mean()).astype(np.float32)

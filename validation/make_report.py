@@ -347,10 +347,12 @@ def section_synthetic_correction(pdf, results):
         0.08, 0.955, "6c. Correction on synthetic ground truth", fontsize=14, fontweight="bold"
     )
     cap = (
-        "On real data the benefit is hard to see (no ground truth). Injecting known "
-        "activity into the real z-stack lets us quantify recovery. For the cells most "
-        "impacted by z-motion, correction removes the z-driven baseline wander (grey→blue) "
-        "and recovers the true transients (black)."
+        "On real data the benefit is hard to see (no ground truth). Injecting known activity "
+        "into the real z-stack lets us quantify recovery. The z-motion is modelled on the real "
+        "protocol: fast dynamics (from the real estimated zpos) plus downward motion onsets "
+        "clustered around stimulus responses (grey vertical lines) — so the z-artifact partly "
+        "overlaps the true responses, the hardest case. For the most z-impacted cells the "
+        "correction removes the z-jitter (grey→blue) and recovers the true transients (black)."
     )
     import textwrap
 

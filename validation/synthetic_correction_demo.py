@@ -70,10 +70,31 @@ def main():
     p.add_argument("--n-cells", type=int, default=60)
     p.add_argument("--z-band", type=int, default=6)
     p.add_argument("--n-show", type=int, default=6)
+    p.add_argument(
+        "--real-zpos",
+        type=Path,
+        default=None,
+        help="npz with a real estimated zpos trajectory to impose (fast, realistic "
+        "dynamics) instead of a slow synthetic drift",
+    )
+    p.add_argument("--real-zpos-key", default="zpos_legacy")
+    p.add_argument(
+        "--coupled",
+        action="store_true",
+        help="stimulus/response-locked activity with downward z-motion onsets "
+        "clustered around response onsets (realistic protocol coupling)",
+    )
+    p.add_argument("--n-events", type=int, default=14)
+    p.add_argument("--kick-amp", type=float, default=3.0)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--seed", type=int, default=1)
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+
+    from tests.benchmarks.synthetic_activity import (
+        make_stimulus_locked_traces,
+        make_response_coupled_zmotion,
+    )
 
     vol, _ = load_bruker_zstack(args.real_zstack, channel=2, downsample=args.downsample)
     znom = (vol.shape[0] - 1) / 2.0
@@ -84,10 +105,38 @@ def main():
     centers = detect_somata(
         vol, n_cells=args.n_cells, min_distance=5, margin=8, z_center=znom, z_band=args.z_band
     )
-    trueC, _ = make_calcium_traces(
-        len(centers), T, framerate=20, decay_time=0.15, firerate=1.0, seed=args.seed
-    )
-    zoff = make_rigid_z_trajectory(T, args.amplitude_planes, 8, seed=args.seed)
+    n = len(centers)
+
+    base = None
+    if args.real_zpos is not None:
+        base = np.load(args.real_zpos)[args.real_zpos_key].astype(np.float32)[:T]
+
+    events = None
+    if args.coupled:
+        # Stimulus-locked responses + z-motion whose downward onsets cluster around
+        # them (real protocol: the animal reacts, so motion co-occurs with responses).
+        trueC, _, events, _ = make_stimulus_locked_traces(
+            n, T, framerate=20, decay_time=0.15, n_events=args.n_events, seed=args.seed
+        )
+        # background fluctuation from the real zpos (scaled down) + response kicks
+        base_bg = 0.4 * (base - base.mean()) if base is not None else None
+        zoff = make_response_coupled_zmotion(
+            T, events, base_zoff=base_bg, kick_amp=args.kick_amp, seed=args.seed
+        )
+        traj_label = "response-coupled z-motion"
+    elif base is not None:
+        zoff = base - base.mean()
+        traj_label = f"real estimated z-motion ({args.real_zpos_key})"
+        trueC, _ = make_calcium_traces(
+            n, T, framerate=20, decay_time=0.15, firerate=1.0, seed=args.seed
+        )
+    else:
+        zoff = make_rigid_z_trajectory(T, args.amplitude_planes, 8, seed=args.seed)
+        traj_label = f"synthetic drift {args.amplitude_planes:.0f} planes"
+        trueC, _ = make_calcium_traces(
+            n, T, framerate=20, decay_time=0.15, firerate=1.0, seed=args.seed
+        )
+
     xy = make_xy_trajectory(T, 1.0, 8, seed=args.seed)
     movie, gt = make_active_functional_movie(
         vol,
@@ -143,6 +192,9 @@ def main():
     if len(sel) == 1:
         axes = [axes]
     for ax, i in zip(axes, sel):
+        if events is not None:
+            for e in events:
+                ax.axvline(e, color="0.85", lw=0.7, zorder=0)
         ax.plot(_z(true_dff[i]), color="k", lw=1.0, alpha=0.9, label="true activity")
         ax.plot(_z(dff_before[i]), color="0.6", lw=0.8, label="before (z-contaminated)")
         ax.plot(_z(dff_after[i]), color="C0", lw=0.9, label="z-corrected")
@@ -156,7 +208,7 @@ def main():
     axes[-1].set_xlabel("frame")
     fig.suptitle(
         f"Per-ROI z-correction on synthetic ground truth — "
-        f"top {len(sel)} z-impacted cells (z-drift {args.amplitude_planes:.0f} planes)",
+        f"top {len(sel)} z-impacted cells ({traj_label})",
         fontsize=10,
     )
     fig.tight_layout()
@@ -187,9 +239,18 @@ def main():
 
     # ── Stats ────────────────────────────────────────────────────────────────
     top = order[: max(10, args.n_show)]
+    # Coupling between population activity and z-motion (negative when downward
+    # z-motion co-occurs with responses, as in the real protocol).
+    pop_activity = true_dff.mean(axis=0)
+    activity_z_coupling = _corr(pop_activity, zpos)
     stats = {
         "n_cells": int(n),
-        "z_drift_planes": args.amplitude_planes,
+        "trajectory": traj_label,
+        "z_std_planes": float(zoff.std()),
+        "z_ptp_planes": float(zoff.max() - zoff.min()),
+        "activity_z_coupling": (
+            float(activity_z_coupling) if activity_z_coupling == activity_z_coupling else None
+        ),
         "all_cells": {
             "r_before_mean": float(np.nanmean(r_before)),
             "r_after_mean": float(np.nanmean(r_after)),
@@ -206,7 +267,10 @@ def main():
     }
     (args.out / "roi_zcorr_synthetic.json").write_text(json.dumps(stats, indent=2))
     a, t = stats["all_cells"], stats["top_z_impacted"]
-    print(f"{n} cells, z-drift {args.amplitude_planes:.0f} planes")
+    print(
+        f"{n} cells | {traj_label} (std {zoff.std():.2f}, p2p {zoff.max()-zoff.min():.1f} planes) "
+        f"| activity-z coupling r={activity_z_coupling:.2f}"
+    )
     print(
         f"ALL cells   : recovery r {a['r_before_mean']:.3f} -> {a['r_after_mean']:.3f}  "
         f"| resid-z {a['resid_z_before_mean']:.3f} -> {a['resid_z_after_mean']:.3f}"
