@@ -2,7 +2,7 @@
 Motion Correction Module for Analysis 2P Pipeline
 
 This module handles the motion correction workflow including:
-- Raw data concatenation 
+- Raw data concatenation
 - Motion correction using CaImAn/Mesmerize
 - Z-motion correction (optional)
 - Movie output generation
@@ -35,6 +35,7 @@ import shutil
 
 # Import CaImAn and Mesmerize components
 import mesmerize_core as mc
+
 # from caiman.mmapping import load_memmap
 
 from modules import bruker_concat_tif as ct
@@ -50,6 +51,7 @@ from pipeline.utils.pipeline_utils import (
     memory_manager,
     load_caiman_memmap,
 )
+
 
 def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path, allow_suite2p_dir: bool = False):
     """Copy concatenation sidecar JSON next to a converted movie.
@@ -67,28 +69,28 @@ def _copy_concat_sidecar(export_dir: Path, dest_movie_path: Path, allow_suite2p_
         src = next((p for p in candidates if p.exists()), None)
         if src is None:
             return
-        
+
         # Copy sidecar next to movie file
         dst = dest_movie_path.with_name(dest_movie_path.name + ".json")
         shutil.copy2(src, dst)
         log_and_print(f"Copied sidecar JSON to {dst}")
-        
+
         if allow_suite2p_dir:
             # Move XML parameter files to plane0 folder
             try:
                 # Create plane0 directory if it doesn't exist
                 plane0_dir = export_dir / "suite2p" / "plane0"
                 plane0_dir.mkdir(parents=True, exist_ok=True)
-                
+
                 # Check for consolidated sidecar and copy it if needed, or handle legacy files if they exist
                 # (Logic to move *_imaging_params.json removed to avoid clutter/redundancy)
-                
-            except Exception as e:
-                log_and_print(f"Warning: failed to setup suite2p directory: {e}", level='warning')
 
-            
+            except Exception as e:
+                log_and_print(f"Warning: failed to setup suite2p directory: {e}", level="warning")
+
     except Exception as e:
-        log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level='warning')
+        log_and_print(f"Warning: failed to copy sidecar JSON: {e}", level="warning")
+
 
 def to_uint8_robust(arr, p_lo=0.1, p_hi=99.9):
     # Compute robust range on the array (handles negatives, ignores outliers)
@@ -99,7 +101,17 @@ def to_uint8_robust(arr, p_lo=0.1, p_hi=99.9):
     arr = (arr - vmin) * (255.0 / (vmax - vmin))
     return arr.astype(np.uint8)
 
-def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp4', diff_corr=True, to_uint8=True, excerpt=None):
+
+def create_mcorr_movie(
+    mcorr_movie_path,
+    export_path,
+    batch,
+    index=0,
+    format="mp4",
+    diff_corr=True,
+    to_uint8=True,
+    excerpt=None,
+):
     """
     Save the motion corrected movie (memmaped array) as a BigTIFF file or a mp4 movie.
     If diff_corr is true (default), concatenate the original movie and the motion corrected movie horizontally.
@@ -110,15 +122,15 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
     # If excerpt is not None, keep only the first x frames of the movie
     if excerpt is not None:
         loaded_mcorr_movie = loaded_mcorr_movie[:excerpt]
-        
+
     # Convert values to uint8
     if to_uint8:
         # Data is originally uint12, and is loaded as float 32, but is 16 bit range.
         mcorr_movie_ = to_uint8_robust(loaded_mcorr_movie)
     else:
         mcorr_movie_ = loaded_mcorr_movie.astype(np.uint16)
-    
-    if format == 'mp4':
+
+    if format == "mp4":
         if diff_corr:
             # Load the data frame from the batch
             df = mc.load_batch(batch)
@@ -142,10 +154,10 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
         else:
             # Save the motion corrected movie as a mp4 movie
             # movie_path = Path.joinpath(export_path, f"mcorr.mp4")
-            create_mp4_movie(mcorr_movie_, export_path, 'mcorr.mp4')
+            create_mp4_movie(mcorr_movie_, export_path, "mcorr.mp4")
             log_and_print(f"Saved motion corrected movie to {export_path}/mcorr.mp4")
-            
-            return Path.joinpath(export_path, 'mcorr.mp4')
+
+            return Path.joinpath(export_path, "mcorr.mp4")
     else:
         # Save the motion corrected movie as a BigTIFF file (8 bit by default)
         if to_uint8:
@@ -153,13 +165,14 @@ def create_mcorr_movie(mcorr_movie_path, export_path, batch, index=0, format='mp
         else:
             mcorr_tif_path = Path.joinpath(export_path, f"mcorr_u16.tiff")
         with TiffWriter(mcorr_tif_path, bigtiff=True) as tif:
-            tif.write(mcorr_movie_, photometric='minisblack')  
+            tif.write(mcorr_movie_, photometric="minisblack")
         if to_uint8:
             log_and_print(f"Saved 8 bit motion corrected movie to {mcorr_tif_path}.")
         else:
             log_and_print(f"Saved 16 bit motion corrected movie to {mcorr_tif_path}.")
-            
+
         return mcorr_tif_path
+
 
 def compute_movie_residuals(mcorr_movie_path, zcorr_movie, export_path):
     """
@@ -172,18 +185,18 @@ def compute_movie_residuals(mcorr_movie_path, zcorr_movie, export_path):
     residual_movie = np.zeros_like(loaded_mcorr_movie)
     for i, frame in enumerate(loaded_mcorr_movie):
         residual_movie[i] = zcorr_movie[i] - frame
-        
+
     # Convert all three movies' values to uint8, then concatenate them horizontally and save as a mp4 movie
-    mcorr_movie_ = (loaded_mcorr_movie / (2**16-1) * 255).astype('uint8')
-    zcorr_movie_ = (zcorr_movie / (2**16-1) * 255).astype('uint8')
-    residual_movie_ = (residual_movie / (2**16-1) * 255).astype('uint8')
-    
+    mcorr_movie_ = (loaded_mcorr_movie / (2**16 - 1) * 255).astype("uint8")
+    zcorr_movie_ = (zcorr_movie / (2**16 - 1) * 255).astype("uint8")
+    residual_movie_ = (residual_movie / (2**16 - 1) * 255).astype("uint8")
+
     # Set the path of the mp4 movie
     movie_path = Path.joinpath(export_path, f"compare_mcorr_zcorr_residuals.mp4")
-    
+
     # Concatenate the three movies horizontally
     cat_movie = np.concatenate((mcorr_movie_, zcorr_movie_, residual_movie_), axis=2)
-    create_mp4_movie(cat_movie, export_path, 'compare_mcorr_zcorr_residuals.mp4')
+    create_mp4_movie(cat_movie, export_path, "compare_mcorr_zcorr_residuals.mp4")
 
 
 def run_roi_zcorr(export_path, parameters):
@@ -214,7 +227,11 @@ def run_roi_zcorr(export_path, parameters):
     # Standard suite2p plane0
     candidates.append(export_path / "suite2p" / "plane0")
     # Any suite2p plane*
-    candidates.extend(sorted((export_path / "suite2p").glob("plane*"))) if (export_path / "suite2p").exists() else None
+    (
+        candidates.extend(sorted((export_path / "suite2p").glob("plane*")))
+        if (export_path / "suite2p").exists()
+        else None
+    )
     # Stray plane0 directly under export_path (seen in some save_mat behaviors)
     candidates.append(export_path / "plane0")
 
@@ -322,10 +339,12 @@ def run_roi_zcorr(export_path, parameters):
             )
 
         # Save results
-        np.savez_compressed(export_path / "F_roi_zcorrected.npz",
-                            F_roi_zcorrected=Fcorrected,
-                            F_roi_zbaseline=Fz_rescaled,
-                            roi_z_scaling=b)
+        np.savez_compressed(
+            export_path / "F_roi_zcorrected.npz",
+            F_roi_zcorrected=Fcorrected,
+            F_roi_zbaseline=Fz_rescaled,
+            roi_z_scaling=b,
+        )
 
         try:
             import matplotlib.pyplot as plt
@@ -353,8 +372,11 @@ def run_roi_zcorr(export_path, parameters):
 
     log_and_print("ROI z-motion correction completed.")
     return export_path
-   
-def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale=None, chunk_size=256):
+
+
+def save_movie_as_h5(
+    memmap_path, h5_path, parameters, dtype_out="uint16", scale=None, chunk_size=256
+):
     """
     Streamed save of motion-corrected movie as HDF5 (AIND / Suite2p extraction-ready).
 
@@ -367,28 +389,28 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
 
     # Metadata extraction
     try:
-        imaging = parameters.get('imaging', {}) if parameters else {}
+        imaging = parameters.get("imaging", {}) if parameters else {}
     except Exception:
         imaging = {}
-    frame_rate = imaging.get('fr') or imaging.get('fs') or 30.0
-    pixel_size_um = imaging.get('microns_per_pixel', 1.0)
+    frame_rate = imaging.get("fr") or imaging.get("fs") or 30.0
+    pixel_size_um = imaging.get("microns_per_pixel", 1.0)
 
-    if dtype_out not in ('uint16','float32'):
+    if dtype_out not in ("uint16", "float32"):
         raise ValueError("dtype_out must be 'uint16' or 'float32'")
 
     running_min = np.inf
     running_max = -np.inf
 
-    with h5py.File(h5_path, 'w') as f:
-        if dtype_out == 'uint16':
-            dset = f.create_dataset('data', shape=(T, Ly, Lx), dtype='uint16', compression=None)
+    with h5py.File(h5_path, "w") as f:
+        if dtype_out == "uint16":
+            dset = f.create_dataset("data", shape=(T, Ly, Lx), dtype="uint16", compression=None)
         else:
-            dset = f.create_dataset('data', shape=(T, Ly, Lx), dtype='float32', compression=None)
-        dset.attrs['fs'] = frame_rate
-        dset.attrs['n_frames'] = int(T)
-        dset.attrs['Ly'] = int(Ly)
-        dset.attrs['Lx'] = int(Lx)
-        dset.attrs['pixel_size_um'] = float(pixel_size_um)
+            dset = f.create_dataset("data", shape=(T, Ly, Lx), dtype="float32", compression=None)
+        dset.attrs["fs"] = frame_rate
+        dset.attrs["n_frames"] = int(T)
+        dset.attrs["Ly"] = int(Ly)
+        dset.attrs["Lx"] = int(Lx)
+        dset.attrs["pixel_size_um"] = float(pixel_size_um)
 
         for start in range(0, T, chunk_size):
             stop = min(T, start + chunk_size)
@@ -398,42 +420,47 @@ def save_movie_as_h5(memmap_path, h5_path, parameters, dtype_out='uint16', scale
             # Update stats before conversion
             blk_min = float(block.min())
             blk_max = float(block.max())
-            if blk_min < running_min: running_min = blk_min
-            if blk_max > running_max: running_max = blk_max
+            if blk_min < running_min:
+                running_min = blk_min
+            if blk_max > running_max:
+                running_max = blk_max
 
-            if dtype_out == 'uint16':
+            if dtype_out == "uint16":
                 if block.min() < 0:
                     # shift to positive per-chunk if needed
                     block = block - block.min()
-                block = clip_range(block, 'uint16').astype(np.uint16, copy=False)
+                block = clip_range(block, "uint16").astype(np.uint16, copy=False)
             else:  # float32
                 block = block.astype(np.float32, copy=False)
 
             dset[start:stop] = np.ascontiguousarray(block)
             if (start // chunk_size) % 20 == 0 or stop == T:
-                log_and_print(f"  Wrote frames {start}:{stop} (min={blk_min:.1f}, max={blk_max:.1f})")
+                log_and_print(
+                    f"  Wrote frames {start}:{stop} (min={blk_min:.1f}, max={blk_max:.1f})"
+                )
 
     log_and_print(f"H5 written: {h5_path} (range min={running_min:.2f}, max={running_max:.2f})")
 
     # Quick verification (first frame only)
     try:
-        with h5py.File(h5_path, 'r') as f:
-            test = f['data'][0]
+        with h5py.File(h5_path, "r") as f:
+            test = f["data"][0]
         if test.shape != (Ly, Lx):
-            log_and_print("WARNING: First frame shape mismatch on H5 read-back", level='warning')
+            log_and_print("WARNING: First frame shape mismatch on H5 read-back", level="warning")
         else:
             log_and_print("H5 read-back first frame OK")
     except Exception as e:
-        log_and_print(f"H5 verification failed: {e}", level='warning')
+        log_and_print(f"H5 verification failed: {e}", level="warning")
 
     adapter.close()
     # Copy concatenation sidecar JSON next to the new file
-    allow_suite2p_dir = (
-        parameters
-        and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
-    )
+    allow_suite2p_dir = parameters and parameters.get("params_extraction", {}).get("method") in {
+        "suite2p",
+        "aind",
+    }
     _copy_concat_sidecar(Path(h5_path).parent, Path(h5_path), allow_suite2p_dir=allow_suite2p_dir)
     return Path(h5_path)
+
 
 def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, scale=None):
     """
@@ -447,46 +474,54 @@ def save_movie_as_bin(memmap_path, bin_path, parameters=None, chunk_size=512, sc
     running_min = np.inf
     running_max = -np.inf
 
-    with open(bin_path, 'wb') as f:
+    with open(bin_path, "wb") as f:
         for start in range(0, T, chunk_size):
             stop = min(T, start + chunk_size)
             block = adapter[start:stop].astype(np.float32, copy=False)
             if scale is not None:
                 block *= scale
-            blk_min = float(block.min()); blk_max = float(block.max())
-            if blk_min < running_min: running_min = blk_min
-            if blk_max > running_max: running_max = blk_max
-            block = clip_range(block, 'int16').astype(np.int16, copy=False)
+            blk_min = float(block.min())
+            blk_max = float(block.max())
+            if blk_min < running_min:
+                running_min = blk_min
+            if blk_max > running_max:
+                running_max = blk_max
+            block = clip_range(block, "int16").astype(np.int16, copy=False)
             f.write(np.ascontiguousarray(block).tobytes())
             if (start // chunk_size) % 20 == 0 or stop == T:
-                log_and_print(f"  Wrote frames {start}:{stop} (min={blk_min:.1f}, max={blk_max:.1f})")
+                log_and_print(
+                    f"  Wrote frames {start}:{stop} (min={blk_min:.1f}, max={blk_max:.1f})"
+                )
 
     # Verify size
     expected_size = T * Ly * Lx * 2
     actual_size = Path(bin_path).stat().st_size
     log_and_print(f"Binary written: {bin_path} bytes={actual_size} expected={expected_size}")
     if actual_size != expected_size:
-        log_and_print("WARNING: Size mismatch in .bin export", level='warning')
+        log_and_print("WARNING: Size mismatch in .bin export", level="warning")
 
     # Quick read-back of first frame
     try:
-        first = np.fromfile(bin_path, dtype=np.int16, count=Ly*Lx).reshape(Ly, Lx)
+        first = np.fromfile(bin_path, dtype=np.int16, count=Ly * Lx).reshape(Ly, Lx)
         log_and_print(f"First frame read-back: min={first.min()} max={first.max()}")
     except Exception as e:
-        log_and_print(f"Read-back failed: {e}", level='warning')
+        log_and_print(f"Read-back failed: {e}", level="warning")
 
     log_and_print(f"Range across stream: min={running_min:.2f}, max={running_max:.2f}")
     adapter.close()
     log_and_print(f"✓ Successfully saved .bin movie to {bin_path}")
     # Copy concatenation sidecar JSON next to the new file
-    allow_suite2p_dir = (
-        parameters
-        and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
-    )
+    allow_suite2p_dir = parameters and parameters.get("params_extraction", {}).get("method") in {
+        "suite2p",
+        "aind",
+    }
     _copy_concat_sidecar(Path(bin_path).parent, Path(bin_path), allow_suite2p_dir=allow_suite2p_dir)
     return Path(bin_path)
 
-def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, dtype_out='uint16', scale=None):
+
+def save_movie_as_tiff(
+    memmap_path, tiff_path, parameters=None, chunk_size=256, dtype_out="uint16", scale=None
+):
     """Stream-save motion-corrected movie as BigTIFF (multi-page).
 
     Frames are written sequentially to avoid loading the full movie. By default, scales/clips to uint16.
@@ -504,9 +539,9 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
         arr = frames
         if scale is not None:
             arr = arr.astype(np.float32) * float(scale)
-        if dtype_out == 'uint16':
-            arr = clip_range(arr, 'uint16').astype(np.uint16)
-        elif dtype_out == 'float32':
+        if dtype_out == "uint16":
+            arr = clip_range(arr, "uint16").astype(np.uint16)
+        elif dtype_out == "float32":
             arr = arr.astype(np.float32)
         else:
             raise ValueError("dtype_out must be 'uint16' or 'float32'")
@@ -520,19 +555,22 @@ def save_movie_as_tiff(memmap_path, tiff_path, parameters=None, chunk_size=256, 
             running_max = max(running_max, float(np.max(chunk)))
             out = to_dtype(chunk)
             for k in range(out.shape[0]):
-                tif.write(out[k], contiguous=True, photometric='minisblack')
+                tif.write(out[k], contiguous=True, photometric="minisblack")
 
     log_and_print(f"TIFF written: {tiff_path} (range min={running_min:.2f}, max={running_max:.2f})")
     adapter.close()
 
     # Copy concatenation sidecar JSON next to the new file
-    allow_suite2p_dir = (
-        parameters
-        and parameters.get("params_extraction", {}).get("method") in {"suite2p", "aind"}
+    allow_suite2p_dir = parameters and parameters.get("params_extraction", {}).get("method") in {
+        "suite2p",
+        "aind",
+    }
+    _copy_concat_sidecar(
+        Path(tiff_path).parent, Path(tiff_path), allow_suite2p_dir=allow_suite2p_dir
     )
-    _copy_concat_sidecar(Path(tiff_path).parent, Path(tiff_path), allow_suite2p_dir=allow_suite2p_dir)
 
     return Path(tiff_path)
+
 
 def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True, scale_range=False):
     """
@@ -557,8 +595,8 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
 
     """
     # Set movie path
-    movie_path = Path(export_path).joinpath('cat_tiff_bt.tiff')
-    
+    movie_path = Path(export_path).joinpath("cat_tiff_bt.tiff")
+
     # Set the parent raw data path before any batch operations
     mc.set_parent_raw_data_path(Path(export_path))
 
@@ -572,10 +610,10 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
             # time0 = time.time()
             ##################
             ct.concatenate_files(
-                input_paths=data_path, 
-                output_path=export_path, 
+                input_paths=data_path,
+                output_path=export_path,
                 regex=regex_pattern,
-                scale_range=scale_range
+                scale_range=scale_range,
             )
             ##################
             # formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
@@ -592,7 +630,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
                     min: {min_val}, \n\
                     max: {max_val}, \n\
                     mean: {mean_val}")
-                
+
             # Verify that the concatenated movie is long enough for subsequent
             # correlation computations. If the movie is too short, CaImAn's
             # ``local_correlations_movie_parallel`` will fail silently.
@@ -608,7 +646,7 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
         except Exception as e:
             log_and_print(f"An error occurred while concatenating files: {e}")
 
-    # log_and_print(f"Concatenated movie path: {movie_path}.\n")    
+    # log_and_print(f"Concatenated movie path: {movie_path}.\n")
 
     if not recompute:
         #  Check if a batch_*_pickle file exists in the export path
@@ -619,42 +657,42 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
             log_and_print(f"Using existing batch file {batch_path}.")
             # load the batch
             df = mc.load_batch(batch_path)
-            
+
             # rows_keep = [df.iloc[0].uuid]
             # for i, row in df.iterrows():
             #     if row.uuid not in rows_keep:
             #         df.caiman.remove_item(row.uuid)
-        
+
     # if batch_path is not defined, create a new batch
-    if 'batch_path' not in locals():
+    if "batch_path" not in locals():
         # create a new batch path, appendind timestamp to avoid overwriting
         batch_path = Path.joinpath(export_path, f'batch_{time.strftime("%Y%m%d-%H%M%S")}.pickle')
-        log_and_print(f"Creating batch {batch_path}.") 
+        log_and_print(f"Creating batch {batch_path}.")
         df = mc.create_batch(batch_path)
 
         # Add the input movie path to the batch
         df.caiman.add_item(
-            algo='mcorr',
-            item_name=movie_path.stem,
-            input_movie_path=movie_path,
-            params=parameters
+            algo="mcorr", item_name=movie_path.stem, input_movie_path=movie_path, params=parameters
         )
-        
+
     time0 = time.time()
     mcorr_index = None
     # Run batch items that haven't been run yet
     for row_index, row in df.iterrows():
-        
+
         # If algo is not mcorr, skip (this is a safety check, in case df was reloaded from disk)
-        if row.algo != 'mcorr':
+        if row.algo != "mcorr":
             continue
-        
+
         # If already processed, skip
         if row["outputs"] is not None:
-            log_and_print(f"Skipping batch item {row_index}, id {row.uuid}, algo {row.algo}. Already run.", level='warning')
+            log_and_print(
+                f"Skipping batch item {row_index}, id {row.uuid}, algo {row.algo}. Already run.",
+                level="warning",
+            )
             mcorr_index = row_index
             continue
-        
+
         log_and_print(f"Running batch item {row_index}, id {row.uuid}, algo {row.algo}.")
         try:
             ##########################
@@ -663,17 +701,17 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
             ##########################
         except Exception as e:
             log_and_print(f"An error occurred while running caiman for batch item {row_index}: {e}")
-        
+
         # on Windows you MUST reload the batch dataframe after every iteration because it uses the `local` backend.
         # this is unnecessary on Linux & Mac
         # "DummyProcess" is used for local backend so this is automatic
         if process.__class__.__name__ == "DummyProcess":
             df = df.caiman.reload_from_disk()
-            
+
     log_and_print(f"Batch completed for motion correction. Results saved to {batch_path}.")
     formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
     print(f"mcorr completed in {formatted_time}.")
-    
+
     if mcorr_index is not None:
         df = df.caiman.reload_from_disk()
         # Get the path to the motion corrected movie
@@ -694,26 +732,26 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
                         first frame max: {first_frame.max()}, \n\
                         first frame mean: {first_frame.mean()}")
         else:
-            log_and_print("Motion corrected movie could not be loaded.", level='error')
-
+            log_and_print("Motion corrected movie could not be loaded.", level="error")
 
     return batch_path, 0, movie_path
-  
+
+
 def run_motion_correction_workflow(
     data_path,
     export_path,
     parameters,
-    regex_pattern='*_Ch2_*.ome.tif',
+    regex_pattern="*_Ch2_*.ome.tif",
     recompute=True,
     create_movies=True,
-    output_format='memmap',
+    output_format="memmap",
 ):
     """
     Complete motion correction workflow including z-motion correction.
-    
+
     Args:
         data_path: List of paths containing input data
-        export_path: Output directory path  
+        export_path: Output directory path
         parameters: Dictionary containing processing parameters
         regex_pattern: Pattern to match input files
         recompute: Whether to recompute existing results
@@ -723,47 +761,53 @@ def run_motion_correction_workflow(
     Returns:
         dict: Results dictionary with paths and metadata
     """
-    
-    results = {
-        'batch_path': None,
-        'movie_path': None,
-        'export_path': export_path,
-        'success': False
-    }
-    
+
+    results = {"batch_path": None, "movie_path": None, "export_path": export_path, "success": False}
+
     try:
         # Get motion correction parameters
-        parameters_mcorr = parameters['params_mcorr']
+        parameters_mcorr = parameters["params_mcorr"]
 
         # Run the motion correction
-        scale_range_raw = parameters_mcorr.get('scale_range', False)
+        scale_range_raw = parameters_mcorr.get("scale_range", False)
         # Handle string representations of booleans
         if isinstance(scale_range_raw, str):
-            scale_range = scale_range_raw.lower() in ('true', '1', 'yes')
+            scale_range = scale_range_raw.lower() in ("true", "1", "yes")
         else:
             scale_range = bool(scale_range_raw)
 
         batch_path, index, movie_path = run_mcorr(
-            data_path, export_path, parameters_mcorr, regex_pattern, recompute, scale_range=scale_range
+            data_path,
+            export_path,
+            parameters_mcorr,
+            regex_pattern,
+            recompute,
+            scale_range=scale_range,
         )
 
-        results['batch_path'] = batch_path
-        results['movie_path'] = movie_path
+        results["batch_path"] = batch_path
+        results["movie_path"] = movie_path
 
         # Determine whether to clip to uint16 range
-        clip_movie = output_format not in ('h5', 'bin', 'tiff')
+        clip_movie = output_format not in ("h5", "bin", "tiff")
 
         if not recompute and movie_path.exists():
             log_and_print(f"Motion corrected movie already exists at {movie_path}.")
         else:
             if clip_movie:
-                log_and_print("Optimizing motion corrected movie bit depth (clipping memmap to uint16).")
-                overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type='mcorr')
+                log_and_print(
+                    "Optimizing motion corrected movie bit depth (clipping memmap to uint16)."
+                )
+                overwrite_movie_memmap(movie_path, movie_path, clip=True, movie_type="mcorr")
             else:
-                log_and_print("Skipping memmap overwrite to preserve full dynamic range for downstream export.")
-        
+                log_and_print(
+                    "Skipping memmap overwrite to preserve full dynamic range for downstream export."
+                )
+
         # Z-motion correction (optional)
-        if 'zstack_path' in parameters and 'z_motion_correction' in parameters.get('params_mcorr', {}):
+        if "zstack_path" in parameters and "z_motion_correction" in parameters.get(
+            "params_mcorr", {}
+        ):
             log_and_print("Starting z-motion correction...")
             time_z0 = time.time()
 
@@ -771,7 +815,7 @@ def run_motion_correction_workflow(
                 zcorr_movie_path, z_motion_scaling_factors, _ = cz.z_motion(
                     movie_path, parameters, scale_range=scale_range
                 )
-                results['z_motion_scaling_factors'] = z_motion_scaling_factors
+                results["z_motion_scaling_factors"] = z_motion_scaling_factors
 
                 # Save corrected movie, overwriting the original
                 if zcorr_movie_path is not None:
@@ -779,13 +823,13 @@ def run_motion_correction_workflow(
                         zcorr_movie_path,
                         movie_path,
                         clip=clip_movie,
-                        movie_type='zcorr',
+                        movie_type="zcorr",
                         save_original=False,
-                        remove_input=True
+                        remove_input=True,
                     )
-                    results['z_corrected'] = True
+                    results["z_corrected"] = True
                 else:
-                    results['z_corrected'] = False
+                    results["z_corrected"] = False
 
                 formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time_z0))
                 if zcorr_movie_path is not None:
@@ -793,78 +837,83 @@ def run_motion_correction_workflow(
                 else:
                     log_and_print(f"Z-motion computation completed in {formatted_time}.")
             except Exception as e:
-                log_and_print(f"Z-motion correction failed: {e}", level='error')
-                results['z_corrected'] = False
-        
+                log_and_print(f"Z-motion correction failed: {e}", level="error")
+                results["z_corrected"] = False
+
         # Create output movies (optional)
         if create_movies:
             log_and_print("Creating output movies...")
-                            
-            # Save as BigTIFF file  
-            create_mcorr_movie(movie_path, export_path, None, None, 
-                                        format='tiff', diff_corr=False)
-            
-            # Create comparison movie (first 240 frames)
-            create_mcorr_movie(mcorr_movie_path=movie_path, export_path=export_path, 
-                                        batch=batch_path, index=index, excerpt=240)
 
-        if output_format == 'memmap':
+            # Save as BigTIFF file
+            create_mcorr_movie(movie_path, export_path, None, None, format="tiff", diff_corr=False)
+
+            # Create comparison movie (first 240 frames)
+            create_mcorr_movie(
+                mcorr_movie_path=movie_path,
+                export_path=export_path,
+                batch=batch_path,
+                index=index,
+                excerpt=240,
+            )
+
+        if output_format == "memmap":
             # This is already handled by run_mcorr() -> get_output_path()
             # The memmap file exists in the batch folder.
             # We don't need to duplicate it or link it, as the pipeline now preserves the batch folder.
             pass
-        
-        results['success'] = True
 
-        if output_format == 'h5':
+        results["success"] = True
+
+        if output_format == "h5":
             print("Saving motion corrected movie as .h5 file...")
-            h5_path = export_path / 'mcorr_movie.h5'
+            h5_path = export_path / "mcorr_movie.h5"
             # Save movie as Suite2p, AIND and ImageJ-compatible .h5
-            results['movie_path'] = save_movie_as_h5(
-                memmap_path=movie_path,
-                h5_path=h5_path,
-                parameters=parameters
+            results["movie_path"] = save_movie_as_h5(
+                memmap_path=movie_path, h5_path=h5_path, parameters=parameters
             )
-        elif output_format == 'bin':
+        elif output_format == "bin":
             log_and_print("Saving motion corrected movie as .bin file...")
-            bin_path = export_path / 'mcorr_movie.bin'
+            bin_path = export_path / "mcorr_movie.bin"
             # Save movie as Suite2p-compatible .bin
-            results['movie_path'] = save_movie_as_bin(
-                memmap_path=movie_path,
-                bin_path=bin_path,
-                parameters=parameters
+            results["movie_path"] = save_movie_as_bin(
+                memmap_path=movie_path, bin_path=bin_path, parameters=parameters
             )
-        elif output_format == 'tiff':
+        elif output_format == "tiff":
             log_and_print("Saving motion corrected movie as BigTIFF file...")
-            tiff_path = export_path / 'mcorr_movie.tiff'
-            results['movie_path'] = save_movie_as_tiff(
-                memmap_path=movie_path,
-                tiff_path=tiff_path,
-                parameters=parameters
+            tiff_path = export_path / "mcorr_movie.tiff"
+            results["movie_path"] = save_movie_as_tiff(
+                memmap_path=movie_path, tiff_path=tiff_path, parameters=parameters
             )
 
         log_and_print("Motion correction workflow completed successfully.")
-        
+
     except Exception as e:
-        log_and_print(f"Motion correction workflow failed: {e}", level='error')
-        results['error'] = str(e)
+        log_and_print(f"Motion correction workflow failed: {e}", level="error")
+        results["error"] = str(e)
         raise
-    
+
     return results
+
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Motion Correction Module")
-    parser.add_argument('input_paths', nargs='+', help='Input data paths')
-    parser.add_argument('-o', '--output', required=True, help='Output directory')
-    parser.add_argument('-p', '--params', type=str, help='Path to parameters JSON file')
-    parser.add_argument('-t', '--pattern', default='*_Ch2_*.ome.tif', help='File pattern')
-    parser.add_argument('-r', '--recompute', action='store_true', help='Recompute existing results')
-    parser.add_argument('-c', '--create_movies', action='store_true', help='Create output movies')
-    parser.add_argument('-f', '--format', choices=['memmap', 'h5', 'bin', 'tiff'], default='memmap', help='Output format for final movie')
+    parser.add_argument("input_paths", nargs="+", help="Input data paths")
+    parser.add_argument("-o", "--output", required=True, help="Output directory")
+    parser.add_argument("-p", "--params", type=str, help="Path to parameters JSON file")
+    parser.add_argument("-t", "--pattern", default="*_Ch2_*.ome.tif", help="File pattern")
+    parser.add_argument("-r", "--recompute", action="store_true", help="Recompute existing results")
+    parser.add_argument("-c", "--create_movies", action="store_true", help="Create output movies")
+    parser.add_argument(
+        "-f",
+        "--format",
+        choices=["memmap", "h5", "bin", "tiff"],
+        default="memmap",
+        help="Output format for final movie",
+    )
     args = parser.parse_args()
-    
+
     # Convert input paths to Path objects
     input_paths = [Path(p) for p in args.input_paths]
     output_path = Path(args.output)
@@ -877,7 +926,8 @@ if __name__ == "__main__":
     parameters = {}
     if args.params:
         import json
-        with open(args.params, 'r') as f:
+
+        with open(args.params, "r") as f:
             parameters = json.load(f)
     else:
         raise ValueError("Parameters file must be provided with -p option.")
@@ -890,5 +940,5 @@ if __name__ == "__main__":
         regex_pattern=pattern,
         recompute=recompute,
         create_movies=create_movies,
-        output_format=output_format
+        output_format=output_format,
     )

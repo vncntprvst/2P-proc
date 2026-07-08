@@ -33,8 +33,8 @@ from caiman.mmapping import load_memmap, prepare_shape
 from caiman import save_memmap
 
 from pipeline.utils.pipeline_utils import (
-    log_and_print, 
-    clip_range, 
+    log_and_print,
+    clip_range,
     cat_movies_to_mp4,
     load_caiman_memmap,
 )
@@ -55,16 +55,13 @@ def _prepare_cnmf_movie(mcorr_movie_path: str | Path, export_path: str | Path) -
     # Ensure export directory exists for saving memmaps
     if not export_path.exists():
         export_path.mkdir(parents=True, exist_ok=True)
-    
+
     if mcorr_movie_path.suffix.lower() in {".h5", ".hdf5", ".tif", ".tiff"}:
 
         # Save memmap directly to export_path/mcorr to avoid tmp directory issues
         mcorr_movie_path = Path(
             save_memmap(
-                [str(mcorr_movie_path)], 
-                base_name=str(export_path / "mcorr"), 
-                order="C",
-                dview=None
+                [str(mcorr_movie_path)], base_name=str(export_path / "mcorr"), order="C", dview=None
             )
         )
 
@@ -75,10 +72,10 @@ def _prepare_cnmf_movie(mcorr_movie_path: str | Path, export_path: str | Path) -
         new_path = export_path / mcorr_movie_path.name
         if new_path.exists():
             if new_path.stat().st_size == mcorr_movie_path.stat().st_size:
-                    mcorr_movie_path = new_path
+                mcorr_movie_path = new_path
             else:
-                    shutil.move(mcorr_movie_path, new_path)
-                    mcorr_movie_path = new_path
+                shutil.move(mcorr_movie_path, new_path)
+                mcorr_movie_path = new_path
         else:
             shutil.move(mcorr_movie_path, new_path)
             mcorr_movie_path = new_path
@@ -174,6 +171,7 @@ def _mean_projection_from_path(
         return _mean_projection_from_h5(movie_path, max_frames=max_frames)
 
     import caiman as cm
+
     movie = cm.load(str(movie_path))
     return np.mean(movie, axis=0).astype(np.float32)
 
@@ -193,7 +191,10 @@ def countdown(n: int) -> None:
         time.sleep(1)
         n -= 1
 
-def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf_obj=None, index=-1, excerpt=None):
+
+def create_components_movie(
+    batch_path, export_path, mcorr_movie_path=None, cnmf_obj=None, index=-1, excerpt=None
+):
     """
     Create a movie concatenating the components and the residuals.
     """
@@ -204,7 +205,7 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
         # Load the motion corrected movie
         # mcorr_movie = df.iloc[index].caiman.get_input_movie()
         # Load the components (reconstructed movie with no background)
-        neural_activity_movie = df.iloc[index].cnmf.get_rcm() 
+        neural_activity_movie = df.iloc[index].cnmf.get_rcm()
         # image_neural_activity = neural_activity_movie[0,:,:]
         # Load the residuals
         residuals_movie = df.iloc[index].cnmf.get_residuals()
@@ -212,9 +213,9 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
     else:
         mcorr_movie_path = _prepare_cnmf_movie(mcorr_movie_path, export_path)
         mcorr_movie, dims, T = load_memmap(str(mcorr_movie_path))
-        mcorr_movie = np.reshape(mcorr_movie.T, [T] + list(dims), order='F')
+        mcorr_movie = np.reshape(mcorr_movie.T, [T] + list(dims), order="F")
         mcorr_movie = mcorr_movie.transpose(0, 2, 1)
-             
+
         # # If cnmf_obj is not a CNMF object, load the data frame from the batch path
         # if isinstance(cnmf_obj, str):
         #     # Load the data frame from the batch
@@ -226,17 +227,17 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
         #     # Compute dF/F
         #     if cnmf_obj.estimates.F_dff is None:
         #         print('Calculating estimates.F_dff')
-        #         cnmf_obj.estimates.detrend_df_f(quantileMin=8, 
+        #         cnmf_obj.estimates.detrend_df_f(quantileMin=8,
         #                                         frames_window=400,
         #                                         use_residuals=False)
-    
+
         # reconstruct denoised components movie
         neural_activity = cnmf_obj.estimates.A @ cnmf_obj.estimates.C  # A ⊗ C
         # reshape neural activity to movie dimensions
         dims = cnmf_obj.dims
         T = cnmf_obj.estimates.C.shape[1]
-        neural_activity_movie = np.reshape(neural_activity.T, [T] + list(dims), order='F')
-        
+        neural_activity_movie = np.reshape(neural_activity.T, [T] + list(dims), order="F")
+
         # If residuals_movie is not defined, reconstruct it
         # if 'residuals_movie' not in locals():
 
@@ -245,9 +246,9 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
         # reconstruct denoised movie
         denoised_movie = neural_activity + background  # AC + bf
         # reshape denoised movie to movie dimensions
-        denoised_movie = np.reshape(denoised_movie.T, [T] + list(dims), order='F')
+        denoised_movie = np.reshape(denoised_movie.T, [T] + list(dims), order="F")
         # reconstruct residuals movie
-        residuals_movie = mcorr_movie - denoised_movie # mcorr_movie - AC - bf
+        residuals_movie = mcorr_movie - denoised_movie  # mcorr_movie - AC - bf
         # turn into a movie object
         # denoised_movie = cm.movie(denoised_movie).reshape(dims + (-1,), order='F').transpose([2, 0, 1])
 
@@ -258,8 +259,8 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
 
     # Data is originally uint16, but values may extend beyond range, and converted to float at this point.
     # Clip the values to the uint16 range, and convert to uint16 data type
-    neural_activity_movie = clip_range(neural_activity_movie, 'uint16').astype('uint16')
-    residuals_movie = clip_range(residuals_movie, 'uint16').astype('uint16')
+    neural_activity_movie = clip_range(neural_activity_movie, "uint16").astype("uint16")
+    residuals_movie = clip_range(residuals_movie, "uint16").astype("uint16")
 
     # # Convert to uint8 to reduce file size further
     # neural_activity_movie = (neural_activity_movie / (2**16-1) * 255).astype('uint8')
@@ -270,8 +271,9 @@ def create_components_movie(batch_path, export_path, mcorr_movie_path=None, cnmf
 
     # Concatenate the two movies horizontally
     cat_movies_to_mp4(neural_activity_movie, residuals_movie, movie_path)
-    
+
     log_and_print(f"Saved components movie to {export_path}/components_movie.mp4")
+
 
 def run_cnmf(
     batch: Path,
@@ -311,14 +313,13 @@ def run_cnmf(
         mcorr_movie_path = Path(input_movie_path)
         item_name = mcorr_movie_path.stem
     elif index is not None:
-        mcorr_movie_path=df.iloc[index]
+        mcorr_movie_path = df.iloc[index]
         item_name = df.iloc[index]["item_name"]
     else:
         raise ValueError("Either index or input_movie_path must be provided.")
 
     if str(mcorr_movie_path).endswith((".h5", ".hdf5", ".tif", ".tiff")):
         mcorr_movie_path = _prepare_cnmf_movie(mcorr_movie_path, export_path)
-
 
     # Add CNMF item using the motion corrected result
     df.caiman.add_item(
@@ -362,13 +363,11 @@ def run_cnmf(
         if row["outputs"] is not None:
             continue
 
-        log_and_print(
-            f"Running batch item {row.name}, id {row.uuid}, algo {row.algo}."
-        )
+        log_and_print(f"Running batch item {row.name}, id {row.uuid}, algo {row.algo}.")
         try:
             process = row.caiman.run()
         except Exception as e:
-            log_and_print(f"Error running CNMF for batch item {row.name}: {e}", level='error')
+            log_and_print(f"Error running CNMF for batch item {row.name}: {e}", level="error")
             continue
 
         if process.__class__.__name__ == "DummyProcess":
@@ -381,13 +380,13 @@ def run_cnmf(
 
     # Save parameters and export results
     save_processing_parameters(df, export_path, data_path, params_extraction)
-    
+
     # Get CNMF object and prepare it for export
     cnmf_obj = prepare_cnmf_object(df)
-    
+
     # Copy the mean intensity template if available
     copy_mean_intensity_template(df, batch, export_path)
-    
+
     # Export results to MATLAB format
     export_cnmf_results(df, cnmf_obj, export_path, z_correlation)
 
@@ -396,7 +395,7 @@ def run_cnmf(
 
 def save_processing_parameters(df, export_path, data_path, params_extraction):
     """Save the parameters used for motion correction and CNMF processing.
-    
+
     Parameters
     ----------
     df : pandas.DataFrame
@@ -422,10 +421,10 @@ def save_processing_parameters(df, export_path, data_path, params_extraction):
         "export_path": str(export_path),
         "movie_name": movie_name,
     }
-    
+
     # Attempt to retrieve motion correction parameters from the batch history
     caiman_mcorr_params = {}
-    
+
     # Check if we have mcorr items in the batch
     # We filter by algo to be safe
     mcorr_items = df[df["algo"] == "mcorr"]
@@ -433,15 +432,15 @@ def save_processing_parameters(df, export_path, data_path, params_extraction):
         # Use the first mcorr item found
         caiman_mcorr_params = mcorr_items.iloc[0]["params"]["main"]
         caiman_mcorr_params["timestamp_mcorr"] = mcorr_items.iloc[0]["ran_time"]
-    
+
     # Get CNMF parameters
     # Merge passed params with what's in the dataframe to be sure
-    caiman_cnmf_params = params_extraction["main"] 
+    caiman_cnmf_params = params_extraction["main"]
     if "params" in df.columns and "main" in df.iloc[-1]["params"]:
-         caiman_cnmf_params = caiman_cnmf_params | df.iloc[-1]["params"]["main"]
-    
+        caiman_cnmf_params = caiman_cnmf_params | df.iloc[-1]["params"]["main"]
+
     caiman_cnmf_params["timestamp_cnmf"] = df.iloc[-1]["ran_time"]
-    
+
     caiman_params = caiman_params | caiman_mcorr_params | caiman_cnmf_params
 
     with open(params_path, "w") as f:
@@ -452,35 +451,33 @@ def save_processing_parameters(df, export_path, data_path, params_extraction):
 
 def prepare_cnmf_object(df):
     """Prepare the CNMF object for export by selecting components and calculating dF/F.
-    
+
     Parameters
     ----------
     df : pandas.DataFrame
         Mesmerize batch dataframe containing processing information.
-        
+
     Returns
     -------
     cnmf_obj : caiman.source_extraction.cnmf.cnmf.CNMF
         Prepared CNMF object with selected components and calculated F_dff.
     """
     cnmf_obj = df.iloc[-1].cnmf.get_output()
-    
+
     # Select components
     cnmf_obj.estimates.select_components(use_object=True)
-    
+
     # Calculate dF/F if not already calculated
     if cnmf_obj.estimates.F_dff is None:
         log_and_print("Calculating estimates.F_dff")
-        cnmf_obj.estimates.detrend_df_f(
-            quantileMin=8, frames_window=400, use_residuals=False
-        )
-    
+        cnmf_obj.estimates.detrend_df_f(quantileMin=8, frames_window=400, use_residuals=False)
+
     return cnmf_obj
 
 
 def copy_mean_intensity_template(df, batch, export_path):
     """Copy the mean intensity template file to the export directory.
-    
+
     Parameters
     ----------
     df : pandas.DataFrame
@@ -492,18 +489,17 @@ def copy_mean_intensity_template(df, batch, export_path):
     """
     cnmf_uuid = df[df["algo"] == "cnmf"]["uuid"].values[0]
     mean_intensity_template_path = batch.parent / cnmf_uuid / f"{cnmf_uuid}_cn.npy"
-    
+
     if mean_intensity_template_path.exists():
         shutil.copy(mean_intensity_template_path, export_path / "mean_intensity_template.npy")
         log_and_print(f"Saved mean_intensity_template.npy to {export_path}.")
     else:
-        log_and_print(
-            f"Could not find cn.npy file at {mean_intensity_template_path}.")
+        log_and_print(f"Could not find cn.npy file at {mean_intensity_template_path}.")
 
 
 def export_cnmf_results(df, cnmf_obj, export_path, z_correlation=None):
     """Export CNMF results to MATLAB format.
-    
+
     Parameters
     ----------
     df : pandas.DataFrame
@@ -548,11 +544,18 @@ def export_cnmf_results(df, cnmf_obj, export_path, z_correlation=None):
             "df_wo_bckgrnd": _coerce_matlab_value(cnmf_obj.estimates.F_dff),
             "deconv_spk": _coerce_matlab_value(cnmf_obj.estimates.S),
             "SNR_comp": _coerce_matlab_value(cnmf_obj.estimates.SNR_comp),
-            "baseline": _coerce_matlab_value(np.array(cnmf_obj.estimates.bl, dtype=np.float32) if cnmf_obj.estimates.bl is not None else None),
-            "noise": _coerce_matlab_value(np.array(cnmf_obj.estimates.neurons_sn, dtype=np.float32) if cnmf_obj.estimates.neurons_sn is not None else None),
+            "baseline": _coerce_matlab_value(
+                np.array(cnmf_obj.estimates.bl, dtype=np.float32)
+                if cnmf_obj.estimates.bl is not None
+                else None
+            ),
+            "noise": _coerce_matlab_value(
+                np.array(cnmf_obj.estimates.neurons_sn, dtype=np.float32)
+                if cnmf_obj.estimates.neurons_sn is not None
+                else None
+            ),
             "zpos": zpos,
         },
     )
-    
+
     log_and_print(f"Saved results to {export_path}/results_caiman.mat.")
-    
