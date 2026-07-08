@@ -1,0 +1,31 @@
+{
+  "global": [
+    {
+      "amp": 1,
+      "integer": 2.258,
+      "subplane": 2.261
+    },
+    {
+      "amp": 2,
+      "integer": 2.79,
+      "subplane": 2.774
+    },
+    {
+      "amp": 4,
+      "integer": 1.808,
+      "subplane": 1.791
+    }
+  ],
+  "fanat": [
+    {
+      "amp": 3,
+      "integer": 0.721,
+      "subplane": 0.722
+    },
+    {
+      "amp": 6,
+      "integer": 0.548,
+      "subplane": 0.549
+    }
+  ]
+}

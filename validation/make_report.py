@@ -34,14 +34,21 @@ def _text_page(pdf, title, lines, subtitle=None):
     fig.text(0.08, 0.94, title, fontsize=18, fontweight="bold")
     if subtitle:
         fig.text(0.08, 0.905, subtitle, fontsize=10, style="italic", color="0.3")
+    import textwrap
+
     y = 0.86
     for ln in lines:
         indent = 0.10 if ln.startswith("•") else 0.08
         size = 10 if ln.startswith("•") or ln.startswith("  ") else 11
         weight = "bold" if ln.endswith(":") and not ln.startswith("•") else "normal"
-        fig.text(indent, y, ln, fontsize=size, fontweight=weight, wrap=True)
-        y -= 0.030 if ln else 0.018
-        if y < 0.06:
+        # Wrap manually so we can reserve the right vertical space (fig.text
+        # wrap=True doesn't report how many lines it used).
+        width = 88 if ln.startswith("•") else 92
+        wrapped = textwrap.fill(ln, width=width) if ln else ""
+        nlines = wrapped.count("\n") + 1 if ln else 1
+        fig.text(indent, y, wrapped, fontsize=size, fontweight=weight, va="top")
+        y -= (0.022 * nlines + 0.010) if ln else 0.014
+        if y < 0.05:
             break
     pdf.savefig(fig)
     plt.close(fig)
@@ -321,6 +328,37 @@ def section_roi_figure(pdf, results):
     plt.close(fig)
 
 
+def section_conclusions(pdf):
+    _text_page(
+        pdf,
+        "7. Conclusions & recommendations",
+        [
+            "Pipeline:",
+            "• The z-motion chain is validated end-to-end on real data, both CNMF and "
+            "Suite2p backends. 7 latent bugs were fixed in the per-ROI path.",
+            "",
+            "z-position estimation (compute_zcorrel vs Suite2p port):",
+            "• Synthetic ground truth: Suite2p is clearly more accurate and far more "
+            "consistent (r 0.97±0.00 vs 0.91±0.03; RMSE 0.74 vs 1.74 planes).",
+            "• Real data: the two agree well (single r=0.75, concat r=0.76); Suite2p is "
+            "marginally noisier frame-to-frame but handles concatenation boundaries better "
+            "(mean |jump| 0.33 vs 1.00 planes).",
+            "• Caveat: Suite2p's z-pos is sensitive to NoRMCorre edge artifacts on the "
+            "mcorr'd movie — must be handled, since z-pos runs after mcorr.",
+            "• Recommendation: adopt Suite2p for z-position (worth the 3–6× cost for the "
+            "accuracy gain), ideally with light temporal smoothing to curb frame-to-frame "
+            "noise; verify on the mcorr'd movie before switching production.",
+            "",
+            "F_anat & correction:",
+            "• Per-ROI fit-and-subtract removes the most z-contamination at every drift "
+            "amplitude; per-pixel/per-patch trail. Recovery is capped by defocus attenuation.",
+            "• Sub-plane interpolation of the z-peak gives negligible gain (global or F_anat) "
+            "— not worth adding.",
+        ],
+        subtitle="What works, and what to do next",
+    )
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--results", type=Path, required=True)
@@ -358,6 +396,7 @@ def main():
         section_stage3(pdf, args.results)
         section_zpos_deepdive(pdf, args.results)
         section_roi_figure(pdf, args.results)
+        section_conclusions(pdf)
 
     print(f"Wrote {out}")
 

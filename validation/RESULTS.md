@@ -57,6 +57,26 @@ quantization. So sub-plane interpolation is not worth adding. The real levers ar
 plane-selection robustness (temporal regularisation of `zpos`; better lateral-motion
 handling) or the more accurate Suite2p estimator.
 
+### Stage 1c — z-position deep-dive: synthetic + real (single & concatenated)
+
+Both methods run on identical inputs (`zpos_compare_data.py`); see PDF §5.
+
+| dataset | metric | compute_zcorrel | suite2p |
+|---|---|---|---|
+| synthetic (6 seeds, GT) | Pearson r | 0.911 ± 0.029 | **0.972 ± 0.002** |
+| synthetic (6 seeds, GT) | RMSE (planes) | 1.74 ± 0.44 | **0.74 ± 0.02** |
+| real single (raw, no GT) | agreement r | 0.748 | (vs caiman) |
+| real single | ≥2-plane jumps /1600 | 24 | 44 |
+| real concat (4×1600) | agreement r | 0.761 | (vs caiman) |
+| real concat | mean \|jump\| at boundaries | 1.00 | **0.33** |
+
+**Suite2p is decisively more accurate on ground truth** and far more consistent; on
+real data the two agree well, Suite2p is marginally noisier frame-to-frame but handles
+concatenation boundaries **better**. Caveat: Suite2p's z-pos is unstable on the *mcorr'd*
+movie (NoRMCorre edge artifacts drive it to the stack boundary) — must be handled since
+z-pos runs after mcorr. **Recommendation:** adopt Suite2p for z-position (worth the 3–6×
+cost) with light temporal smoothing; verify on the mcorr'd movie before switching.
+
 ## 3. Stage 3 — correction method (recovery of injected synthetic activity)
 
 Real z-stack + injected spike→GCaMP activity (NAOMi-lite), 20 cells near the focal plane.
