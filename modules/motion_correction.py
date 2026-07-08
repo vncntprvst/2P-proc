@@ -266,86 +266,80 @@ def run_roi_zcorr(export_path, parameters):
         return None
 
     with memory_manager("roi z-motion correction"):
-        zpos = np.load(zcorr_file)["zpos"]
-        f_anat_movie = imread(str(f_anat_files[0]))
-        # tifffile returns (T, Y, X); transpose to (Y, X, T)
-        if f_anat_movie.shape[0] == zpos.shape[0]:
-            f_anat_movie = np.transpose(f_anat_movie, (1, 2, 0))
+        from scipy.ndimage import uniform_filter1d
 
+        zpos = np.load(zcorr_file)["zpos"]
+        f_anat_movie = imread(str(f_anat_files[0])).astype(np.float32)  # (T, Y, X)
+        # 3-point moving average along time/z (MATLAB movmean(F_anat,3,3)): the
+        # anatomical fluctuation is smoothed before projecting onto ROIs.
+        f_anat_movie = uniform_filter1d(f_anat_movie, size=3, axis=0, mode="nearest")
+
+        # Per-ROI raw fluorescence F and the ROI pixel lists (uniform-weighted,
+        # matching the MATLAB reference — mean over ROI pixels, not CNMF/suite2p
+        # spatial weights).
         if extractor == "cnmf":
             from caiman.source_extraction.cnmf.cnmf import load_CNMF
 
-            # load_CNMF is the supported loader; CNMF() requires n_processes in
-            # caiman >= 1.12 and cannot be constructed empty.
             cnm = load_CNMF(str(cnmf_file), n_processes=1)
-            # caiman's Estimates has no raw `F`; reconstruct the raw per-ROI
-            # fluorescence (which carries the z-artifact) as denoised + residual.
-            F = cnm.estimates.C + cnm.estimates.YrA
+            F = cnm.estimates.C + cnm.estimates.YrA  # raw per-ROI fluorescence
             A = cnm.estimates.A.tocsc()
-            d1, d2 = cnm.dims  # frame dims live on the CNMF object, not estimates
-            n_neuron, n_frame = F.shape
-
-            Fz = np.zeros((n_neuron, n_frame))
-            Fz_rescaled = np.zeros_like(F)
-            Fcorrected = np.zeros_like(F)
-            b = np.zeros(n_neuron)
-
-            for i in range(n_neuron):
-                ind = A[:, i].nonzero()[0]
-                y, x = np.unravel_index(ind, (d1, d2))
-                weights = np.full(len(x), 1 / len(x))
-                for w, yy, xx in zip(weights, y, x):
-                    Fz[i] += w * f_anat_movie[yy, xx, :]
-                F0 = F[i].mean()
-                Fz0 = Fz[i].mean()
-                huber = HuberRegressor(fit_intercept=False)
-                huber.fit((Fz[i] - Fz0).reshape(-1, 1), F[i] - F0)
-                b[i] = huber.coef_[0]
-                Fz_rescaled[i] = b[i] * (Fz[i] - Fz0)
-                Fcorrected[i] = F[i] - Fz_rescaled[i]
-
+            d1, d2 = cnm.dims
+            roi_pixels = [
+                np.unravel_index(A[:, i].nonzero()[0], (d1, d2)) for i in range(A.shape[1])
+            ]
         else:  # Suite2p
             F = np.load(str(s2p_files[0]))
             stat = np.load(str(s2p_files[1]), allow_pickle=True)
-            n_neuron, n_frame = F.shape
-            Fz = np.zeros((n_neuron, n_frame))
-            Fz_rescaled = np.zeros_like(F)
-            Fcorrected = np.zeros_like(F)
-            b = np.zeros(n_neuron)
+            roi_pixels = [(c["ypix"].astype(int), c["xpix"].astype(int)) for c in stat]
 
-            for i, cell in enumerate(stat):
-                ypix = cell["ypix"].astype(int)
-                xpix = cell["xpix"].astype(int)
-                lam = cell["lam"].astype(float)
-                weights = lam / lam.sum() if lam.sum() != 0 else np.full(len(lam), 1 / len(lam))
-                for w, yy, xx in zip(weights, ypix, xpix):
-                    Fz[i] += w * f_anat_movie[yy, xx, :]
-                F0 = F[i].mean()
-                Fz0 = Fz[i].mean()
-                huber = HuberRegressor(fit_intercept=False)
-                huber.fit((Fz[i] - Fz0).reshape(-1, 1), F[i] - F0)
-                b[i] = huber.coef_[0]
-                Fz_rescaled[i] = b[i] * (Fz[i] - Fz0)
-                Fcorrected[i] = F[i] - Fz_rescaled[i]
+        F = np.asarray(F, dtype=np.float32)
+        n_neuron, n_frame = F.shape
 
-        z_mode = mode(zpos, keepdims=False).mode
-        if np.ndim(z_mode) > 0:
-            z_mode = z_mode[0]
-        missing = np.abs(zpos - z_mode) > 5
-        if np.any(missing):
-            Fcorrected[:, missing] = np.nan
-            Fcorrected = (
-                pd.DataFrame(Fcorrected)
-                .interpolate(method="linear", axis=1, limit_direction="both")
-                .to_numpy()
-            )
+        # F_cell_anat: mean of the (smoothed) F_anat movie over each ROI's pixels.
+        F_cell_anat = np.zeros((n_neuron, n_frame), np.float32)
+        for i, (yy, xx) in enumerate(roi_pixels):
+            if len(yy):
+                F_cell_anat[i] = f_anat_movie[:, yy, xx].mean(axis=1)
 
-        # Save results
+        # Work in ΔF/F (dff = F/F0 - 1). No trial baseline here, so F0 is the
+        # per-ROI mean (for trial-structured data, use the trial baseline).
+        def _dff(x):
+            x0 = x.mean(axis=1, keepdims=True)
+            x0[x0 == 0] = 1.0
+            return x / x0 - 1.0
+
+        dff = _dff(F)
+        dffz = _dff(F_cell_anat)
+
+        # Regress dff on dffz (per-ROI OLS slope) and rescale (MATLAB lines 362-366).
+        mean_dff = dff.mean(axis=1, keepdims=True)
+        mean_dffz = dffz.mean(axis=1, keepdims=True)
+        num = np.sum((dff - mean_dff) * (dffz - mean_dffz), axis=1)
+        den = np.sum((dffz - mean_dffz) ** 2, axis=1)
+        slope = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
+        dffz_scaled = dffz * slope[:, None]
+
+        # R^2 of the z-model and the corrected trace (no NaN interpolation).
+        ss_tot = np.sum(dff**2, axis=1)
+        R2 = 1.0 - np.divide(
+            np.sum((dff - dffz_scaled) ** 2, axis=1),
+            ss_tot,
+            out=np.full(n_neuron, np.nan),
+            where=ss_tot != 0,
+        )
+        dff_corrected = dff - dffz_scaled
+        b = slope  # for the scaling histogram below
+
+        # Save results (ΔF/F space, matching the MATLAB non-rigid z-correction).
         np.savez_compressed(
             export_path / "F_roi_zcorrected.npz",
-            F_roi_zcorrected=Fcorrected,
-            F_roi_zbaseline=Fz_rescaled,
-            roi_z_scaling=b,
+            dff=dff.astype(np.float32),
+            dff_corrected=dff_corrected.astype(np.float32),
+            dffz=dffz_scaled.astype(np.float32),
+            roi_z_scaling=slope.astype(np.float32),
+            roi_z_R2=R2.astype(np.float32),
+            # legacy key kept for compatibility (the corrected trace)
+            F_roi_zcorrected=dff_corrected.astype(np.float32),
         )
 
         try:

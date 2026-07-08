@@ -33,13 +33,14 @@ def main():
 
     zpos = np.load(export / "z_correlation.npz")["zpos"].astype(float)
     d = np.load(export / "F_roi_zcorrected.npz")
-    corrected = d["F_roi_zcorrected"]
-    baseline = d["F_roi_zbaseline"]  # the subtracted z-motion component (b*(Fz-Fz0))
+    dff = d["dff"]  # ΔF/F before correction
+    dff_corrected = d["dff_corrected"]  # after subtracting the z-model
+    dffz = d["dffz"]  # the scaled z-component that was subtracted
     scaling = d["roi_z_scaling"]
-    raw = corrected + baseline  # run_roi_zcorr computed corrected = raw - baseline
+    R2 = d["roi_z_R2"] if "roi_z_R2" in d.files else np.full(dff.shape[0], np.nan)
 
-    # Rank ROIs by how strongly z-motion loaded onto them (|scaling| * baseline swing).
-    z_load = np.abs(scaling) * baseline.std(axis=1)
+    # Rank ROIs by how strongly z-motion loaded onto them (the z-component swing).
+    z_load = dffz.std(axis=1)
     order = np.argsort(z_load)[::-1]
     sel = order[: args.n_rois]
 
@@ -47,17 +48,17 @@ def main():
     if len(sel) == 1:
         axes = [axes]
     for ax, i in zip(axes, sel):
-        ax.plot(raw[i], color="0.6", lw=0.8, label="raw")
-        ax.plot(corrected[i], color="C0", lw=0.9, label="z-corrected")
-        ax.set_ylabel(f"ROI {i}", fontsize=8)
+        ax.plot(dff[i], color="0.6", lw=0.8, label="dff (before)")
+        ax.plot(dff_corrected[i], color="C0", lw=0.9, label="dff (z-corrected)")
+        ax.set_ylabel(f"ROI {i}\nR²={R2[i]:.2f}", fontsize=7)
         axz = ax.twinx()
-        axz.plot(zpos, color="C3", lw=0.6, alpha=0.6)
+        axz.plot(zpos, color="C3", lw=0.6, alpha=0.5)
         axz.set_ylabel("z", color="C3", fontsize=7)
         axz.tick_params(axis="y", labelsize=6, colors="C3")
     axes[0].legend(loc="upper right", fontsize=7)
     axes[-1].set_xlabel("frame")
     fig.suptitle(
-        f"Per-ROI z-motion correction — {export.name} " f"(top {len(sel)} z-loaded ROIs)",
+        f"Per-ROI non-rigid z-correction (ΔF/F) — {export.name} " f"(top {len(sel)} z-loaded ROIs)",
         fontsize=10,
     )
     fig.tight_layout()
@@ -67,17 +68,18 @@ def main():
 
     np.savez(
         out / "roi_zcorr_viz.npz",
-        raw=raw,
-        corrected=corrected,
-        baseline=baseline,
+        dff=dff,
+        dff_corrected=dff_corrected,
+        dffz=dffz,
         roi_z_scaling=scaling,
+        roi_z_R2=R2,
         zpos=zpos,
     )
     print(f"Wrote {fig_path}")
-    print(f"Wrote {out / 'roi_zcorr_viz.npz'}  (raw/corrected/baseline/scaling/zpos)")
+    print(f"Wrote {out / 'roi_zcorr_viz.npz'}  (dff/dff_corrected/dffz/scaling/R2/zpos)")
     print(
-        f"ROIs: {corrected.shape[0]}, frames: {corrected.shape[1]}, "
-        f"median |z-scaling|: {np.median(np.abs(scaling)):.3f}"
+        f"ROIs: {dff.shape[0]}, frames: {dff.shape[1]}, "
+        f"median |slope|: {np.median(np.abs(scaling)):.3f}, median R²: {np.nanmedian(R2):.3f}"
     )
 
 
