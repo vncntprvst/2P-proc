@@ -39,9 +39,23 @@ Real anatomy, 192², 150 frames, imposed rigid drift + lateral jitter + deformat
 | | suite2p | **0.98** | **0.76** | 7.9 |
 
 **Suite2p is more accurate (≈½ the RMSE, better at small drift) but ~3–6× slower.**
-`compute_zcorrel`'s error floors near 1 plane (argmax discretization). Suggested
-improvements to `compute_zcorrel`: sub-plane interpolation of the correlation peak;
-masked/phase correlation for small drift.
+
+### Stage 1b — sub-plane interpolation (tested, `test_subplane_precision.py`)
+
+Parabolic interpolation of the correlation peak was expected to sharpen the integer
+`argmax` z-estimate (and the per-patch depth used for F_anat). **Tested: negligible
+improvement**, for both:
+
+| lever | integer | sub-plane |
+|---|---|---|
+| global z RMSE (planes), amp 1/2/4 | 2.26 / 2.79 / 1.81 | 2.26 / 2.77 / 1.79 |
+| F_anat correction recovery_r, amp 3/6 | 0.721 / 0.548 | 0.722 / 0.549 |
+
+The error is dominated by **discrete multi-plane misassignments** (under lateral
+jitter/deformation) and by **signal attenuation from defocus** — not ±0.5-plane
+quantization. So sub-plane interpolation is not worth adding. The real levers are
+plane-selection robustness (temporal regularisation of `zpos`; better lateral-motion
+handling) or the more accurate Suite2p estimator.
 
 ## 3. Stage 3 — correction method (recovery of injected synthetic activity)
 
@@ -82,6 +96,7 @@ python plot_roi_zcorr.py <export_dir>   # real-data raw-vs-corrected trace figur
 
 - Concatenated 4-session run (expected z-pos artifacts at session boundaries — validate
   single-session first, done).
-- Possible `compute_zcorrel` improvement: sub-plane interpolation of the correlation peak
-  (stage 1 shows it floors at ~1 plane vs Suite2p's finer estimate).
+- Improve z-estimation robustness (the real bottleneck, per stage 1b): temporal
+  regularisation of `zpos` to suppress multi-plane misassignments, or default to the
+  more accurate Suite2p estimator (weigh its ~3–6× cost).
 - Larger cell counts / activity regimes in the stage-3 sweep to further separate methods.
