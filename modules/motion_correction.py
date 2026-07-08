@@ -273,14 +273,16 @@ def run_roi_zcorr(export_path, parameters):
             f_anat_movie = np.transpose(f_anat_movie, (1, 2, 0))
 
         if extractor == "cnmf":
-            from caiman.source_extraction.cnmf.cnmf import CNMF
+            from caiman.source_extraction.cnmf.cnmf import load_CNMF
 
-            cnm = CNMF()
-            cnm.load(str(cnmf_file))
-            F = cnm.estimates.F
+            # load_CNMF is the supported loader; CNMF() requires n_processes in
+            # caiman >= 1.12 and cannot be constructed empty.
+            cnm = load_CNMF(str(cnmf_file), n_processes=1)
+            # caiman's Estimates has no raw `F`; reconstruct the raw per-ROI
+            # fluorescence (which carries the z-artifact) as denoised + residual.
+            F = cnm.estimates.C + cnm.estimates.YrA
             A = cnm.estimates.A.tocsc()
-            d1 = cnm.estimates.d1
-            d2 = cnm.estimates.d2
+            d1, d2 = cnm.dims  # frame dims live on the CNMF object, not estimates
             n_neuron, n_frame = F.shape
 
             Fz = np.zeros((n_neuron, n_frame))

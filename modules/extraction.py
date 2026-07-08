@@ -252,8 +252,12 @@ def create_components_movie(
         # turn into a movie object
         # denoised_movie = cm.movie(denoised_movie).reshape(dims + (-1,), order='F').transpose([2, 0, 1])
 
-    # If excerpt requested, keep only the first x frames of the movie
+    # If excerpt requested, keep only the first x frames of the movie.
+    # Clamp to the available length: lazy movie arrays raise (rather than
+    # silently clamp like numpy) when sliced past the end, which breaks short
+    # recordings (e.g. validation subsets shorter than the excerpt).
     if excerpt is not None:
+        excerpt = min(excerpt, neural_activity_movie.shape[0], residuals_movie.shape[0])
         neural_activity_movie = neural_activity_movie[:excerpt]
         residuals_movie = residuals_movie[:excerpt]
 
