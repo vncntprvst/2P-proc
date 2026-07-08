@@ -1,17 +1,20 @@
 {
   "n_cells": 60,
-  "z_drift_planes": 4.0,
+  "trajectory": "response-coupled z-motion",
+  "z_std_planes": 0.9996969103813171,
+  "z_ptp_planes": 6.087838172912598,
+  "activity_z_coupling": -0.17336998655887956,
   "all_cells": {
-    "r_before_mean": 0.4385136934326453,
-    "r_after_mean": 0.5832684725724938,
-    "resid_z_before_mean": 0.49246250475441394,
-    "resid_z_after_mean": 0.12062873042644849
+    "r_before_mean": 0.4689590344576875,
+    "r_after_mean": 0.7765542528581248,
+    "resid_z_before_mean": 0.4684925432460286,
+    "resid_z_after_mean": 0.22133072342589555
   },
   "top_z_impacted": {
     "n": 10,
-    "r_before_mean": 0.1787167493994894,
-    "r_after_mean": 0.42960031386323694,
-    "resid_z_before_mean": 0.781053973179034,
-    "resid_z_after_mean": 0.10177909845760236
+    "r_before_mean": 0.23618275239528996,
+    "r_after_mean": 0.6232435096968271,
+    "resid_z_before_mean": 0.7516886808713842,
+    "resid_z_after_mean": 0.17492488752729782
   }
 }
