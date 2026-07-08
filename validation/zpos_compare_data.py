@@ -81,15 +81,11 @@ def run_synthetic(zseries, downsample, seeds, out_dir):
         )
 
 
-def run_real(mcorr_tiff, zseries, downsample, boundaries, out_path):
+def _compare_methods(movie, vol, boundaries, out_path):
     from modules.compute_zcorr import compute_zcorrel, compute_zcorrel_suite2p
 
-    print(f"Loading + downsampling movie {mcorr_tiff} (factor {downsample})...")
-    movie = _load_tiff_downsampled(mcorr_tiff, downsample)
-    print(f"movie {movie.shape}")
-    vol, _ = load_bruker_zstack(zseries, channel=2, downsample=downsample)
     if vol.shape[1:] != movie.shape[1:]:
-        # crop/pad z-stack to movie dims (rounding differences in downsample)
+        # crop to common dims (rounding differences in downsample)
         h = min(vol.shape[1], movie.shape[1])
         w = min(vol.shape[2], movie.shape[2])
         vol = vol[:, :h, :w]
@@ -123,6 +119,37 @@ def run_real(mcorr_tiff, zseries, downsample, boundaries, out_path):
     )
 
 
+def run_real(mcorr_tiff, zseries, downsample, boundaries, out_path):
+    print(f"Loading + downsampling movie {mcorr_tiff} (factor {downsample})...")
+    movie = _load_tiff_downsampled(mcorr_tiff, downsample)
+    print(f"movie {movie.shape}")
+    vol, _ = load_bruker_zstack(zseries, channel=2, downsample=downsample)
+    _compare_methods(movie, vol, boundaries, out_path)
+
+
+def run_concat(tseries_dirs, zseries, downsample, out_path):
+    """Concatenate several raw TSeries (downsampled) and compare z-pos methods.
+
+    No NoRMCorre: compute_zcorrel does its own FOV registration, and the point is
+    to expose z-pos behaviour at the session boundaries (where concatenation
+    introduces abrupt intensity steps).
+    """
+    from tests.benchmarks.bruker_io import load_bruker_tseries
+
+    movies, bnds, total = [], [], 0
+    for d in tseries_dirs:
+        m = load_bruker_tseries(d, channel=2, downsample=downsample)
+        print(f"  {Path(d).name}: {m.shape}")
+        total += m.shape[0]
+        bnds.append(total)
+        movies.append(m)
+    movie = np.concatenate(movies, 0)
+    bnds = bnds[:-1]  # internal session boundaries only
+    print(f"concatenated {movie.shape}, boundaries {bnds}")
+    vol, _ = load_bruker_zstack(zseries, channel=2, downsample=downsample)
+    _compare_methods(movie, vol, bnds, out_path)
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="mode", required=True)
@@ -137,13 +164,21 @@ def main():
     pr.add_argument("--downsample", type=int, default=3)
     pr.add_argument("--boundaries", type=str, default="")
     pr.add_argument("--out", type=Path, required=True)
+    pc = sub.add_parser("concat")
+    pc.add_argument("--tseries", type=str, required=True, help="comma-separated TSeries dirs")
+    pc.add_argument("--zseries", type=Path, required=True)
+    pc.add_argument("--downsample", type=int, default=3)
+    pc.add_argument("--out", type=Path, required=True)
     args = p.parse_args()
 
     if args.mode == "synthetic":
         run_synthetic(args.real_zstack, args.downsample, args.seeds, args.out)
-    else:
+    elif args.mode == "real":
         bnds = [int(x) for x in args.boundaries.split(",") if x.strip()]
         run_real(args.mcorr_tiff, args.zseries, args.downsample, bnds, args.out)
+    else:
+        dirs = [d for d in args.tseries.split(",") if d.strip()]
+        run_concat(dirs, args.zseries, args.downsample, args.out)
 
 
 if __name__ == "__main__":
