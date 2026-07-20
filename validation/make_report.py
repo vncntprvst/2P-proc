@@ -126,7 +126,7 @@ def section_stage1(pdf, results):
         f"{labels[i].replace(chr(10),' ')}: {t[0]:.1f}s vs {t[1]:.1f}s" for i, t in enumerate(times)
     )
     fig.suptitle(
-        "2. Stage 1 — z-position method comparison " "(compute_zcorrel vs Suite2p port)",
+        "2. z-position — synthetic method sweep (accuracy vs drift amplitude)",
         fontsize=13,
         fontweight="bold",
     )
@@ -169,7 +169,7 @@ def section_stage1b(pdf, results):
         )
     _table_page(
         pdf,
-        "3. Stage 1b — sub-plane interpolation (tested)",
+        "5. z-position — sub-plane interpolation (tested)",
         ["case", "metric", "integer argmax", "sub-plane"],
         rows,
         note="Parabolic interpolation of the correlation peak was expected to beat "
@@ -201,7 +201,7 @@ def section_stage3(pdf, results):
     axes[1].set_ylabel("residual z-r")
     axes[0].legend(fontsize=8)
     fig.suptitle(
-        "4. Stage 3 — correction method comparison " "(synthetic activity ground truth)",
+        "6. Correction — method comparison (recovery vs drift amplitude)",
         fontsize=12,
         fontweight="bold",
     )
@@ -317,7 +317,7 @@ def section_roi_figure(pdf, results):
     fig.text(
         0.08,
         0.95,
-        "6. Real-data per-ROI correction (full TSeries-001)",
+        "9. Per-ROI correction on real data (CNMF traces)",
         fontsize=13,
         fontweight="bold",
     )
@@ -344,7 +344,11 @@ def section_synthetic_correction(pdf, results):
     # Page A: traces
     fig = plt.figure(figsize=(8.27, 11.69))
     fig.text(
-        0.08, 0.955, "6c. Correction on synthetic ground truth", fontsize=14, fontweight="bold"
+        0.08,
+        0.955,
+        "8. Correction — recovery on synthetic ground truth",
+        fontsize=14,
+        fontweight="bold",
     )
     cap = (
         "On real data the benefit is hard to see (no ground truth). Injecting known activity "
@@ -368,7 +372,7 @@ def section_synthetic_correction(pdf, results):
     fig.text(
         0.08,
         0.955,
-        "6c. Correction on synthetic ground truth — recovery",
+        "8. Correction on synthetic ground truth — recovery",
         fontsize=13,
         fontweight="bold",
     )
@@ -402,7 +406,13 @@ def section_new_zcorrel(pdf, results):
     import matplotlib.image as mpimg
 
     fig = plt.figure(figsize=(8.27, 11.69))
-    fig.text(0.08, 0.95, "6b. Optimized compute_zcorrel", fontsize=14, fontweight="bold")
+    fig.text(
+        0.08,
+        0.95,
+        "4. z-position — optimized compute_zcorrel (legacy → smoothed)",
+        fontsize=13,
+        fontweight="bold",
+    )
     lines = [
         "compute_zcorrel_legacy = full-frame Pearson (kept for comparison).",
         "New compute_zcorrel default = Pearson + temporal median smoothing of zpos.",
@@ -434,10 +444,138 @@ def section_new_zcorrel(pdf, results):
     plt.close(fig)
 
 
+def _image_page(pdf, title, caption_lines, png, bottom=0.05, cap_top=0.92, x=0.03, w=0.94):
+    """Full A4 page: bold title, wrapped caption, then the figure auto-fitted in
+    the space that remains below the caption (so text never overlaps the image)."""
+    import textwrap
+    import matplotlib.image as mpimg
+
+    fig = plt.figure(figsize=(8.27, 11.69))
+    fig.text(0.08, 0.965, title, fontsize=14, fontweight="bold")
+    y = cap_top
+    for ln in caption_lines:
+        wrapped = textwrap.fill(ln, 100) if ln else ""
+        n = wrapped.count("\n") + 1 if ln else 1
+        fig.text(0.08, y, wrapped, fontsize=9.2, va="top")
+        y -= 0.019 * n + 0.007 if ln else 0.010
+    img_top = max(bottom + 0.15, y - 0.02)  # image occupies caption-bottom → page-bottom
+    ax = fig.add_axes([x, bottom, w, img_top - bottom])
+    ax.imshow(mpimg.imread(png))
+    ax.axis("off")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def section_zpos_comparison(pdf, results):
+    png = results / "zpos_comparison.png"
+    if not png.exists():
+        return
+    st = {}
+    if (results / "zpos_synthetic.json").exists():
+        st = json.load(open(results / "zpos_synthetic.json"))
+    # Pull the real-concat jump counts so the caption cites the actual numbers.
+    concat_line = ""
+    cnp = results / "zpos_concat_mcorr.npz"
+    if cnp.exists():
+        d = np.load(cnp)
+        jc = int(np.sum(np.abs(np.diff(d["zpos_caiman"].astype(int))) >= 2))
+        js = int(np.sum(np.abs(np.diff(d["zpos_suite2p"].astype(int))) >= 2))
+        ag = np.corrcoef(d["zpos_caiman"], d["zpos_suite2p"])[0, 1]
+        concat_line = (
+            f"On the 3-session real-NoRMCorre concat (C), phase-correlation makes {js} spurious "
+            f"≥2-plane jumps vs Pearson's {jc} ({js/max(jc,1):.0f}× more) while tracking the same "
+            f"overall drift (agreement r={ag:.2f})."
+        )
+    cap = [
+        "Head-to-head of the two z-position estimators: the shipped Pearson full-frame "
+        "correlation (+ temporal median smoothing) vs Suite2p masked phase-correlation.",
+        "",
+        "A. On SYNTHETIC ground truth Suite2p is more accurate "
+        + (
+            f"(r {np.mean(st['suite2p']['r']):.3f} vs {np.mean(st['caiman']['r']):.3f}, "
+            f"RMSE {np.mean(st['suite2p']['rmse']):.2f} vs {np.mean(st['caiman']['rmse']):.2f} planes)."
+            if st
+            else "."
+        ),
+        "B/C. On REAL NoRMCorre output the ranking reverses: phase-correlation is much noisier "
+        "(and biased toward deep, low-contrast planes in single sessions), because mcorr edge "
+        'artifacts (border_nan="copy") corrupt the masked correlation. Pearson + temporal '
+        "smoothing tracks a stable trajectory across sessions (dashed = session boundaries).",
+        concat_line,
+        "",
+        "Since z-position is estimated AFTER motion correction in production, the real-data "
+        "behaviour is what matters → the pipeline ships Pearson (no Suite2p dependency).",
+    ]
+    _image_page(
+        pdf,
+        "3. z-position: Pearson (shipped) vs Suite2p",
+        cap,
+        png,
+    )
+
+
+def section_correction_spatial_synth(pdf, results):
+    syn = results / "correction_spatial_synthetic.png"
+    if not syn.exists():
+        return
+    st = {}
+    if (results / "correction_spatial_synthetic.json").exists():
+        st = json.load(open(results / "correction_spatial_synthetic.json"))
+    zr = st.get("residual_z_mean", {})
+    cap = [
+        "The F_anat z-correction can be applied at three spatial granularities. This mirrors "
+        "the pipeline's patches_summary_plots style: the top row maps per-pixel residual "
+        "z-contamination |corr(ΔF/F, z)| over the FOV after each method (cyan = ROI centers); "
+        "the bottom row quantifies recovery and residual z on the extracted ROI traces.",
+        "",
+        "• per-pixel  — regress every pixel on F_anat (a-priori; over-corrects, mixes noise).",
+        "• per-patch  — one scale per spatial patch (coarse).",
+        "• per-ROI    — one OLS fit per cell footprint (the shipped method).",
+        "",
+        (
+            (
+                f"Residual z-contamination on traces: none {zr.get('none',float('nan')):.2f} → "
+                f"per-pixel {zr.get('per-pixel',float('nan')):.2f} → per-patch "
+                f"{zr.get('per-patch',float('nan')):.2f} → per-ROI {zr.get('per-ROI',float('nan')):.2f} "
+                "(lower is better). Per-ROI removes the most z from the extracted traces while "
+                "preserving activity — per-pixel looks lowest pixel-wise but over-corrects, so the "
+                "ROI-mean trace keeps more residual z."
+            )
+            if zr
+            else ""
+        ),
+    ]
+    _image_page(pdf, "7. Correction granularity: pixels vs patches vs ROI (synthetic)", cap, syn)
+
+
+def section_correction_spatial_real(pdf, results):
+    real = results / "correction_spatial_real.png"
+    if not real.exists():
+        return
+    st = {}
+    if (results / "correction_spatial_real.json").exists():
+        st = json.load(open(results / "correction_spatial_real.json"))
+    b = st.get("mean_residual_z_before")
+    a = st.get("mean_residual_z_after")
+    tail = (
+        f" Mean ROI residual-z {b:.2f} → {a:.2f} across {st.get('n_rois','?')} ROIs."
+        if b is not None
+        else ""
+    )
+    cap = [
+        "The shipped per-ROI correction on a real motion-corrected recording (no ground truth). "
+        "Left: FOV with extracted ROIs. Middle: per-ROI residual z-contamination |corr(ΔF/F, z)| "
+        "before vs after correction (brighter = more z-contaminated). Right: an example ROI trace "
+        "(raw vs corrected) with the estimated z overlaid — the correction removes z-locked "
+        "fluctuations from the trace." + tail,
+    ]
+    _image_page(pdf, "10. Per-ROI correction on real data (spatial)", cap, real)
+
+
 def section_conclusions(pdf):
     _text_page(
         pdf,
-        "7. Conclusions & recommendations",
+        "11. Conclusions & recommendations",
         [
             "Pipeline:",
             "• The z-motion chain is validated end-to-end on real data, both CNMF and "
@@ -446,11 +584,12 @@ def section_conclusions(pdf):
             "z-position estimation:",
             "• Synthetic ground truth: phase correlation (Suite2p) is most accurate "
             "(RMSE ~0.7 vs ~1.7 planes for Pearson).",
-            "• BUT on real NoRMCorre-corrected movies this does not transfer: phasecorr "
-            "latches onto the deepest plane, and edge-cropping collapses Pearson to plane 0. "
-            "Since z-pos runs after mcorr, neither is usable there.",
+            "• BUT on real NoRMCorre-corrected movies this does not transfer: phasecorr is much "
+            "noisier — 94 vs 18 spurious ≥2-plane jumps on the 3-session concat (5×), and a "
+            "deep-plane bias in single sessions — and edge-cropping collapses Pearson to plane 0. "
+            "Since z-pos runs after mcorr, phasecorr is not usable there.",
             "• The robust improvement is Pearson + temporal median smoothing of zpos: same "
-            "drift as legacy but 44 vs 290 spurious ≥2-plane jumps on the real run.",
+            "drift as legacy but 44 vs 290 spurious ≥2-plane jumps on the real single run.",
             "• Recommendation: keep Pearson (now the default in compute_zcorrel) with "
             "temporal smoothing; do NOT adopt phasecorr/edge-crop for production despite "
             "their synthetic accuracy. Revisit phasecorr only for raw/lightly-registered data.",
@@ -496,14 +635,20 @@ def main():
         pdf.savefig(fig)
         plt.close(fig)
 
+        # 1. Pipeline validation
         section_pipeline(pdf)
-        section_stage1(pdf, args.results)
-        section_stage1b(pdf, args.results)
-        section_stage3(pdf, args.results)
-        section_zpos_deepdive(pdf, args.results)
-        section_roi_figure(pdf, args.results)
-        section_synthetic_correction(pdf, args.results)
-        section_new_zcorrel(pdf, args.results)
+        # 2–5. z-position estimation
+        section_stage1(pdf, args.results)  # 2. synthetic amplitude sweep
+        section_zpos_comparison(pdf, args.results)  # 3. Pearson vs Suite2p (synthetic + real)
+        section_new_zcorrel(pdf, args.results)  # 4. optimized compute_zcorrel
+        section_stage1b(pdf, args.results)  # 5. sub-plane interpolation
+        # 6–10. correction
+        section_stage3(pdf, args.results)  # 6. method comparison sweep
+        section_correction_spatial_synth(pdf, args.results)  # 7. granularity (synthetic, spatial)
+        section_synthetic_correction(pdf, args.results)  # 8. recovery on synthetic ground truth
+        section_roi_figure(pdf, args.results)  # 9. per-ROI on real data (traces)
+        section_correction_spatial_real(pdf, args.results)  # 10. per-ROI on real data (spatial)
+        # 11. Conclusions
         section_conclusions(pdf)
 
     print(f"Wrote {out}")

@@ -150,6 +150,83 @@ def run_concat(tseries_dirs, zseries, downsample, out_path):
     _compare_methods(movie, vol, bnds, out_path)
 
 
+def _mcorr_session(movie, dview, work_dir):
+    """Run production-parameter NoRMCorre (pw_rigid) on one session's movie.
+
+    Returns the motion-corrected movie (T, H, W) as float32. Uses the exact
+    params from ``pipeline/configs/config_template_cnmf.json`` (strides 36,
+    overlaps 24, max_shifts 12, max_deviation_rigid 6, border_nan="copy",
+    pw_rigid=True) so the edge artifacts match production output.
+    """
+    import caiman as cm
+    from caiman.motion_correction import MotionCorrect
+    from caiman.source_extraction.cnmf import params as cnmf_params
+
+    work_dir = Path(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    fname = str(work_dir / "sess.tif")
+    tifffile.imwrite(fname, movie.astype(np.float32))
+    opts = cnmf_params.CNMFParams(
+        params_dict={
+            "strides": (36, 36),
+            "overlaps": (24, 24),
+            "max_shifts": (12, 12),
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": True,
+        }
+    )
+    mc = MotionCorrect([fname], dview=dview, **opts.get_group("motion"))
+    mc.motion_correct(save_movie=True)
+    m = np.asarray(cm.load(mc.mmap_file), dtype=np.float32)
+    # Clean up the on-disk products (the raw session tif + caiman memmaps).
+    for f in [fname] + list(mc.mmap_file):
+        try:
+            Path(f).unlink()
+        except OSError:
+            pass
+    return m
+
+
+def run_concat_mcorr(tseries_dirs, zseries, downsample, out_path, work_dir):
+    """Full-res NoRMCorre per session, then downsample+concat and compare z-pos.
+
+    This is the production-faithful version of ``run_concat``: each session is
+    motion-corrected at full resolution with the pipeline's NoRMCorre params
+    (real mcorr edge artifacts), downsampled, and concatenated. Exposes both the
+    real mcorr behaviour (where phasecorr latches to the deepest plane) and the
+    session-boundary steps.
+    """
+    import caiman as cm
+    from tests.benchmarks.bruker_io import load_bruker_tseries
+
+    work_dir = Path(work_dir)
+    c, dview, n_processes = cm.cluster.setup_cluster(
+        backend="multiprocessing", n_processes=None, single_thread=False
+    )
+    try:
+        movies, bnds, total = [], [], 0
+        for d in tseries_dirs:
+            full = load_bruker_tseries(d, channel=2, downsample=1)
+            print(f"  {Path(d).name}: loaded {full.shape}, running NoRMCorre...", flush=True)
+            mcorr = _mcorr_session(full, dview, work_dir / Path(d).name)
+            del full
+            if downsample > 1:
+                mcorr = block_reduce(mcorr, (1, downsample, downsample), np.mean).astype(np.float32)
+            print(f"    mcorr'd + downsampled -> {mcorr.shape}", flush=True)
+            total += mcorr.shape[0]
+            bnds.append(total)
+            movies.append(mcorr)
+    finally:
+        cm.stop_server(dview=dview)
+    movie = np.concatenate(movies, 0)
+    del movies
+    bnds = bnds[:-1]  # internal session boundaries only
+    print(f"concatenated (mcorr'd) {movie.shape}, boundaries {bnds}", flush=True)
+    vol, _ = load_bruker_zstack(zseries, channel=2, downsample=downsample)
+    _compare_methods(movie, vol, bnds, out_path)
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="mode", required=True)
@@ -169,6 +246,14 @@ def main():
     pc.add_argument("--zseries", type=Path, required=True)
     pc.add_argument("--downsample", type=int, default=3)
     pc.add_argument("--out", type=Path, required=True)
+    pcm = sub.add_parser("concat-mcorr")
+    pcm.add_argument("--tseries", type=str, required=True, help="comma-separated TSeries dirs")
+    pcm.add_argument("--zseries", type=Path, required=True)
+    pcm.add_argument("--downsample", type=int, default=3)
+    pcm.add_argument("--out", type=Path, required=True)
+    pcm.add_argument(
+        "--work-dir", type=Path, default=Path(tempfile.gettempdir()) / "concat_mcorr_work"
+    )
     args = p.parse_args()
 
     if args.mode == "synthetic":
@@ -176,6 +261,9 @@ def main():
     elif args.mode == "real":
         bnds = [int(x) for x in args.boundaries.split(",") if x.strip()]
         run_real(args.mcorr_tiff, args.zseries, args.downsample, bnds, args.out)
+    elif args.mode == "concat-mcorr":
+        dirs = [d for d in args.tseries.split(",") if d.strip()]
+        run_concat_mcorr(dirs, args.zseries, args.downsample, args.out, args.work_dir)
     else:
         dirs = [d for d in args.tseries.split(",") if d.strip()]
         run_concat(dirs, args.zseries, args.downsample, args.out)

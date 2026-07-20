@@ -30,6 +30,10 @@ scripts/*
 Mesmerize/test_data/
 Mesmerize/test_data.tar.gz
 
+# Large validation assets (regenerable; share via release, not git)
+validation/report/mcorr_real_ds.tif
+validation/report/synthetic_dataset/*.tif
+
 # Build files
 dist/
 build/
