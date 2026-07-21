@@ -175,12 +175,12 @@ def run_synthetic(args):
             base = np.tile(base, int(np.ceil(T / len(base))))
         base = base[:T]
 
-    trueC, _, events, responsive = make_stimulus_locked_traces(
+    trueC, _, events, responsive, evw = make_stimulus_locked_traces(
         n, T, framerate=20, decay_time=0.15, n_events=args.n_events, seed=args.seed
     )
     base_bg = 0.4 * (base - base.mean()) if base is not None else None
     zoff = make_response_coupled_zmotion(
-        T, events, base_zoff=base_bg, kick_amp=args.kick_amp, seed=args.seed
+        T, events, base_zoff=base_bg, kick_amp=args.kick_amp, event_weights=evw, seed=args.seed
     )
     xy = make_xy_trajectory(T, 1.0, 8, seed=args.seed)
     movie, gt = make_active_functional_movie(
@@ -190,7 +190,8 @@ def run_synthetic(args):
         centers,
         trueC,
         xy_offsets=xy,
-        deform_amp=0.5,
+        deform_amp=0.6,
+        deform_wave=True,
         activity_gain=1500,
         seed=args.seed,
     )
@@ -271,38 +272,20 @@ def run_synthetic(args):
     axz.set_title("Residual z-contamination (lower=better)", fontsize=12)
     axz.tick_params(axis="x", labelrotation=20, labelsize=11)
 
-    # per-patch scale map (the b coefficients laid out spatially)
-    axp = fig.add_subplot(gs[1, 2])
-    H, W = fov.shape
-    npat = 8
-    ys = np.linspace(0, H, npat + 1).astype(int)
-    xs = np.linspace(0, W, npat + 1).astype(int)
-    patch_b = np.zeros((npat, npat))
-    for i in range(npat):
-        for j in range(npat):
-            m = movie[:, ys[i] : ys[i + 1], xs[j] : xs[j + 1]].mean(axis=(1, 2))
-            a = f_anat[:, ys[i] : ys[i + 1], xs[j] : xs[j + 1]].mean(axis=(1, 2))
-            a0 = a - a.mean()
-            den = (a0 * a0).sum() or 1.0
-            patch_b[i, j] = ((a0) * (m - m.mean())).sum() / den
-    im = axp.imshow(patch_b, cmap="coolwarm")
-    fig.colorbar(im, ax=axp, fraction=0.046)
-    axp.set_title("per-patch fit scale b", fontsize=12)
-    axp.set_xticks([])
-    axp.set_yticks([])
-
-    # example: the most z-impacted cell, true / before / ROI-corrected
-    axe = fig.add_subplot(gs[1, 3:5])
-    # Pick the most-contaminated example among reasonably visible cells (focus
-    # floor), so the example is a real ROI modulated by z, not a near-invisible
-    # off-focus cell whose trace is dominated by noise.
+    # example: a visible cell where the per-ROI correction clearly helped (largest
+    # residual-z reduction among reasonably in-focus, contaminated cells) — so the
+    # example illustrates the effect rather than a cell the correction can't touch.
+    axe = fig.add_subplot(gs[1, 2:5])
     focus = np.array(
         [np.mean(np.exp(-0.5 * ((z_true - centers[i, 0]) / 2.0) ** 2)) for i in range(len(centers))]
     )
-    cand = np.where(focus >= 0.15)[0]
+    cand = np.where((focus >= 0.15) & (np.nan_to_num(z_none) >= 0.2))[0]
+    if len(cand) == 0:
+        cand = np.where(focus >= 0.15)[0]
     if len(cand) == 0:
         cand = np.argsort(focus)[::-1][:5]
-    sel = int(cand[np.argmax(np.nan_to_num(z_none[cand]))])
+    reduction = np.nan_to_num(z_none[cand]) - np.nan_to_num(z_roi[cand])
+    sel = int(cand[np.argmax(reduction)])
     cy, cx = centers[sel, 1], centers[sel, 2]
 
     d_before = _roi_trace(movie, cy, cx)
@@ -430,21 +413,38 @@ def run_real(args):
         zres_before[i] = abs(_corr(db, zpos))
         zres_after[i] = abs(_corr(da, zpos))
 
-    # ── Figure ───────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(18, 6.5))
-    gs = fig.add_gridspec(1, 4, width_ratios=[1, 1, 1, 1.4], wspace=0.22)
+    # Precompute ΔF/F traces once (for the example panels).
+    dff_b = np.zeros((len(centers), movie.shape[0]), np.float32)
+    dff_a = np.zeros_like(dff_b)
+    for i, (zc_, cy, cx) in enumerate(centers):
+        tb = _roi_trace(movie, cy, cx)
+        ta = _roi_trace(mov_roi, cy, cx)
+        dff_b[i] = tb / (tb.mean() or 1.0) - 1.0
+        dff_a[i] = ta / (ta.mean() or 1.0) - 1.0
+
+    # ── Figure: 3 maps on top, a variety of example traces below ──────────────
+    n_ex = 6
+    # Rank by how much the correction actually changed the trace's z-coupling,
+    # among reasonably contaminated ROIs — these are where correction matters.
+    contaminated = np.where(zres_before >= np.percentile(zres_before, 40))[0]
+    effect = (zres_before - zres_after)[contaminated]
+    sel = contaminated[np.argsort(effect)[::-1][:n_ex]]
+
+    fig = plt.figure(figsize=(16, 11))
+    gs = fig.add_gridspec(3, 3, height_ratios=[1.3, 0.85, 0.85], hspace=0.4, wspace=0.15)
     vmax = np.percentile(zres_before, 95)
 
-    ax0 = fig.add_subplot(gs[0])
+    ax0 = fig.add_subplot(gs[0, 0])
     ax0.imshow(fov, cmap="gray")
     ax0.scatter(centers[:, 2], centers[:, 1], s=16, facecolors="none", edgecolors="C1", lw=0.7)
-    ax0.set_title(f"FOV + {len(centers)} ROIs", fontsize=10)
+    ax0.scatter(centers[sel, 2], centers[sel, 1], s=45, facecolors="none", edgecolors="C0", lw=1.3)
+    ax0.set_title(f"FOV + {len(centers)} ROIs (examples circled)", fontsize=11)
     ax0.axis("off")
 
     for k, (vals, ttl) in enumerate(
         [(zres_before, "before"), (zres_after, "after per-ROI")], start=1
     ):
-        ax = fig.add_subplot(gs[k])
+        ax = fig.add_subplot(gs[0, k])
         ax.imshow(fov, cmap="gray", alpha=0.5)
         sc = ax.scatter(
             centers[:, 2],
@@ -457,38 +457,30 @@ def run_real(args):
             edgecolors="k",
             linewidths=0.3,
         )
-        ax.set_title(f"ROI residual |corr(ΔF/F, z)|\n{ttl}  (mean {vals.mean():.3f})", fontsize=10)
+        ax.set_title(f"ROI residual |corr(ΔF/F, z)|\n{ttl}  (mean {vals.mean():.3f})", fontsize=11)
         ax.axis("off")
         fig.colorbar(sc, ax=ax, fraction=0.046)
 
-    # example: most z-impacted ROI, before vs after + zpos
-    axe = fig.add_subplot(gs[3])
-    sel = int(np.argmax(zres_before))
-    cy, cx = centers[sel, 1], centers[sel, 2]
-    tb = _roi_trace(movie, cy, cx)
-    ta = _roi_trace(mov_roi, cy, cx)
-    db = tb / (tb.mean() or 1.0) - 1.0
-    da = ta / (ta.mean() or 1.0) - 1.0
-
-    def _z(x):
-        return (x - x.mean()) / (x.std() + 1e-9)
-
-    axe.plot(_z(db), color="0.6", lw=0.8, label="before")
-    axe.plot(_z(da), color="C0", lw=0.9, label="per-ROI corrected")
-    axz = axe.twinx()
-    axz.plot(zpos, color="C3", lw=0.7, alpha=0.5)
-    axz.set_ylabel("est. z-plane", color="C3", fontsize=8)
-    axe.set_title(
-        f"Example ROI {sel}: residual-z {zres_before[sel]:.2f} → {zres_after[sel]:.2f}", fontsize=10
-    )
-    axe.legend(loc="upper right", fontsize=8)
-    axe.set_xlabel("frame")
-    axe.set_yticks([])
+    for j, i in enumerate(sel):
+        ax = fig.add_subplot(gs[1 + j // 3, j % 3])
+        ax.plot(dff_b[i], color="0.6", lw=0.8, label="before")
+        ax.plot(dff_a[i], color="C0", lw=0.9, label="corrected")
+        axz = ax.twinx()
+        axz.plot(zpos, color="C3", lw=0.6, alpha=0.4)
+        axz.set_yticks([])
+        ax.set_title(f"ROI {i}: resid-z {zres_before[i]:.2f}→{zres_after[i]:.2f}", fontsize=9)
+        ax.set_ylabel("ΔF/F", fontsize=8)
+        ax.tick_params(labelsize=7)
+        if j == 0:
+            ax.legend(loc="upper right", fontsize=7, ncol=2)
+        if j // 3 == 1:
+            ax.set_xlabel("frame", fontsize=8)
 
     fig.suptitle(
-        f"Per-ROI z-correction on real data ({Path(args.mcorr_tiff).stem}) — "
-        f"mean residual-z {zres_before.mean():.3f} → {zres_after.mean():.3f}",
-        fontsize=16,
+        f"Per-ROI z-correction on real data ({Path(args.mcorr_tiff).stem}) — mean residual-z "
+        f"{zres_before.mean():.3f} → {zres_after.mean():.3f}; examples = ROIs most changed by "
+        "correction",
+        fontsize=14,
     )
     args.out.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out / "correction_spatial_real.png", dpi=140, bbox_inches="tight")

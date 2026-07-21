@@ -30,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
-from scipy.ndimage import gaussian_filter, map_coordinates
+from scipy.ndimage import gaussian_filter, gaussian_filter1d, map_coordinates
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Volume generation
@@ -223,6 +223,20 @@ def _deformation_field(H, W, amplitude_px, scale_px, rng):
     return dy.astype(np.float32), dx.astype(np.float32)
 
 
+def _wave_deformation_field(yy, xx, amplitude_px, wavelength_px, direction, phase):
+    """Traveling-wave (dy, dx) displacement field.
+
+    Real tissue deformation during motion propagates as a wave rather than
+    warping incoherently. This is a longitudinal plane wave: pixels are displaced
+    along ``direction`` by ``amplitude_px * sin(k·r - phase)``; advancing ``phase``
+    across frames makes the deformation travel across the FOV.
+    """
+    diry, dirx = direction
+    proj = (yy * diry + xx * dirx) * (2.0 * np.pi / wavelength_px)
+    disp = amplitude_px * np.sin(proj - phase)
+    return (disp * diry).astype(np.float32), (disp * dirx).astype(np.float32)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Movie generation
 # ──────────────────────────────────────────────────────────────────────────────
@@ -263,6 +277,9 @@ def make_functional_movie(
     xy_offsets=None,
     deform_amp=0.0,
     deform_scale=None,
+    deform_wave=False,
+    wave_wavelength=None,
+    wave_period=12.0,
     noise_factor=0.02,
     seed=42,
 ):
@@ -308,6 +325,19 @@ def make_functional_movie(
         deform_scale = H / 8.0
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 
+    # Traveling-wave deformation set-up: a fixed random propagation direction and
+    # wavelength; amplitude is modulated by the instantaneous motion (deformation
+    # rides on movement) with a small always-on floor.
+    if deform_wave:
+        if wave_wavelength is None:
+            wave_wavelength = H / 1.5
+        ang = rng.uniform(0, 2 * np.pi)
+        wave_dir = (np.sin(ang), np.cos(ang))
+        motion = z_offsets if rigid else z_offsets.reshape(T, -1).mean(axis=1)
+        vel = np.abs(np.gradient(motion.astype(np.float32)))
+        vel = gaussian_filter1d(vel, sigma=2.0)
+        wave_env = 0.3 + 0.7 * (vel / (vel.max() + 1e-9))  # (T,) in [0.3, 1]
+
     if not rigid:
         n_py, n_px = z_offsets.shape[1], z_offsets.shape[2]
         if patch_size_y is None:
@@ -344,7 +374,13 @@ def make_functional_movie(
             y_field = yy + xy_offsets[t, 0]
             x_field = xx + xy_offsets[t, 1]
         if deform_amp > 0:
-            dy, dx = _deformation_field(H, W, deform_amp, deform_scale, rng)
+            if deform_wave:
+                phase = 2.0 * np.pi * t / wave_period
+                dy, dx = _wave_deformation_field(
+                    yy, xx, deform_amp * wave_env[t], wave_wavelength, wave_dir, phase
+                )
+            else:
+                dy, dx = _deformation_field(H, W, deform_amp, deform_scale, rng)
             y_field = y_field + dy
             x_field = x_field + dx
         if xy_offsets is not None or deform_amp > 0:

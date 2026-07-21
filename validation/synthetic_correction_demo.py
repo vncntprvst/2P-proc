@@ -122,13 +122,13 @@ def main():
     if args.coupled:
         # Stimulus-locked responses + z-motion whose downward onsets cluster around
         # them (real protocol: the animal reacts, so motion co-occurs with responses).
-        trueC, _, events, _ = make_stimulus_locked_traces(
+        trueC, _, events, _, evw = make_stimulus_locked_traces(
             n, T, framerate=20, decay_time=0.15, n_events=args.n_events, seed=args.seed
         )
         # background fluctuation from the real zpos (scaled down) + response kicks
         base_bg = 0.4 * (base - base.mean()) if base is not None else None
         zoff = make_response_coupled_zmotion(
-            T, events, base_zoff=base_bg, kick_amp=args.kick_amp, seed=args.seed
+            T, events, base_zoff=base_bg, kick_amp=args.kick_amp, event_weights=evw, seed=args.seed
         )
         traj_label = "response-coupled z-motion"
     elif base is not None:
@@ -152,13 +152,21 @@ def main():
         centers,
         trueC,
         xy_offsets=xy,
-        deform_amp=0.5,
+        deform_amp=0.6,
+        deform_wave=True,
         activity_gain=1500,
         seed=args.seed,
     )
     # Oracle anatomical predictor: same motion, NO activity, no noise.
     baseline, _ = make_functional_movie(
-        vol, znom, zoff, xy_offsets=xy, deform_amp=0.5, noise_factor=0.0, seed=args.seed
+        vol,
+        znom,
+        zoff,
+        xy_offsets=xy,
+        deform_amp=0.6,
+        deform_wave=True,
+        noise_factor=0.0,
+        seed=args.seed,
     )
 
     n = len(centers)

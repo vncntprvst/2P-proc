@@ -57,7 +57,7 @@ from tests.benchmarks.synthetic_zstack import (
 )
 from tests.benchmarks.synthetic_activity import (
     detect_somata,
-    make_calcium_traces,
+    make_stimulus_locked_traces,
     make_active_functional_movie,
 )
 
@@ -166,8 +166,15 @@ def run_correction_benchmark(
         centers = detect_somata(
             volume, n_cells=n_cells, min_distance=5, margin=8, z_center=z_nominal, z_band=z_band
         )
-        trueC, _ = make_calcium_traces(
-            len(centers), n_frames, framerate=20, decay_time=0.15, firerate=firerate, seed=seed
+        # Heterogeneous, realistic activity (skewed amplitudes, variable reliability)
+        # so the amplitude sweep discriminates methods rather than being high-SNR.
+        trueC, _, _, _, _ = make_stimulus_locked_traces(
+            len(centers),
+            n_frames,
+            framerate=20,
+            decay_time=0.15,
+            n_events=max(6, n_frames // 25),
+            seed=seed,
         )
         z_offsets = make_rigid_z_trajectory(
             n_frames, amplitude_planes, temporal_smoothness, seed=seed
@@ -185,6 +192,7 @@ def run_correction_benchmark(
             trueC,
             xy_offsets=xy,
             deform_amp=deform_amp,
+            deform_wave=True,
             activity_gain=activity_gain,
             seed=seed,
         )

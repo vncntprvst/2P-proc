@@ -120,6 +120,7 @@ def make_active_functional_movie(
     trueC,
     xy_offsets=None,
     deform_amp=0.0,
+    deform_wave=False,
     sigma_xy=4.0,
     sigma_z=2.0,
     activity_gain=800.0,
@@ -160,6 +161,7 @@ def make_active_functional_movie(
         z_offsets,
         xy_offsets=xy_offsets,
         deform_amp=deform_amp,
+        deform_wave=deform_wave,
         noise_factor=0.0,
         seed=seed,
     )
@@ -176,7 +178,12 @@ def make_active_functional_movie(
         movie += contrib[:, None, None] * footprint[None]
 
     if noise_factor > 0:
-        movie += rng.normal(0, noise_factor * movie.mean(), movie.shape).astype(np.float32)
+        # Shot noise (∝ √signal, the dominant 2P noise) + a read-noise floor, so
+        # dim cells sit near the noise floor and bright ones are cleaner — as in
+        # real recordings, rather than a uniform additive blur.
+        scale = noise_factor * movie.mean()
+        shot = rng.normal(0, 1, movie.shape).astype(np.float32) * np.sqrt(np.clip(movie, 0, None))
+        movie += 3.0 * noise_factor * shot + rng.normal(0, scale, movie.shape).astype(np.float32)
         np.clip(movie, 0, None, out=movie)
 
     ground_truth = {
@@ -198,40 +205,67 @@ def make_stimulus_locked_traces(
     framerate=20.0,
     decay_time=0.15,
     n_events=12,
-    resp_fraction=0.6,
-    resp_prob=0.8,
+    resp_fraction=0.65,
     event_jitter=3,
-    amp_range=(0.8, 2.0),
-    background_rate=0.2,
     seed=42,
 ):
-    """Population responses time-locked to stimulus events + background firing.
+    """Heterogeneous population responses time-locked to stimulus events.
 
-    Mimics a stimulus protocol: at each event a responsive subset of cells fires
-    (near the event, with jitter), on top of low background Poisson activity.
+    Real calcium populations are not uniform "light bulbs": transient amplitudes
+    are heavy-tailed (many small, few large), cells respond to the stimulus with
+    very different reliabilities, and each cell has its own spontaneous rate. This
+    models that gamut so the synthetic benchmark is discriminating rather than
+    trivially high-SNR:
+
+    - ``responsive`` : a subset of cells participate in the stimulus at all.
+    - per-cell ``reliability`` ~ U(0.1, 0.9): fraction of events a cell responds to.
+    - per-cell ``gain`` ~ log-normal (skewed): sets each cell's typical amplitude,
+      so some cells are always dim and a few are strong.
+    - per-event amplitude jitter (log-normal): the same cell varies event to event.
+    - per-cell spontaneous ``bg_rate`` ~ U(0.02, 0.5) Hz of small background spikes.
 
     Returns
     -------
     trueC : (n_cells, n_frames) float32   ground-truth calcium
     trueS : (n_cells, n_frames) float32   spikes
-    events : (n_events,) int              stimulus/response onset frames
+    events : (n_events,) int              stimulus onset frames
     responsive : (n_cells,) bool          which cells respond to the stimulus
+    event_weights : (n_events,) float32   population response strength per event
+                                          (0-1), for response-coupled z-motion
     """
     rng = np.random.default_rng(seed)
     gamma = np.exp(-1.0 / (decay_time * framerate))
     margin = int(0.05 * n_frames) + 5
     events = np.linspace(margin, n_frames - margin, n_events).round().astype(int)
-    trueS = (rng.random((n_cells, n_frames)) < background_rate / framerate).astype(np.float32)
+
     responsive = rng.random(n_cells) < resp_fraction
+    reliability = rng.uniform(0.1, 0.9, n_cells)
+    gain = rng.lognormal(mean=-0.3, sigma=0.7, size=n_cells).astype(np.float32)  # skewed
+    bg_rate = rng.uniform(0.02, 0.5, n_cells)
+
+    trueS = np.zeros((n_cells, n_frames), np.float32)
+    # Spontaneous background: small, sparse, per-cell rate.
+    for c in range(n_cells):
+        sp = np.where(rng.random(n_frames) < bg_rate[c] / framerate)[0]
+        if len(sp):
+            trueS[c, sp] += gain[c] * rng.lognormal(-0.7, 0.5, len(sp)).astype(np.float32)
+
+    # Stimulus-evoked, per-cell reliability and per-event amplitude variability.
+    event_amp = np.zeros(len(events), np.float32)
     for c in np.where(responsive)[0]:
-        for e in events:
-            if rng.random() < resp_prob:
+        for ei, e in enumerate(events):
+            if rng.random() < reliability[c]:
                 t = int(np.clip(e + rng.integers(-event_jitter, event_jitter + 1), 0, n_frames - 1))
-                trueS[c, t] += rng.uniform(*amp_range)
+                amp = float(gain[c] * rng.lognormal(0.0, 0.5))
+                trueS[c, t] += amp
+                event_amp[ei] += amp
+
     trueC = trueS.copy()
     for t in range(1, n_frames):
         trueC[:, t] += gamma * trueC[:, t - 1]
-    return trueC.astype(np.float32), trueS, events, responsive
+
+    event_weights = (event_amp / (event_amp.max() + 1e-9)).astype(np.float32)
+    return trueC.astype(np.float32), trueS, events, responsive, event_weights
 
 
 def make_response_coupled_zmotion(
@@ -240,13 +274,14 @@ def make_response_coupled_zmotion(
     base_zoff=None,
     framerate=20.0,
     kick_amp=1.8,
-    kick_prob=0.8,
+    kick_prob=0.85,
     kick_dwell=0.5,
     kick_settle=0.4,
-    kick_delay=1,
+    kick_lead=2,
     event_jitter=2,
     step_rate=0.015,
     max_excursion=3.0,
+    event_weights=None,
     quantize=True,
     seed=42,
 ):
@@ -279,17 +314,21 @@ def make_response_coupled_zmotion(
             cur = float(np.clip(cur + rng.choice([-1.0, 1.0]), -max_excursion, max_excursion))
         zoff[t] = cur
 
-    # 2. Response kicks: downward hold-and-return pulses.
+    # 2. Response kicks: downward hold-and-return pulses whose onset is at or just
+    #    BEFORE the response (kick_lead frames early) — the animal reacts, the brain
+    #    displaces as the cells fire. Stronger population responses (event_weights)
+    #    are more likely to trigger a kick and kick a little harder.
     dwell = max(1, int(round(kick_dwell * framerate)))
     settle = max(1, int(round(kick_settle * framerate)))
-    for e in events:
-        if rng.random() < kick_prob:
+    for ei, e in enumerate(events):
+        w = 1.0 if event_weights is None else float(event_weights[ei])
+        if rng.random() < kick_prob * (0.4 + 0.6 * w):
             t0 = int(
                 np.clip(
-                    e + kick_delay + rng.integers(-event_jitter, event_jitter + 1), 0, n_frames - 1
+                    e - kick_lead + rng.integers(-event_jitter, event_jitter + 1), 0, n_frames - 1
                 )
             )
-            amp = -abs(kick_amp) * rng.uniform(0.8, 1.1)  # downward = negative
+            amp = -abs(kick_amp) * (0.6 + 0.5 * w) * rng.uniform(0.8, 1.1)  # downward, weighted
             hi = min(t0 + dwell, n_frames)
             zoff[t0:hi] += amp
             for k, t in enumerate(range(hi, min(hi + settle, n_frames))):

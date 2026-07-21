@@ -88,14 +88,18 @@ def section_pipeline(pdf):
             "(both CNMF and Suite2p extraction backends run), but has no ground truth to score "
             "against.",
             "• Synthetic ground truth: a NAOMi-lite harness that takes the real z-stack as the "
-            "anatomical volume, injects known spike→GCaMP activity into detected somata, and "
-            "samples the volume along a KNOWN 3-D trajectory (a staircase z-path + xy jitter + "
-            "mild deformation). An axial-Gaussian gain models defocus, so z-motion attenuates "
-            "cells — reproducing the artifact. Because the true activity and z-position are "
-            "known, this quantifies both estimation error and recovery. The z-motion is "
-            "response-coupled: downward steps cluster on stimulus responses, as in the real "
-            "protocol (the animal reacts, so the brain moves when cells respond) — the hardest "
-            "case, since the artifact then overlaps the signal.",
+            "anatomical volume, injects known but HETEROGENEOUS spike→GCaMP activity into "
+            "detected somata (skewed per-cell amplitudes, variable response reliability, "
+            "spontaneous background + shot noise — cells span dim-and-sparse to bright-and-"
+            "reliable, not uniform), and samples the volume along a KNOWN 3-D trajectory: a "
+            "staircase z-path (discrete plane dwells, like a real z-estimate) plus xy jitter and "
+            "a propagating-wave tissue deformation. An axial-Gaussian gain models defocus, so "
+            "z-motion attenuates cells — reproducing the artifact. Because the true activity and "
+            "z-position are known, this quantifies both estimation error and recovery. The "
+            "z-motion is response-coupled: downward steps onset at or just before stimulus "
+            "responses (weighted by population response strength), as in the real protocol (the "
+            "animal reacts, so the brain moves when cells respond) — the hardest case, since the "
+            "artifact then overlaps the signal.",
             "",
             "Two things are compared:",
             "• z-position estimation (§2–3): full-frame Pearson correlation (shipped) vs Suite2p "

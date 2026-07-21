@@ -1,20 +1,20 @@
 {
   "n_cells": 60,
   "trajectory": "response-coupled z-motion",
-  "z_std_planes": 1.0514675378799438,
+  "z_std_planes": 1.0246092081069946,
   "z_ptp_planes": 4.0,
-  "activity_z_coupling": -0.2683347559955823,
+  "activity_z_coupling": -0.47016150803453965,
   "all_cells": {
-    "r_before_mean": 0.4893972044434073,
-    "r_after_mean": 0.7785068565929383,
-    "resid_z_before_mean": 0.3797071727613295,
-    "resid_z_after_mean": 0.1753814736369236
+    "r_before_mean": 0.43224593983212173,
+    "r_after_mean": 0.7938519405326818,
+    "resid_z_before_mean": 0.39080109885296704,
+    "resid_z_after_mean": 0.14975786793689477
   },
   "top_z_impacted": {
     "n": 10,
-    "r_before_mean": 0.6287068522514433,
-    "r_after_mean": 0.8304739709726603,
-    "resid_z_before_mean": 0.492524105324585,
-    "resid_z_after_mean": 0.23226702427407533
+    "r_before_mean": 0.6122649021314179,
+    "r_after_mean": 0.8928360351886002,
+    "resid_z_before_mean": 0.48724146828946,
+    "resid_z_after_mean": 0.18943508033679826
   }
 }

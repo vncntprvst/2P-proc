@@ -86,7 +86,7 @@ def main():
         base = base[:T]
 
     # Stimulus-locked responses + response-coupled downward z-motion.
-    trueC, trueS, events, responsive = make_stimulus_locked_traces(
+    trueC, trueS, events, responsive, evw = make_stimulus_locked_traces(
         n, T, framerate=args.framerate, decay_time=0.15, n_events=args.n_events, seed=args.seed
     )
     base_bg = 0.4 * (base - base.mean()) if base is not None else None
@@ -96,6 +96,7 @@ def main():
         base_zoff=base_bg,
         framerate=args.framerate,
         kick_amp=args.kick_amp,
+        event_weights=evw,
         seed=args.seed,
     )
 
@@ -107,12 +108,20 @@ def main():
         centers,
         trueC,
         xy_offsets=xy,
-        deform_amp=0.5,
+        deform_amp=0.6,
+        deform_wave=True,
         activity_gain=1500,
         seed=args.seed,
     )
     baseline, _ = make_functional_movie(
-        vol, znom, zoff, xy_offsets=xy, deform_amp=0.5, noise_factor=0.0, seed=args.seed
+        vol,
+        znom,
+        zoff,
+        xy_offsets=xy,
+        deform_amp=0.6,
+        deform_wave=True,
+        noise_factor=0.0,
+        seed=args.seed,
     )
 
     pop = (trueC / (trueC.mean(1, keepdims=True) + 1e-6)).mean(0)
@@ -156,12 +165,16 @@ def main():
         "Ground-truth functional movie for z-motion-correction validation. NAOMi-lite: "
         f"real anatomy from `{Path(args.real_zstack).name}` (Ch2, {args.downsample}x "
         f"downsampled) as the volume, {n} somata detected near the focal plane, injected "
-        "with spike->AR(1) GCaMP activity, sampled along a **known** 3D trajectory (rigid z "
-        "+ xy jitter + mild deformation). An axial-Gaussian gain models defocus, so z-motion "
-        "attenuates cells (the artifact to correct).\n\n"
-        "The z-motion is **response-coupled**: downward (negative) displacement onsets cluster "
-        f"around {len(events)} stimulus events, so brain motion co-occurs with responses "
-        f"(activity-z coupling r = {coupling:.2f}), as in the real protocol.\n\n"
+        "with **heterogeneous** spike->AR(1) GCaMP activity (skewed per-cell amplitudes, "
+        "variable response reliability, spontaneous background + shot noise — not uniform "
+        "'light bulbs'), sampled along a **known** 3D trajectory. An axial-Gaussian gain models "
+        "defocus, so z-motion attenuates cells (the artifact to correct).\n\n"
+        "The z-motion is a **staircase** (discrete plane dwells + transitions, like a real "
+        "z-position estimate) that is **response-coupled**: downward steps onset at or just "
+        f"before the {len(events)} stimulus responses (probability weighted by population "
+        f"response strength), so brain motion co-occurs with responses (activity-z coupling "
+        f"r = {coupling:.2f}), as in the real protocol. In-plane tissue deformation is a "
+        "propagating wave riding on the motion.\n\n"
         "## Files\n"
         "- `synthetic_movie.tif` — the functional movie (T, Y, X), uint16, shared display scale.\n"
         "- `synthetic_baseline.tif` — same motion, NO activity (the oracle F_anat predictor).\n"

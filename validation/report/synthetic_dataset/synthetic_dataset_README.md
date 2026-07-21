@@ -1,8 +1,8 @@
 # Synthetic z-motion dataset
 
-Ground-truth functional movie for z-motion-correction validation. NAOMi-lite: real anatomy from `ZSeries-10022023-1300-004` (Ch2, 2x downsampled) as the volume, 60 somata detected near the focal plane, injected with spike->AR(1) GCaMP activity, sampled along a **known** 3D trajectory (rigid z + xy jitter + mild deformation). An axial-Gaussian gain models defocus, so z-motion attenuates cells (the artifact to correct).
+Ground-truth functional movie for z-motion-correction validation. NAOMi-lite: real anatomy from `ZSeries-10022023-1300-004` (Ch2, 2x downsampled) as the volume, 60 somata detected near the focal plane, injected with **heterogeneous** spike->AR(1) GCaMP activity (skewed per-cell amplitudes, variable response reliability, spontaneous background + shot noise — not uniform 'light bulbs'), sampled along a **known** 3D trajectory. An axial-Gaussian gain models defocus, so z-motion attenuates cells (the artifact to correct).
 
-The z-motion is **response-coupled**: downward (negative) displacement onsets cluster around 20 stimulus events, so brain motion co-occurs with responses (activity-z coupling r = -0.31), as in the real protocol.
+The z-motion is a **staircase** (discrete plane dwells + transitions, like a real z-position estimate) that is **response-coupled**: downward steps onset at or just before the 20 stimulus responses (probability weighted by population response strength), so brain motion co-occurs with responses (activity-z coupling r = -0.39), as in the real protocol. In-plane tissue deformation is a propagating wave riding on the motion.
 
 ## Files
 - `synthetic_movie.tif` — the functional movie (T, Y, X), uint16, shared display scale.
