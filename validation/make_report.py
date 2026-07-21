@@ -655,6 +655,68 @@ def section_correction_spatial_real(pdf, results):
     _image_page(pdf, "8. Per-ROI correction on real data (spatial)", cap, real)
 
 
+def section_edge_mitigation(pdf, results):
+    f = results / "edge_mitigation_stable.json"
+    if not f.exists():
+        return
+    d = json.load(open(f))
+    res = d.get("results", [])
+    rows = []
+    for r in res:
+        rows.append([
+            f"{r['crop_frac']*100:.0f}%",
+            f"{r['shape'][1]}×{r['shape'][2]}",
+            str(r["pearson_jumps"]),
+            str(r["suite2p_jumps"]),
+            f"{r['agreement_r']:.2f}",
+        ])
+    # Data-driven conclusion: does any crop bring Suite2p's jumps near Pearson's?
+    verdict = ""
+    if res:
+        best = min(res, key=lambda r: r["suite2p_jumps"])
+        ratio = best["suite2p_jumps"] / max(best["pearson_jumps"], 1)
+        if ratio <= 1.5:
+            verdict = (
+                f" Result: cropping HELPS — at a {best['crop_frac']*100:.0f}% border crop Suite2p "
+                f"falls to {best['suite2p_jumps']} jumps vs Pearson's {best['pearson_jumps']}, so "
+                "the excess jitter was largely an edge-strip artifact and phase-correlation could "
+                "be revisited for production with border masking."
+            )
+        else:
+            verdict = (
+                f" Result: cropping does NOT close the gap — even at the best crop "
+                f"({best['crop_frac']*100:.0f}%) Suite2p makes {best['suite2p_jumps']} spurious "
+                f"≥2-plane jumps vs Pearson's {best['pearson_jumps']}, so the excess jitter is not "
+                "merely an edge-strip artifact. → keep Pearson for production."
+            )
+    latest_note = ""
+    lf = results / "edge_mitigation_latest.json"
+    if lf.exists():
+        ld = json.load(open(lf))
+        latest_note = (
+            f" Re-tested under up-to-date CaImAn {ld.get('caiman','?')} / Suite2p "
+            f"{ld.get('suite2p','?')}: results in the data file."
+        )
+    else:
+        latest_note = (
+            " Under up-to-date Suite2p (1.1.0) the phase-correlation code does not run — the "
+            "Suite2p registration API changed (rigid.compute_masks was removed), so adopting a "
+            "newer Suite2p would require porting compute_zcorrel_suite2p first."
+        )
+    _table_page(
+        pdf,
+        "Annex A3. Can the mcorr edge artifact be fixed? (tested)",
+        ["border crop", "FOV", "Pearson jumps", "Suite2p jumps", "agreement r"],
+        rows,
+        note=(
+            "Hypothesis: NoRMCorre's border_nan=\"copy\" leaves low-information strips at the "
+            "frame edges that corrupt Suite2p's masked phase-correlation, so central-cropping "
+            "them should let phase-correlation work in production. Measured on a real "
+            "motion-corrected session, sweeping the border crop fraction." + verdict + latest_note
+        ),
+    )
+
+
 def section_conclusions(pdf):
     _text_page(
         pdf,
@@ -734,6 +796,7 @@ def main():
         # Annexes (supporting detail)
         section_new_zcorrel(pdf, args.results)  # A1. temporal smoothing (legacy vs optimized)
         section_stage1b(pdf, args.results)  # A2. sub-plane interpolation
+        section_edge_mitigation(pdf, args.results)  # A3. Suite2p edge-artifact mitigation test
 
     print(f"Wrote {out}")
 
