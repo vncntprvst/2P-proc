@@ -10,9 +10,9 @@
   "n_events": 20,
   "z_planes": 41,
   "z_nominal_plane": 20.0,
-  "z_std_planes": 0.865959644317627,
-  "z_ptp_planes": 4.843398094177246,
-  "activity_z_coupling_r": -0.37554879817973696,
+  "z_std_planes": 1.171603798866272,
+  "z_ptp_planes": 5.0,
+  "activity_z_coupling_r": -0.3081350485575155,
   "downsample": 2,
   "source_zstack": "/home/wanglab/data/2P/C57_O1M2/10022023/ZSeries-10022023-1300-004",
   "framerate_hz": 20.0

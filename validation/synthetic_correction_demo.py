@@ -85,7 +85,14 @@ def main():
         "clustered around response onsets (realistic protocol coupling)",
     )
     p.add_argument("--n-events", type=int, default=14)
-    p.add_argument("--kick-amp", type=float, default=3.0)
+    p.add_argument("--kick-amp", type=float, default=1.8)
+    p.add_argument(
+        "--focus-floor",
+        type=float,
+        default=0.15,
+        help="only show example cells at least this in-focus (mean axial gain), so "
+        "examples are visible cells modulated by z, not near-invisible off-focus ones",
+    )
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--seed", type=int, default=1)
     args = p.parse_args()
@@ -180,39 +187,67 @@ def main():
         zc_before[i] = abs(_corr(db, zpos))
         zc_after[i] = abs(_corr(dc, zpos))
 
-    # z-impact = how contaminated the raw trace is by the z-trajectory.
-    order = np.argsort(np.nan_to_num(zc_before))[::-1]
+    # Per-cell "focus" = mean axial gain exp(-0.5*((z(t)-z_cell)/sigma_z)^2): how
+    # in-focus the cell is across the recording. Low focus => the true transient is
+    # defocus-attenuated in the movie, so recovery is capped (subtraction can't
+    # restore signal the objective never collected). sigma_z matches the movie.
+    sigma_z = 2.0
+    focus = np.array(
+        [np.mean(np.exp(-0.5 * ((zpos - centers[i, 0]) / sigma_z) ** 2)) for i in range(n)]
+    )
+
+    # z-impact = how contaminated the raw trace is by the z-trajectory. Select the
+    # most-contaminated cells *among reasonably visible ones* (focus above a floor):
+    # ranking on contamination alone favours near-invisible off-focus cells that no
+    # one would extract, whereas production ROIs are visible cells modulated by z.
+    visible = np.where(focus >= args.focus_floor)[0]
+    if len(visible) < args.n_show:
+        visible = np.argsort(focus)[::-1][: max(args.n_show, 1)]
+    order = visible[np.argsort(np.nan_to_num(zc_before[visible]))[::-1]]
     sel = order[: args.n_show]
 
-    # ── Figure 1: top z-impacted cells ───────────────────────────────────────
-    def _z(x):  # z-score for display (traces live on very different scales)
-        return (x - x.mean()) / (x.std() + 1e-9)
-
-    fig, axes = plt.subplots(len(sel), 1, figsize=(11, 1.9 * len(sel)), sharex=True)
+    # ── Figure 1: top z-impacted cells (real ΔF/F, not z-scored) ──────────────
+    fig, axes = plt.subplots(len(sel), 1, figsize=(12, 2.0 * len(sel)), sharex=True)
     if len(sel) == 1:
         axes = [axes]
     for ax, i in zip(axes, sel):
         if events is not None:
             for e in events:
-                ax.axvline(e, color="0.85", lw=0.7, zorder=0)
-        ax.plot(_z(true_dff[i]), color="k", lw=1.0, alpha=0.9, label="true activity")
-        ax.plot(_z(dff_before[i]), color="0.6", lw=0.8, label="before (z-contaminated)")
-        ax.plot(_z(dff_after[i]), color="C0", lw=0.9, label="z-corrected")
-        ax.set_ylabel(f"cell {i}\nr:{r_before[i]:.2f}→{r_after[i]:.2f}", fontsize=7)
-        ax.set_yticks([])
+                ax.axvline(e, color="0.88", lw=0.7, zorder=0)
+        # before/after share the real ΔF/F axis so the contamination amplitude and
+        # its removal are visible (no per-trace normalisation).
+        ax.plot(dff_before[i], color="0.6", lw=0.8, label="before (z-contaminated)")
+        ax.plot(dff_after[i], color="C0", lw=0.9, label="z-corrected")
+        # true activity scaled to the corrected-trace range, for shape reference.
+        t = true_dff[i]
+        sc = (np.percentile(dff_after[i], 98) - np.percentile(dff_after[i], 2)) / (
+            np.percentile(t, 98) - np.percentile(t, 2) + 1e-9
+        )
+        ax.plot(
+            t * sc + np.median(dff_after[i]),
+            color="k",
+            lw=0.9,
+            alpha=0.8,
+            label="true activity (scaled)",
+        )
+        ax.set_ylabel(
+            f"cell {i}\nr {r_before[i]:.2f}→{r_after[i]:.2f}\nfocus {focus[i]:.2f}",
+            fontsize=7,
+        )
+        ax.tick_params(axis="y", labelsize=6)
         axz = ax.twinx()
-        axz.plot(zpos, color="C3", lw=0.6, alpha=0.5)
-        axz.set_ylabel("z", color="C3", fontsize=7)
+        axz.plot(zpos, color="C3", lw=0.7, alpha=0.55)
+        axz.set_ylabel("z-plane", color="C3", fontsize=7)
         axz.tick_params(axis="y", labelsize=6, colors="C3")
     axes[0].legend(loc="upper right", fontsize=7, ncol=3)
     axes[-1].set_xlabel("frame")
     fig.suptitle(
-        f"Per-ROI z-correction on synthetic ground truth — "
-        f"top {len(sel)} z-impacted cells ({traj_label})",
+        "Per-ROI z-correction on synthetic ground truth — top z-impacted cells "
+        f"({traj_label}); y = ΔF/F. 'focus' = mean axial gain (1 = in focus).",
         fontsize=10,
     )
     fig.tight_layout()
-    fig.savefig(args.out / "roi_zcorr_synthetic.png", dpi=130)
+    fig.savefig(args.out / "roi_zcorr_synthetic.png", dpi=150)
     plt.close(fig)
 
     # ── Figure 2: recovery summary ───────────────────────────────────────────

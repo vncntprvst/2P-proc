@@ -53,11 +53,11 @@ def main():
     p.add_argument("--n-cells", type=int, default=60)
     p.add_argument("--z-band", type=int, default=6)
     p.add_argument("--n-events", type=int, default=20)
-    p.add_argument("--kick-amp", type=float, default=3.0)
+    p.add_argument("--kick-amp", type=float, default=1.8)
     p.add_argument(
         "--real-zpos",
         type=Path,
-        default=Path(__file__).parent / "report" / "zpos_single.npz",
+        default=Path(__file__).parent / "report" / "figures" / "zpos_single.npz",
         help="npz with a real estimated zpos trajectory used as the background "
         "z-fluctuation (on top of the response-coupled kicks)",
     )

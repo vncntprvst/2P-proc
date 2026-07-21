@@ -154,6 +154,7 @@ def run_correction_benchmark(
     activity_gain=1500.0,
     seed=1,
     tmp_dir=None,
+    return_traces=False,
 ):
     from modules.compute_zcorr import compute_zcorrel
 
@@ -228,6 +229,22 @@ def run_correction_benchmark(
             "xy_amplitude_px": xy_amplitude,
             "deform_amp_px": deform_amp,
         }
+        if return_traces:
+            # ΔF/F traces for an example figure: true activity + none + per-ROI.
+            def _dff(x):
+                m = x.mean()
+                return x / (m if m else 1.0) - 1.0
+
+            true_dff = np.stack(
+                [trueC[i] / (trueC[i].mean() + 1e-9) - 1.0 for i in range(len(centers))]
+            )
+            results["_traces"] = {
+                "true_dff": true_dff,
+                "none": np.stack([_dff(traces[i]) for i in range(len(centers))]),
+                "per_roi": np.stack([_dff(traces_roi[i]) for i in range(len(centers))]),
+                "z_true": z_true,
+                "z_cell": centers[:, 0].astype(float),
+            }
         return results
     finally:
         if own_tmp:

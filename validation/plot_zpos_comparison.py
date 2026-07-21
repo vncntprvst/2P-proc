@@ -55,7 +55,7 @@ def _plot_real(ax, npz_path, title):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--report-dir", type=Path, default=Path(__file__).parent / "report")
+    p.add_argument("--report-dir", type=Path, default=Path(__file__).parent / "report" / "figures")
     p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
     rd = args.report_dir

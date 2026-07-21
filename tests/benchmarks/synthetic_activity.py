@@ -152,7 +152,6 @@ def make_active_functional_movie(
     """
     rng = np.random.default_rng(seed + 7)
     n_z, H, W = volume.shape
-    T = z_offsets.shape[0]
 
     # Baseline anatomy under the imposed 3D motion (no activity, no noise yet).
     movie, _ = make_functional_movie(
@@ -240,29 +239,49 @@ def make_response_coupled_zmotion(
     events,
     base_zoff=None,
     framerate=20.0,
-    kick_amp=3.0,
+    kick_amp=1.8,
     kick_prob=0.8,
-    kick_tau=0.4,
+    kick_dwell=0.5,
+    kick_settle=0.4,
     kick_delay=1,
     event_jitter=2,
+    step_rate=0.015,
+    max_excursion=3.0,
+    quantize=True,
     seed=42,
 ):
-    """z-trajectory whose (downward) movement onsets cluster around response events.
+    """Response-coupled z-trajectory shaped like a real z-position estimate.
 
-    Real brain motion is not random: the animal reacts to the stimulus, so z tends
-    to move (downward) around response onset. Each event triggers, with probability
-    `kick_prob`, a downward (negative) displacement that onsets near the event and
-    decays with `kick_tau`. An optional `base_zoff` (e.g. a real estimated zpos) is
-    added as the ongoing background fluctuation.
+    Real brain z-motion during behaviour is not a smooth ramp: the sample dwells
+    near a plane and makes discrete transitions, so an estimated z-position reads
+    as a **staircase**. This builds that shape:
 
-    Returns z_offsets : (n_frames,) float32  (centred on 0).
+    1. A dwell-and-step background random walk (occasional ±1-plane transitions at
+       rate ``step_rate``, bounded to ``±max_excursion``).
+    2. Response kicks: at each event, with probability ``kick_prob``, a **downward**
+       displacement of ~``kick_amp`` planes that onsets near the event, **holds**
+       for ``kick_dwell`` s, then steps back over ``kick_settle`` s — the animal
+       reacts, the brain displaces and settles (not an exponential spike).
+    3. Optional ``base_zoff`` (e.g. a real estimated zpos) added as extra drift.
+
+    The result is quantized to integer planes (``quantize=True``) so it looks like
+    a real staircase z-trace, then centred on 0.
+
+    Returns z_offsets : (n_frames,) float32.
     """
     rng = np.random.default_rng(seed + 2)
     zoff = np.zeros(n_frames, np.float32)
-    if base_zoff is not None:
-        b = np.asarray(base_zoff, np.float32)[:n_frames]
-        zoff[: len(b)] = b - b.mean()
-    gamma = np.exp(-1.0 / (kick_tau * framerate))
+
+    # 1. Dwell-and-step background (staircase random walk).
+    cur = 0.0
+    for t in range(1, n_frames):
+        if rng.random() < step_rate:
+            cur = float(np.clip(cur + rng.choice([-1.0, 1.0]), -max_excursion, max_excursion))
+        zoff[t] = cur
+
+    # 2. Response kicks: downward hold-and-return pulses.
+    dwell = max(1, int(round(kick_dwell * framerate)))
+    settle = max(1, int(round(kick_settle * framerate)))
     for e in events:
         if rng.random() < kick_prob:
             t0 = int(
@@ -270,10 +289,18 @@ def make_response_coupled_zmotion(
                     e + kick_delay + rng.integers(-event_jitter, event_jitter + 1), 0, n_frames - 1
                 )
             )
-            amp = -abs(kick_amp) * rng.uniform(0.6, 1.2)  # downward = negative
-            kick = np.zeros(n_frames, np.float32)
-            kick[t0] = amp
-            for t in range(t0 + 1, n_frames):
-                kick[t] = gamma * kick[t - 1]
-            zoff += kick
+            amp = -abs(kick_amp) * rng.uniform(0.8, 1.1)  # downward = negative
+            hi = min(t0 + dwell, n_frames)
+            zoff[t0:hi] += amp
+            for k, t in enumerate(range(hi, min(hi + settle, n_frames))):
+                zoff[t] += amp * (1.0 - (k + 1) / settle)  # step back to baseline
+
+    # 3. Optional real-zpos background drift.
+    if base_zoff is not None:
+        b = np.asarray(base_zoff, np.float32)[:n_frames]
+        zoff[: len(b)] += b - b.mean()
+
+    # 4. Quantize to integer planes for the staircase look, then centre.
+    if quantize:
+        zoff = np.round(zoff)
     return (zoff - zoff.mean()).astype(np.float32)

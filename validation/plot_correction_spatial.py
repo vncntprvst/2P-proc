@@ -1,10 +1,9 @@
 """Spatially-resolved figures of the F_anat z-motion correction approaches.
 
-Mirrors the style of the pipeline's ``patches_summary_plots.png`` (FOV images +
-per-region heatmaps), but for the *correction* step: it shows, as maps over the
-FOV, how much residual z-contamination each granularity of the F_anat subtraction
-leaves behind — **per-pixel**, **per-patch**, and **per-ROI** — so the approaches
-can be compared visually, not just as scalar recovery numbers.
+Shows, as maps over the FOV, how much residual z-contamination each granularity of
+the F_anat subtraction leaves behind — **per-pixel**, **per-patch**, and
+**per-ROI** — so the approaches can be compared visually, not just as scalar
+recovery numbers.
 
 Contamination metric (per pixel or per ROI): ``|corr(ΔF/F(t), zpos(t))|`` — high
 where the trace tracks the z-trajectory (the artifact). A good correction shrinks
@@ -141,7 +140,7 @@ def _panel_maps(fig, gs_row, maps, titles, fov, centers, vmax, roi_mask):
                 edgecolors="C1",
                 linewidths=0.7,
             )
-            ax.set_title(t, fontsize=9)
+            ax.set_title(t, fontsize=12)
         else:
             ax.imshow(m, cmap="inferno", vmin=0, vmax=vmax)
             ax.scatter(
@@ -152,7 +151,7 @@ def _panel_maps(fig, gs_row, maps, titles, fov, centers, vmax, roi_mask):
                 edgecolors="cyan",
                 linewidths=0.4,
             )
-            ax.set_title(f"{t}\nROI-pixel mean |corr| {np.nanmean(m[roi_mask]):.3f}", fontsize=9)
+            ax.set_title(f"{t}\nROI-pixel mean |corr| {np.nanmean(m[roi_mask]):.3f}", fontsize=12)
         ax.set_xticks([])
         ax.set_yticks([])
         axes.append(ax)
@@ -237,7 +236,7 @@ def run_synthetic(args):
     zres = [z_none, z_pix, z_patch, z_roi]
 
     # ── Figure ───────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(20, 9))
+    fig = plt.figure(figsize=(20, 11))
     gs = fig.add_gridspec(2, 5, height_ratios=[1.25, 1.0], hspace=0.32, wspace=0.18)
     row0 = [gs[0, k] for k in range(5)]
     _panel_maps(
@@ -253,7 +252,7 @@ def run_synthetic(args):
     # shared colorbar
     cax = fig.add_axes([0.92, 0.55, 0.008, 0.32])
     sm = plt.cm.ScalarMappable(cmap="inferno", norm=plt.Normalize(0, vmax))
-    fig.colorbar(sm, cax=cax).set_label("|corr(ΔF/F, z)|", fontsize=9)
+    fig.colorbar(sm, cax=cax).set_label("|corr(ΔF/F, z)|", fontsize=12)
 
     # Bottom row: recovery bars, residual-z bars, patch-scale map, example traces.
     axb = fig.add_subplot(gs[1, 0])
@@ -261,16 +260,16 @@ def run_synthetic(args):
     sems = [np.nanstd(r) / np.sqrt(np.sum(np.isfinite(r))) for r in recov]
     axb.bar(methods, means, yerr=sems, color=["0.6", "C2", "C4", "C0"])
     axb.set_ylabel("recovery r (trace vs true)")
-    axb.set_title("Activity recovery", fontsize=9)
-    axb.tick_params(axis="x", labelrotation=20, labelsize=8)
+    axb.set_title("Activity recovery", fontsize=12)
+    axb.tick_params(axis="x", labelrotation=20, labelsize=11)
 
     axz = fig.add_subplot(gs[1, 1])
     zmeans = [np.nanmean(z) for z in zres]
     zsems = [np.nanstd(z) / np.sqrt(np.sum(np.isfinite(z))) for z in zres]
     axz.bar(methods, zmeans, yerr=zsems, color=["0.6", "C2", "C4", "C0"])
     axz.set_ylabel("residual |corr(trace, z)|")
-    axz.set_title("Residual z-contamination (lower=better)", fontsize=9)
-    axz.tick_params(axis="x", labelrotation=20, labelsize=8)
+    axz.set_title("Residual z-contamination (lower=better)", fontsize=12)
+    axz.tick_params(axis="x", labelrotation=20, labelsize=11)
 
     # per-patch scale map (the b coefficients laid out spatially)
     axp = fig.add_subplot(gs[1, 2])
@@ -288,17 +287,23 @@ def run_synthetic(args):
             patch_b[i, j] = ((a0) * (m - m.mean())).sum() / den
     im = axp.imshow(patch_b, cmap="coolwarm")
     fig.colorbar(im, ax=axp, fraction=0.046)
-    axp.set_title("per-patch fit scale b", fontsize=9)
+    axp.set_title("per-patch fit scale b", fontsize=12)
     axp.set_xticks([])
     axp.set_yticks([])
 
     # example: the most z-impacted cell, true / before / ROI-corrected
     axe = fig.add_subplot(gs[1, 3:5])
-    sel = int(np.argmax(np.nan_to_num(z_none)))
+    # Pick the most-contaminated example among reasonably visible cells (focus
+    # floor), so the example is a real ROI modulated by z, not a near-invisible
+    # off-focus cell whose trace is dominated by noise.
+    focus = np.array(
+        [np.mean(np.exp(-0.5 * ((z_true - centers[i, 0]) / 2.0) ** 2)) for i in range(len(centers))]
+    )
+    cand = np.where(focus >= 0.15)[0]
+    if len(cand) == 0:
+        cand = np.argsort(focus)[::-1][:5]
+    sel = int(cand[np.argmax(np.nan_to_num(z_none[cand]))])
     cy, cx = centers[sel, 1], centers[sel, 2]
-
-    def _z(x):
-        return (x - x.mean()) / (x.std() + 1e-9)
 
     d_before = _roi_trace(movie, cy, cx)
     d_before = d_before / (d_before.mean() or 1.0) - 1.0
@@ -306,16 +311,22 @@ def run_synthetic(args):
     d_after = d_after / (d_after.mean() or 1.0) - 1.0
     for e in events:
         axe.axvline(e, color="0.85", lw=0.7, zorder=0)
-    axe.plot(_z(true_dff[sel]), "k", lw=1.0, label="true activity")
-    axe.plot(_z(d_before), color="0.6", lw=0.8, label="before")
-    axe.plot(_z(d_after), color="C0", lw=0.9, label="per-ROI corrected")
+    # true activity scaled to the ΔF/F range of the corrected trace (shape ref).
+    tt = true_dff[sel]
+    scl = (np.percentile(d_after, 98) - np.percentile(d_after, 2)) / (
+        np.percentile(tt, 98) - np.percentile(tt, 2) + 1e-9
+    )
+    axe.plot(tt * scl + np.median(d_after), "k", lw=1.0, label="true (scaled)")
+    axe.plot(d_before, color="0.6", lw=0.8, label="before")
+    axe.plot(d_after, color="C0", lw=0.9, label="per-ROI corrected")
+    axe.set_ylabel("ΔF/F", fontsize=10)
     axz2 = axe.twinx()
-    axz2.plot(z_true, color="C3", lw=0.6, alpha=0.5)
-    axz2.set_ylabel("z", color="C3", fontsize=8)
+    axz2.plot(z_true, color="C3", lw=0.7, alpha=0.5)
+    axz2.set_ylabel("z-plane", color="C3", fontsize=9)
     axe.set_title(
-        f"Example cell {sel}: r {r_none[sel]:.2f}→{r_roi[sel]:.2f}, "
+        f"Example cell {sel} (focus {focus[sel]:.2f}): r {r_none[sel]:.2f}→{r_roi[sel]:.2f}, "
         f"resid-z {z_none[sel]:.2f}→{z_roi[sel]:.2f}",
-        fontsize=9,
+        fontsize=12,
     )
     axe.legend(loc="upper right", fontsize=7, ncol=3)
     axe.set_xlabel("frame")
@@ -326,10 +337,10 @@ def run_synthetic(args):
     fig.suptitle(
         f"F_anat z-correction — granularity comparison on synthetic ground truth "
         f"({n} cells, response-coupled z-motion, activity–z r={coupling:.2f})",
-        fontsize=13,
+        fontsize=16,
     )
     args.out.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.out / "correction_spatial_synthetic.png", dpi=130, bbox_inches="tight")
+    fig.savefig(args.out / "correction_spatial_synthetic.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
     stats = {
@@ -477,7 +488,7 @@ def run_real(args):
     fig.suptitle(
         f"Per-ROI z-correction on real data ({Path(args.mcorr_tiff).stem}) — "
         f"mean residual-z {zres_before.mean():.3f} → {zres_after.mean():.3f}",
-        fontsize=13,
+        fontsize=16,
     )
     args.out.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out / "correction_spatial_real.png", dpi=140, bbox_inches="tight")
@@ -502,11 +513,11 @@ def main():
     ps.add_argument("--n-cells", type=int, default=60)
     ps.add_argument("--z-band", type=int, default=6)
     ps.add_argument("--n-events", type=int, default=18)
-    ps.add_argument("--kick-amp", type=float, default=3.0)
+    ps.add_argument("--kick-amp", type=float, default=1.8)
     ps.add_argument(
         "--real-zpos",
         type=Path,
-        default=Path(__file__).parent / "report" / "zpos_single.npz",
+        default=Path(__file__).parent / "report" / "figures" / "zpos_single.npz",
     )
     ps.add_argument("--real-zpos-key", default="zpos_caiman")
     ps.add_argument("--out", type=Path, required=True)

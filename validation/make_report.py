@@ -75,27 +75,40 @@ def _table_page(pdf, title, col_labels, rows, note=None, highlight_col=None):
 def section_pipeline(pdf):
     _text_page(
         pdf,
-        "1. End-to-end pipeline validation",
+        "1. Overview: what is validated, and how",
         [
-            "The z-motion correction chain was validated on real data " "(C57_O1M2/10022023):",
-            "mcorr → z-motion (F_anat) → ROI extraction → per-ROI fit-and-subtract.",
+            "The z-motion correction chain is: motion correction → z-position estimation → "
+            "F_anat construction → ROI extraction → per-ROI fit-and-subtract. It removes the "
+            "apparent-fluorescence changes caused by axial (z) brain motion, which defocuses "
+            "cells and modulates their signal independently of neural activity.",
             "",
-            "Coverage:",
-            "• Subset (TSeries-001, 200 frames) and full session (1600 frames).",
-            "• Both extraction backends: CNMF and Suite2p (0.14.0).",
-            "• Full session: real z-drift over planes 9–16 (~7 µm, σ≈1 µm); "
-            "593 ROIs → F_roi_zcorrected.",
+            "Two data regimes are used throughout this report:",
+            "• Real data (C57_O1M2/10022023): functional TSeries + a real 41-plane z-stack "
+            "(1 µm steps). This validates the end-to-end path and exposes production behaviour "
+            "(both CNMF and Suite2p extraction backends run), but has no ground truth to score "
+            "against.",
+            "• Synthetic ground truth: a NAOMi-lite harness that takes the real z-stack as the "
+            "anatomical volume, injects known spike→GCaMP activity into detected somata, and "
+            "samples the volume along a KNOWN 3-D trajectory (a staircase z-path + xy jitter + "
+            "mild deformation). An axial-Gaussian gain models defocus, so z-motion attenuates "
+            "cells — reproducing the artifact. Because the true activity and z-position are "
+            "known, this quantifies both estimation error and recovery. The z-motion is "
+            "response-coupled: downward steps cluster on stimulus responses, as in the real "
+            "protocol (the animal reacts, so the brain moves when cells respond) — the hardest "
+            "case, since the artifact then overlaps the signal.",
             "",
-            "7 bugs fixed in the under-tested per-ROI path (normally done in MATLAB):",
-            "• create_components_movie excerpt overflow on short recordings.",
-            "• CNMF extraction now writes cnmf_result.hdf5 for run_roi_zcorr.",
-            "• load_CNMF(n_processes=1); raw F = C+YrA; dims from cnm.dims (caiman 1.12).",
-            "• compute_zcorrel_suite2p: contiguous flip + worker-scope rigid (suite2p 0.14).",
-            "",
-            "Environment: pixi (CaImAn 1.12.2 + Suite2p 0.14.0 pinned to production). "
-            "The pipeline requires an activated env — bare `python` may be Python 2.",
+            "Two things are compared:",
+            "• z-position estimation (§2–3): full-frame Pearson correlation (shipped) vs Suite2p "
+            "masked phase-correlation against the z-stack (sub-plane interpolation in Annex A2). "
+            "Tested on synthetic ground truth (accuracy vs a known trajectory) AND on real "
+            "motion-corrected recordings (stability, single + concatenated sessions).",
+            "• z-motion correction (§4–8): the F_anat fit-and-subtract applied at three spatial "
+            "granularities — per-pixel, per-patch, and per-ROI. The shipped per-ROI method "
+            "follows the MATLAB reference (project F_anat onto each ROI footprint, OLS-regress "
+            "ΔF/F on it, subtract). Compared on synthetic ground truth (recovery of the true "
+            "activity, residual z-contamination) and shown on real data.",
         ],
-        subtitle="Validation of the current method on real anatomy",
+        subtitle="Validation of z-motion correction on real anatomy + synthetic ground truth",
     )
 
 
@@ -169,7 +182,7 @@ def section_stage1b(pdf, results):
         )
     _table_page(
         pdf,
-        "5. z-position — sub-plane interpolation (tested)",
+        "Annex A2. Sub-plane interpolation (tested — negligible gain)",
         ["case", "metric", "integer argmax", "sub-plane"],
         rows,
         note="Parabolic interpolation of the correlation peak was expected to beat "
@@ -188,33 +201,85 @@ def section_stage3(pdf, results):
     data = json.load(open(f))
     amps = [d["z_amp"] for d in data]
     methods = ["none", "per_roi", "per_pixel", "per_patch"]
+    labels = {
+        "none": "none",
+        "per_roi": "per-ROI",
+        "per_pixel": "per-pixel",
+        "per_patch": "per-patch",
+    }
     colors = {"none": "0.5", "per_roi": "C0", "per_pixel": "C1", "per_patch": "C2"}
-    fig, axes = plt.subplots(1, 2, figsize=(8.27, 5.2))
+
+    fig = plt.figure(figsize=(8.27, 9.6))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.85], hspace=0.34, wspace=0.3)
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[0, 1])
     for m in methods:
-        axes[0].plot(amps, [d[m]["recovery_r"] for d in data], "-o", label=m, color=colors[m])
-        axes[1].plot(amps, [d[m]["residual_z_r"] for d in data], "-o", label=m, color=colors[m])
-    axes[0].set_title("Activity recovery (higher better)")
-    axes[0].set_xlabel("z-drift (planes)")
-    axes[0].set_ylabel("recovery r")
-    axes[1].set_title("Residual z-contamination (lower better)")
-    axes[1].set_xlabel("z-drift (planes)")
-    axes[1].set_ylabel("residual z-r")
-    axes[0].legend(fontsize=8)
+        ax0.plot(amps, [d[m]["recovery_r"] for d in data], "-o", label=labels[m], color=colors[m])
+        ax1.plot(amps, [d[m]["residual_z_r"] for d in data], "-o", label=labels[m], color=colors[m])
+    ax0.set_title("Activity recovery (higher = better)", fontsize=10)
+    ax0.set_xlabel("z-drift amplitude (planes)")
+    ax0.set_ylabel("recovery r (trace vs true)")
+    ax1.set_title("Residual z-contamination (lower = better)", fontsize=10)
+    ax1.set_xlabel("z-drift amplitude (planes)")
+    ax1.set_ylabel("residual |corr(trace, z)|")
+    ax0.set_xticks(amps)
+    ax1.set_xticks(amps)
+    ax0.legend(fontsize=8)
+
+    # Example trace excerpt: illustrate recovery + contamination on one cell.
+    tr = results / "stage3_traces.npz"
+    if tr.exists():
+        d = np.load(tr)
+        true_dff, none, per_roi = d["true_dff"], d["none"], d["per_roi"]
+        z_true, z_cell = d["z_true"], d["z_cell"]
+        amp = float(d["trace_amp"]) if "trace_amp" in d else 0.0
+        # most-contaminated among reasonably visible cells (focus floor).
+        focus = np.array(
+            [np.mean(np.exp(-0.5 * ((z_true - z_cell[i]) / 2.0) ** 2)) for i in range(len(z_cell))]
+        )
+        zc = np.array([abs(np.corrcoef(none[i], z_true)[0, 1]) for i in range(len(none))])
+        cand = np.where(focus >= 0.15)[0]
+        cand = cand if len(cand) else np.argsort(focus)[::-1][:5]
+        i = int(cand[np.argmax(np.nan_to_num(zc[cand]))])
+
+        axe = fig.add_subplot(gs[1, :])
+        t = true_dff[i]
+        scl = (np.percentile(per_roi[i], 98) - np.percentile(per_roi[i], 2)) / (
+            np.percentile(t, 98) - np.percentile(t, 2) + 1e-9
+        )
+        axe.plot(t * scl + np.median(per_roi[i]), "k", lw=1.0, label="true activity (scaled)")
+        axe.plot(none[i], color="0.6", lw=0.9, label="uncorrected")
+        axe.plot(per_roi[i], color="C0", lw=1.0, label="per-ROI corrected")
+        axz = axe.twinx()
+        axz.plot(z_true, color="C3", lw=0.8, alpha=0.5)
+        axz.set_ylabel("z-plane", color="C3", fontsize=9)
+        axe.set_ylabel("ΔF/F")
+        axe.set_xlabel("frame")
+        axe.legend(fontsize=8, ncol=3, loc="upper right")
+        axe.set_title(
+            f"Example cell at z-drift {amp:.0f} planes: uncorrected ΔF/F tracks the z-drift "
+            "(grey); per-ROI recovers the true transients (black)",
+            fontsize=9,
+        )
+
     fig.suptitle(
-        "6. Correction — method comparison (recovery vs drift amplitude)",
-        fontsize=12,
+        "4. Correction — method comparison (synthetic ground truth)",
+        fontsize=13,
         fontweight="bold",
+        y=0.98,
     )
     fig.text(
         0.5,
-        0.01,
-        "per-ROI removes the most z-contamination at every amplitude; "
-        "recovery is capped by defocus attenuation.",
+        0.005,
+        "Measured on synthetic ground truth: known activity injected into the real z-stack under "
+        "a rigid z-drift of each amplitude. Per-ROI removes the most z-contamination at every "
+        "amplitude; recovery is ultimately capped by defocus attenuation of the true signal.",
         ha="center",
         fontsize=8,
         color="0.2",
+        wrap=True,
     )
-    fig.tight_layout(rect=[0, 0.05, 1, 0.93])
+    fig.subplots_adjust(top=0.92, bottom=0.11, left=0.09, right=0.93)
     pdf.savefig(fig)
     plt.close(fig)
 
@@ -317,7 +382,7 @@ def section_roi_figure(pdf, results):
     fig.text(
         0.08,
         0.95,
-        "9. Per-ROI correction on real data (CNMF traces)",
+        "7. Per-ROI correction on real data (CNMF traces)",
         fontsize=13,
         fontweight="bold",
     )
@@ -346,22 +411,40 @@ def section_synthetic_correction(pdf, results):
     fig.text(
         0.08,
         0.955,
-        "8. Correction — recovery on synthetic ground truth",
+        "6. Correction — recovery on synthetic ground truth",
         fontsize=14,
         fontweight="bold",
     )
-    cap = (
-        "On real data the benefit is hard to see (no ground truth). Injecting known activity "
-        "into the real z-stack lets us quantify recovery. The z-motion is modelled on the real "
-        "protocol: fast dynamics (from the real estimated zpos) plus downward motion onsets "
-        "clustered around stimulus responses (grey vertical lines) — so the z-artifact partly "
-        "overlaps the true responses, the hardest case. For the most z-impacted cells the "
-        "correction removes the z-jitter (grey→blue) and recovers the true transients (black)."
-    )
     import textwrap
 
-    fig.text(0.08, 0.90, textwrap.fill(cap, 96), fontsize=9.5, va="top")
-    ax = fig.add_axes([0.04, 0.06, 0.92, 0.78])
+    cap_lines = [
+        "Known activity is injected into the real z-stack so recovery can be quantified. The "
+        "z-motion is a staircase (like a real z-position estimate) with downward steps clustered "
+        "on stimulus responses (grey vertical lines) — the artifact partly overlaps the responses "
+        "(the hardest case). y = ΔF/F (real amplitudes, not normalised); 'focus' = mean axial gain "
+        "(1 = perfectly in focus). Rows are the most z-impacted cells among visible ones "
+        "(focus ≥ 0.15).",
+        "",
+        "Two effects explain the traces — and answer why the uncorrected trace and the "
+        "correction do not simply track the size of the z-motion:",
+        "1. Contamination amplitude is set by the local anatomical brightness-vs-z gradient, not "
+        "by the step size: when the plane steps to where a bright out-of-focus neighbour overlaps "
+        "the ROI, the baseline jumps, so even a 1-plane step can give a large ΔF/F swing (grey). "
+        "F_anat captures this exactly, so the per-ROI subtraction cleans it (grey→blue) and the "
+        "true transients (black) emerge — the correction can be excellent even when the motion "
+        "looks small.",
+        "2. Recovery is capped by focus: an off-focus cell's true transient is defocus-attenuated "
+        "in the movie, and subtraction cannot restore signal the objective never collected — so "
+        "lower-focus cells recover less, and response epochs where the downward step coincides "
+        "with the transient are the hardest (the artifact and the signal overlap in time).",
+    ]
+    y = 0.925
+    for ln in cap_lines:
+        wrapped = textwrap.fill(ln, 100) if ln else ""
+        nlines = wrapped.count("\n") + 1 if ln else 1
+        fig.text(0.08, y, wrapped, fontsize=9.2, va="top")
+        y -= 0.019 * nlines + 0.006 if ln else 0.010
+    ax = fig.add_axes([0.03, 0.03, 0.94, max(0.2, y - 0.03)])
     ax.imshow(mpimg.imread(traces))
     ax.axis("off")
     pdf.savefig(fig)
@@ -372,7 +455,7 @@ def section_synthetic_correction(pdf, results):
     fig.text(
         0.08,
         0.955,
-        "8. Correction on synthetic ground truth — recovery",
+        "6. Correction on synthetic ground truth — recovery",
         fontsize=13,
         fontweight="bold",
     )
@@ -383,10 +466,10 @@ def section_synthetic_correction(pdf, results):
             f"Top z-impacted ({t['n']}): recovery r {t['r_before_mean']:.2f} → {t['r_after_mean']:.2f}   |   "
             f"residual z {t['resid_z_before_mean']:.2f} → {t['resid_z_after_mean']:.2f}",
             "",
-            "Benefit: the most z-impacted cells more than double their activity recovery and "
-            "shed ~85% of z-contamination. Clean cells are left essentially unchanged.",
+            "Benefit: the most z-impacted (visible) cells gain substantial recovery and roughly "
+            "halve their z-contamination. Well-focused clean cells are left essentially unchanged.",
             "Limit: recovery plateaus below 1.0 — z-defocus attenuates the true signal, which "
-            "additive subtraction cannot restore.",
+            "additive subtraction cannot restore, and response-locked motion overlaps the signal.",
         ]
         y = 0.90
         for ln in lines:
@@ -409,7 +492,7 @@ def section_new_zcorrel(pdf, results):
     fig.text(
         0.08,
         0.95,
-        "4. z-position — optimized compute_zcorrel (legacy → smoothed)",
+        "Annex A1. compute_zcorrel — temporal smoothing (legacy vs optimized)",
         fontsize=13,
         fontweight="bold",
     )
@@ -523,10 +606,10 @@ def section_correction_spatial_synth(pdf, results):
         st = json.load(open(results / "correction_spatial_synthetic.json"))
     zr = st.get("residual_z_mean", {})
     cap = [
-        "The F_anat z-correction can be applied at three spatial granularities. This mirrors "
-        "the pipeline's patches_summary_plots style: the top row maps per-pixel residual "
-        "z-contamination |corr(ΔF/F, z)| over the FOV after each method (cyan = ROI centers); "
-        "the bottom row quantifies recovery and residual z on the extracted ROI traces.",
+        "The F_anat z-correction can be applied at three spatial granularities. The top row "
+        "maps per-pixel residual z-contamination |corr(ΔF/F, z)| over the FOV after each method "
+        "(cyan = ROI centers); the bottom row quantifies recovery and residual z on the "
+        "extracted ROI traces. All quantities are measured on synthetic ground truth.",
         "",
         "• per-pixel  — regress every pixel on F_anat (a-priori; over-corrects, mixes noise).",
         "• per-patch  — one scale per spatial patch (coarse).",
@@ -545,7 +628,7 @@ def section_correction_spatial_synth(pdf, results):
             else ""
         ),
     ]
-    _image_page(pdf, "7. Correction granularity: pixels vs patches vs ROI (synthetic)", cap, syn)
+    _image_page(pdf, "5. Correction granularity: pixels vs patches vs ROI (synthetic)", cap, syn)
 
 
 def section_correction_spatial_real(pdf, results):
@@ -569,13 +652,13 @@ def section_correction_spatial_real(pdf, results):
         "(raw vs corrected) with the estimated z overlaid — the correction removes z-locked "
         "fluctuations from the trace." + tail,
     ]
-    _image_page(pdf, "10. Per-ROI correction on real data (spatial)", cap, real)
+    _image_page(pdf, "8. Per-ROI correction on real data (spatial)", cap, real)
 
 
 def section_conclusions(pdf):
     _text_page(
         pdf,
-        "11. Conclusions & recommendations",
+        "9. Conclusions & recommendations",
         [
             "Pipeline:",
             "• The z-motion chain is validated end-to-end on real data, both CNMF and "
@@ -635,21 +718,22 @@ def main():
         pdf.savefig(fig)
         plt.close(fig)
 
-        # 1. Pipeline validation
+        # 1. Overview
         section_pipeline(pdf)
-        # 2–5. z-position estimation
+        # 2–3. z-position estimation
         section_stage1(pdf, args.results)  # 2. synthetic amplitude sweep
         section_zpos_comparison(pdf, args.results)  # 3. Pearson vs Suite2p (synthetic + real)
-        section_new_zcorrel(pdf, args.results)  # 4. optimized compute_zcorrel
-        section_stage1b(pdf, args.results)  # 5. sub-plane interpolation
-        # 6–10. correction
-        section_stage3(pdf, args.results)  # 6. method comparison sweep
-        section_correction_spatial_synth(pdf, args.results)  # 7. granularity (synthetic, spatial)
-        section_synthetic_correction(pdf, args.results)  # 8. recovery on synthetic ground truth
-        section_roi_figure(pdf, args.results)  # 9. per-ROI on real data (traces)
-        section_correction_spatial_real(pdf, args.results)  # 10. per-ROI on real data (spatial)
-        # 11. Conclusions
+        # 4–8. correction
+        section_stage3(pdf, args.results)  # 4. method comparison sweep
+        section_correction_spatial_synth(pdf, args.results)  # 5. granularity (synthetic, spatial)
+        section_synthetic_correction(pdf, args.results)  # 6. recovery on synthetic ground truth
+        section_roi_figure(pdf, args.results)  # 7. per-ROI on real data (traces)
+        section_correction_spatial_real(pdf, args.results)  # 8. per-ROI on real data (spatial)
+        # 9. Conclusions
         section_conclusions(pdf)
+        # Annexes (supporting detail)
+        section_new_zcorrel(pdf, args.results)  # A1. temporal smoothing (legacy vs optimized)
+        section_stage1b(pdf, args.results)  # A2. sub-plane interpolation
 
     print(f"Wrote {out}")
 
