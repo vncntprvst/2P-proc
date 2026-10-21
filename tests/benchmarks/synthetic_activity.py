@@ -155,7 +155,10 @@ def make_active_functional_movie(
     n_z, H, W = volume.shape
 
     # Baseline anatomy under the imposed 3D motion (no activity, no noise yet).
-    movie, _ = make_functional_movie(
+    # ``z_field`` is the per-pixel absolute focal plane (T, H, W) — for rigid
+    # z_offsets it is uniform across the frame; for non-rigid (per-patch) z it
+    # varies spatially, so each cell sees its own local focal plane.
+    movie, z_field = make_functional_movie(
         volume,
         z_nominal,
         z_offsets,
@@ -166,13 +169,17 @@ def make_active_functional_movie(
         seed=seed,
     )
 
-    z_focal = z_nominal + z_offsets  # (T,) rigid focal plane per frame
+    T = movie.shape[0]
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    z_local = np.zeros((len(cell_centers), T), np.float32)  # per-cell local focal plane
 
     for c, (zc, yc, xc) in enumerate(cell_centers):
         footprint = np.exp(-0.5 * (((yy - yc) / sigma_xy) ** 2 + ((xx - xc) / sigma_xy) ** 2))
         footprint = footprint.astype(np.float32)
-        axial_gain = np.exp(-0.5 * ((z_focal - zc) / sigma_z) ** 2).astype(np.float32)  # (T,)
+        # Local focal plane at this cell's location (non-rigid aware).
+        lz = z_field[:, int(yc), int(xc)]
+        z_local[c] = lz
+        axial_gain = np.exp(-0.5 * ((lz - zc) / sigma_z) ** 2).astype(np.float32)  # (T,)
         # Outer product (T,) x (H,W) added frame-by-frame, activity-weighted.
         contrib = activity_gain * trueC[c] * axial_gain  # (T,)
         movie += contrib[:, None, None] * footprint[None]
@@ -189,7 +196,12 @@ def make_active_functional_movie(
     ground_truth = {
         "trueC": trueC.astype(np.float32),
         "cell_centers": np.asarray(cell_centers, dtype=int),
-        "z_true": z_focal.astype(np.float32),
+        # Global reference focal plane (mean over the FOV) for backward compatibility.
+        "z_true": z_field.reshape(T, -1).mean(axis=1).astype(np.float32),
+        # Per-cell local focal plane (T per cell) — the z-plane of each cell's patch.
+        "z_local": z_local,
+        # Full per-pixel focal-plane field (T, H, W).
+        "z_field": z_field.astype(np.float32),
     }
     return movie.astype(np.float32), ground_truth
 

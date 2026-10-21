@@ -3,18 +3,18 @@
   "trajectory": "response-coupled z-motion",
   "z_std_planes": 1.0246092081069946,
   "z_ptp_planes": 4.0,
-  "activity_z_coupling": -0.47016150803453965,
+  "activity_z_coupling": -0.4701615170778447,
   "all_cells": {
-    "r_before_mean": 0.43224593983212173,
-    "r_after_mean": 0.7938519405326818,
-    "resid_z_before_mean": 0.39080109885296704,
-    "resid_z_after_mean": 0.14975786793689477
+    "r_before_mean": 0.41361308936448854,
+    "r_after_mean": 0.7622281739694529,
+    "resid_z_before_mean": 0.41301688309104817,
+    "resid_z_after_mean": 0.12875539176709358
   },
   "top_z_impacted": {
     "n": 10,
-    "r_before_mean": 0.6122649021314179,
-    "r_after_mean": 0.8928360351886002,
-    "resid_z_before_mean": 0.48724146828946,
-    "resid_z_after_mean": 0.18943508033679826
+    "r_before_mean": 0.5708188629001294,
+    "r_after_mean": 0.8881777022486409,
+    "resid_z_before_mean": 0.5277878726680514,
+    "resid_z_after_mean": 0.14080960288488148
   }
 }

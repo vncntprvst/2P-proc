@@ -144,11 +144,29 @@ def main():
             n, T, framerate=20, decay_time=0.15, firerate=1.0, seed=args.seed
         )
 
+    # Make the z-motion NON-RIGID: the global (response-coupled) trajectory plus a
+    # mild zero-mean per-patch component, so each region of the FOV sits at its own
+    # focal plane — the regime the F_anat non-rigid correction targets. Each cell
+    # then has a local z-plane that differs from the global one.
+    from tests.benchmarks.synthetic_zstack import make_nonrigid_z_trajectory
+
+    n_py = n_px = 8
+    znr = make_nonrigid_z_trajectory(
+        T,
+        n_py,
+        n_px,
+        amplitude_planes=0.8,
+        temporal_smoothness=8,
+        spatial_smoothness=1.2,
+        seed=args.seed,
+    )
+    zfield_off = zoff[:, None, None] + znr  # (T, n_py, n_px) per-patch z-offset
+
     xy = make_xy_trajectory(T, 1.0, 8, seed=args.seed)
     movie, gt = make_active_functional_movie(
         vol,
         znom,
-        zoff,
+        zfield_off,
         centers,
         trueC,
         xy_offsets=xy,
@@ -161,7 +179,7 @@ def main():
     baseline, _ = make_functional_movie(
         vol,
         znom,
-        zoff,
+        zfield_off,
         xy_offsets=xy,
         deform_amp=0.6,
         deform_wave=True,
@@ -177,7 +195,8 @@ def main():
     dff_before = np.zeros((n, T), np.float32)
     dff_after = np.zeros((n, T), np.float32)
     true_dff = _dff(trueC.astype(np.float32))
-    zpos = gt["z_true"]
+    # Per-cell LOCAL z-plane (the z of the patch containing each cell), not global.
+    z_local = gt["z_local"]  # (n, T)
 
     for i, (zc, cy, cx) in enumerate(centers):
         F = _roi_trace(movie, cy, cx)
@@ -192,16 +211,16 @@ def main():
         dff_before[i], dff_after[i] = db, dc
         r_before[i] = _corr(db, true_dff[i])
         r_after[i] = _corr(dc, true_dff[i])
-        zc_before[i] = abs(_corr(db, zpos))
-        zc_after[i] = abs(_corr(dc, zpos))
+        zc_before[i] = abs(_corr(db, z_local[i]))
+        zc_after[i] = abs(_corr(dc, z_local[i]))
 
-    # Per-cell "focus" = mean axial gain exp(-0.5*((z(t)-z_cell)/sigma_z)^2): how
-    # in-focus the cell is across the recording. Low focus => the true transient is
-    # defocus-attenuated in the movie, so recovery is capped (subtraction can't
-    # restore signal the objective never collected). sigma_z matches the movie.
+    # Per-cell "focus" = mean axial gain exp(-0.5*((z_local(t)-z_cell)/sigma_z)^2):
+    # how in-focus the cell is across the recording (using its LOCAL z-plane). Low
+    # focus => the true transient is defocus-attenuated in the movie, so recovery is
+    # capped (subtraction can't restore signal the objective never collected).
     sigma_z = 2.0
     focus = np.array(
-        [np.mean(np.exp(-0.5 * ((zpos - centers[i, 0]) / sigma_z) ** 2)) for i in range(n)]
+        [np.mean(np.exp(-0.5 * ((z_local[i] - centers[i, 0]) / sigma_z) ** 2)) for i in range(n)]
     )
 
     # z-impact = how contaminated the raw trace is by the z-trajectory. Select the
@@ -244,18 +263,20 @@ def main():
         )
         ax.tick_params(axis="y", labelsize=6)
         axz = ax.twinx()
-        axz.plot(zpos, color="C3", lw=0.7, alpha=0.55)
-        axz.set_ylabel("z-plane", color="C3", fontsize=7)
+        # Local z-plane for THIS cell's patch (non-rigid), not the global z.
+        axz.plot(z_local[i], color="C3", lw=0.7, alpha=0.55)
+        axz.set_ylabel("local z-plane", color="C3", fontsize=7)
         axz.tick_params(axis="y", labelsize=6, colors="C3")
     axes[0].legend(loc="upper right", fontsize=7, ncol=3)
     axes[-1].set_xlabel("frame")
     fig.suptitle(
-        "Per-ROI z-correction on synthetic ground truth — top z-impacted cells "
-        f"({traj_label}); y = ΔF/F. 'focus' = mean axial gain (1 = in focus).",
+        f"Per-ROI z-correction on synthetic ground truth — top z-impacted cells ({traj_label})\n"
+        "y = ΔF/F;  red = the LOCAL z-plane of each cell's patch (non-rigid z);  "
+        "'focus' = mean axial gain (1 = in focus)",
         fontsize=10,
     )
-    fig.tight_layout()
-    fig.savefig(args.out / "roi_zcorr_synthetic.png", dpi=150)
+    fig.tight_layout(rect=[0, 0, 1, 0.99])
+    fig.savefig(args.out / "roi_zcorr_synthetic.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     # ── Figure 2: recovery summary ───────────────────────────────────────────
@@ -285,7 +306,7 @@ def main():
     # Coupling between population activity and z-motion (negative when downward
     # z-motion co-occurs with responses, as in the real protocol).
     pop_activity = true_dff.mean(axis=0)
-    activity_z_coupling = _corr(pop_activity, zpos)
+    activity_z_coupling = _corr(pop_activity, gt["z_true"])
     stats = {
         "n_cells": int(n),
         "trajectory": traj_label,
