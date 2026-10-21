@@ -1,0 +1,111 @@
+{
+    "experimenter": "Manuel Levy",
+    "subject": {
+        "name": "Scnn1aAi14_D1M2",
+        "genotype": "Scnn1a-TG3-crexAi14",
+        "sex": "M",
+        "DOB": "21-Dec-2025",
+        "virus": "AAV.PHP.eB.syn.riboL1.GCAMP8m",
+        "reporter": "GCaMP8m",
+        "injection_date": "06-Jul-2026",
+        "area": "BC_R",
+        "CCI_ION_date": ""
+    },
+    "imaging": {
+        "date": "08292026",
+        "experiment_type": "GC8m_16x_zoom1_765pi",
+        "run": [
+            "run1"
+        ],
+        "objective": 16,
+        "numerical_zoom": 1,
+        "wavelength": 930,
+        "power": 550,
+        "depth": 160,
+        "fr": 20,
+        "Npixel_x": 765,
+        "Npixel_y": 765,
+        "microns_per_pixel": 1.4542483660130718
+    },
+    "paths": {
+        "concatenation_groups": [
+            1
+        ],
+        "data_paths": [
+            "/home/wanglab/data/2P/Scnn1aAi14_D1M2/08292026/TSeries-08292026-1401-001"
+        ],
+        "export_paths": [
+            "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_D1M2/08292026/run1_cnmf"
+        ],
+        "zstack_paths": [
+            "/home/wanglab/data/2P/Scnn1aAi14_D1M2/08292026/ZSeries-08292026-1401-001"
+        ]
+    },
+    "params_mcorr": {
+        "method": "caiman",
+        "main": {
+            "strides": [
+                36,
+                36
+            ],
+            "overlaps": [
+                24,
+                24
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_mcorr_movie": "tiff",
+        "z_motion_correction": {
+            "zstack_shift": {
+                "Ch": 2,
+                "alpha": 29,
+                "beta": 9,
+                "step": 1,
+                "Nz": 41
+            },
+            "__comment": "Set 'non_rigid' to true to compute f-anat non-rigid. If false, will only compute a rigid z-position.",
+            "non_rigid": true
+        }
+    },
+    "params_extraction": {
+        "method": "cnmf",
+        "main": {
+            "p": 0,
+            "nb": 1,
+            "merge_thr": 0.8,
+            "rf": 20,
+            "stride": 10,
+            "K": 8,
+            "gSig": [
+                5,
+                5
+            ],
+            "ssub": 1,
+            "tsub": 1,
+            "method_init": "greedy_roi",
+            "min_SNR": 3.0,
+            "SNR_lowest": 2.5,
+            "rval_thr": 0.85,
+            "rval_lowest": 0.2,
+            "use_cnn": true,
+            "min_cnn_thr": 0.95,
+            "cnn_lowest": 0.2,
+            "decay_time": 0.15
+        },
+        "refit": true
+    },
+    "params_extra": {
+        "cleanup": false
+    },
+    "logging": {
+        "log_path": "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_D1M2",
+        "log_level": "INFO"
+    }
+}

@@ -1,0 +1,89 @@
+{
+    "experimenter": "Manuel Levy",
+    "subject": {
+        "name": "Scnn1aAi14_A2M0",
+        "genotype": "Scnn1a-TG3-crexAi14",
+        "sex": "M",
+        "DOB": "11-Sep-2023",
+        "virus": "AAV.PHP.eB.syn.riboL1.GCAMP8m",
+        "reporter": "GCaMP8m",
+        "injection_date": "31-Oct-2023",
+        "area": "BC_R",
+        "CCI_ION_date": "20-Dec-2023"
+    },
+    "imaging": {
+        "date": "12152023",
+        "experiment_type": "GC8m_16x_zoom1point5_512pi",
+        "run": [
+            "run1"
+        ],
+        "objective": 16,
+        "numerical_zoom": 1.5,
+        "wavelength": 930,
+        "power": 500,
+        "depth": 150,
+        "fr": 15,
+        "Npixel_x": 512,
+        "Npixel_y": 512,
+        "microns_per_pixel": 1.46
+    },
+    "paths": {
+        "concatenation_groups": [
+            1
+        ],
+        "data_paths": [
+            "/home/wanglab/data/2P/Scnn1aAi14_A2M0/12152023/TSeries-12152023-1516-001"
+        ],
+        "export_paths": [
+            "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_A2M0/12152023/run1"
+        ],
+        "zstack_paths": [
+            "/home/wanglab/data/2P/Scnn1aAi14_A2M0/12152023/ZSeries-12152023-1516-003"
+        ]
+    },
+    "params_mcorr": {
+        "method": "caiman",
+        "main": {
+            "strides": [
+                36,
+                36
+            ],
+            "overlaps": [
+                24,
+                24
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_mcorr_movie": "tiff",
+        "z_motion_correction": {
+            "zstack_shift": {
+                "Ch": 2,
+                "alpha": 30,
+                "beta": 10,
+                "step": 1,
+                "Nz": 41
+            },
+            "non_rigid": true
+        }
+    },
+    "params_extraction": {
+        "method": "suite2p",
+        "main": {
+            "decay_time": 0.3
+        }
+    },
+    "params_extra": {
+        "cleanup": false
+    },
+    "logging": {
+        "log_path": "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_A2M0",
+        "log_level": "INFO"
+    }
+}
