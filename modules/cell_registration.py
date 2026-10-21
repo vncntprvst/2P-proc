@@ -195,7 +195,20 @@ def affine_residual_um(s1, s2, pairs, um_per_pixel):
     return float(np.median(res) * um_per_pixel)
 
 
-def quality_control(sessions, assignments, um_per_pixel):
+def fov_similarity(img1, img2):
+    """Correlation of two FOV images after the best rigid shift (phase correlation)."""
+    from skimage.registration import phase_cross_correlation
+
+    shift, _, _ = phase_cross_correlation(img1, img2, upsample_factor=1)
+    dy, dx = (int(round(v)) for v in shift)
+    b = np.roll(img2, (dy, dx), axis=(0, 1))
+    Ly, Lx = img1.shape
+    ys = slice(max(dy, 0), Ly + min(dy, 0))
+    xs = slice(max(dx, 0), Lx + min(dx, 0))
+    return float(np.corrcoef(img1[ys, xs].ravel(), b[ys, xs].ravel())[0, 1]), (dy, dx)
+
+
+def quality_control(sessions, assignments, um_per_pixel, min_fov_similarity=0.5):
     n = len(sessions)
     qc = {"n_rois": [len(s["masks"]) for s in sessions],
           "n_cells_tracked_in_k_sessions": {k: int(((assignments >= 0).sum(1) == k).sum()) for k in range(2, n + 1)},
@@ -204,7 +217,12 @@ def quality_control(sessions, assignments, um_per_pixel):
         for b in range(a + 1, n):
             m = (assignments[:, a] >= 0) & (assignments[:, b] >= 0)
             pairs = assignments[m][:, [a, b]]
+            sim, shift = fov_similarity(sessions[a]["image"], sessions[b]["image"])
+            if sim < min_fov_similarity:
+                print(f"Warning: sessions {a + 1} and {b + 1} have FOV similarity {sim:.2f} after rigid "
+                      f"alignment; they may not be the same field of view or plane.")
             qc["pairs"][f"{a + 1}-{b + 1}"] = {
+                "fov_similarity": sim, "rigid_shift_px": list(shift),
                 "n_matched": int(m.sum()),
                 "frac_of_smaller_session": float(m.sum() / max(min(qc["n_rois"][a], qc["n_rois"][b]), 1)),
                 "affine_residual_um": affine_residual_um(sessions[a], sessions[b], pairs, um_per_pixel)}
