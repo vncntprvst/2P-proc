@@ -33,5 +33,11 @@
    860,
    498
   ]
+ },
+ "cellreg_nonrigid": {
+  "n_false_matches": 25
+ },
+ "cellreg_rigid": {
+  "n_false_matches": 302
  }
 }

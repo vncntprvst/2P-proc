@@ -40,6 +40,13 @@ def read_map(f):
             if k in h:
                 est[k] = np.array(h[k]).ravel()
         model = "".join(chr(c) for c in np.array(h["best_model_string"]).ravel()) if "best_model_string" in h else ""
+        # P_same of every registered pair (off-diagonal of each cluster's p_same matrix)
+        ps = []
+        if "p_same_registered_pairs" in h:
+            for ref in np.array(h["p_same_registered_pairs"]).ravel():
+                a = np.array(h[ref])
+                ps.extend(a[~np.eye(len(a), dtype=bool) & np.isfinite(a)].ravel().tolist() if a.ndim == 2 else [])
+        est["p_same_pairs"] = np.array(ps)
     return m.astype(int), est, model
 
 
@@ -48,16 +55,15 @@ def pairs_from_map(m, a=0, b=1):
     return [(int(i) - 1, int(j) - 1) for i, j in m[keep][:, [a, b]]]
 
 
-def estimate_at(est, model, p=0.5):
-    if "p_same_centers_of_bins" not in est:
-        return {}
-    x = est["p_same_centers_of_bins"]
-    k = int(np.argmin(np.abs(x - p)))
-    key = "correlation" if model.startswith("Spatial") else "distance"
-    return {"model": model, "fp_est": float(est[f"false_positive_per_{key}_threshold"][k]),
-            "tp_est": float(est[f"true_positive_per_{key}_threshold"][k]),
-            "uncertain_fraction": float(est["uncertain_fraction_" + ("spatial_correlations" if key == "correlation"
-                                                                     else "centroid_distances")][0])}
+def estimate_at(est, model):
+    """CellReg's self-assessment: expected false-positive fraction among its matches,
+    mean(1 - P_same) over registered pairs, and its uncertain fraction (0.05 < P_same < 0.95)."""
+    key = "spatial_correlations" if model.startswith("Spatial") else "centroid_distances"
+    ps = est.get("p_same_pairs", np.array([]))
+    return {"model": model, "n_pairs": int(len(ps)),
+            "expected_fp_fraction": float(np.mean(1 - ps)) if len(ps) else float("nan"),
+            "uncertain_fraction": float(est[f"uncertain_fraction_{key}"][0]) if f"uncertain_fraction_{key}" in est
+            else float("nan")}
 
 
 def update(name, key, method, value):

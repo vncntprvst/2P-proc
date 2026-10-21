@@ -118,5 +118,49 @@
   "r_neighbour": 0.07956609549645408,
   "r_random": 0.08237441669488768,
   "frac_match_gt_neighbour": 0.6655737704918033
+ },
+ "d0824:d0829 cellreg_nonrigid": {
+  "n": 47,
+  "widths": [
+   0.075,
+   0.125,
+   0.175,
+   0.225,
+   0.3
+  ],
+  "r_match": 0.04328217361664193,
+  "r_neighbour": 0.07654045863735859,
+  "r_random": 0.02637308567865732,
+  "frac_match_gt_neighbour": 0.40425531914893614
+ },
+ "d0824:d0831 cellreg_nonrigid": {
+  "n": 247,
+  "widths": [
+   0.175
+  ],
+  "r_match": 0.12419558648599253,
+  "r_neighbour": 0.11779812863043308,
+  "r_random": 0.13734619414899596,
+  "frac_match_gt_neighbour": 0.5263157894736842
+ },
+ "d0829:d0831 cellreg_nonrigid": {
+  "n": 45,
+  "widths": [
+   0.175
+  ],
+  "r_match": 0.09185212787176593,
+  "r_neighbour": 0.15709456515585077,
+  "r_random": 0.14980335434797698,
+  "frac_match_gt_neighbour": 0.4
+ },
+ "d0829:d0831 cellreg_rigid": {
+  "n": 306,
+  "widths": [
+   0.175
+  ],
+  "r_match": 0.2239747986121442,
+  "r_neighbour": 0.08574195875331116,
+  "r_random": 0.07438664110252641,
+  "frac_match_gt_neighbour": 0.6666666666666666
  }
 }

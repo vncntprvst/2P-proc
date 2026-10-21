@@ -42,6 +42,14 @@
    "time_s": 73.2,
    "n_matches": 305,
    "residual_um": 0.9072840700889235
+  },
+  "cellreg_nonrigid": {
+   "n_matches": 45,
+   "residual_um": 3.4773157981246143
+  },
+  "cellreg_rigid": {
+   "n_matches": 306,
+   "residual_um": 0.9071083085237194
   }
  },
  "d0824:d0829": {
@@ -69,6 +77,10 @@
    "time_s": 70.5,
    "n_matches": 351,
    "residual_um": 1.8830272885213606
+  },
+  "cellreg_nonrigid": {
+   "n_matches": 47,
+   "residual_um": 3.347528287148909
   }
  },
  "d0824:d0831": {
@@ -96,6 +108,10 @@
    "time_s": 67.4,
    "n_matches": 291,
    "residual_um": 1.8522979930164254
+  },
+  "cellreg_nonrigid": {
+   "n_matches": 247,
+   "residual_um": 7.859009869193495
   }
  },
  "d0829:d0828": {
@@ -121,6 +137,10 @@
   },
   "roicat": {
    "error": "mixing parameters never separate, so the cutoff distance cannot be inferred. Pass `d_cutoff` explicitly (pick it from `plot_similarity_relationships`, and keep in mind that `fit_sequentialHungarian` separately rejects pairs above its own `thresh_cost`), or refit the mixing with `find_optimal_parameters_for_pruning(objective='histogram_overlap')`, whose loss penalizes exactly this degenerate case.\n"
+  },
+  "cellreg_nonrigid": {
+   "n_matches": 11,
+   "residual_um": 1.9038501692382268
   }
  },
  "d0829:d0831:flipped": {
@@ -165,6 +185,10 @@
   "roicat": {
    "consistency": 0.9611111111111111,
    "n_chains": 180
+  },
+  "cellreg_nonrigid": {
+   "consistency": 1.0,
+   "n_chains": 1
   }
  }
 }

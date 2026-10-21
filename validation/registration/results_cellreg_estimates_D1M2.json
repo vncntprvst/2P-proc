@@ -1,0 +1,104 @@
+{
+ "crossday__d0824_d0829 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 94,
+  "expected_fp_fraction": 0.42674652215276865,
+  "uncertain_fraction": 0.25276752767527677
+ },
+ "crossday__d0824_d0831 nonrigid": {
+  "model": "Centroid distance",
+  "n_pairs": 494,
+  "expected_fp_fraction": 0.04500516970995361,
+  "uncertain_fraction": 0.48746518105849584
+ },
+ "crossday__d0829_d0828 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 22,
+  "expected_fp_fraction": 0.43434995974619284,
+  "uncertain_fraction": 0.09836065573770492
+ },
+ "crossday__d0829_d0831 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 90,
+  "expected_fp_fraction": 0.33503810415749363,
+  "uncertain_fraction": 0.30612244897959184
+ },
+ "crossday__d0829_d0831 rigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 612,
+  "expected_fp_fraction": 0.004514881413768712,
+  "uncertain_fraction": 0.03736263736263736
+ },
+ "negative__d0829_d0831shift60 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 50,
+  "expected_fp_fraction": 0.3071447716977729,
+  "uncertain_fraction": 0.2079646017699115
+ },
+ "negative__d0829_d0831shift60 rigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 604,
+  "expected_fp_fraction": 0.003812943938872084,
+  "uncertain_fraction": 0.03777777777777778
+ },
+ "sameday__run1-run2 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 586,
+  "expected_fp_fraction": 0.02653532513795585,
+  "uncertain_fraction": 0.13501144164759726
+ },
+ "sameday__run1-run2 rigid": {
+  "model": "Centroid distance",
+  "n_pairs": 636,
+  "expected_fp_fraction": 0.0017983543324829434,
+  "uncertain_fraction": 0.02304147465437788
+ },
+ "splithalf__amp0_rot0_shift0,0 nonrigid": {
+  "model": "Centroid distance",
+  "n_pairs": 764,
+  "expected_fp_fraction": 0.001318286347944743,
+  "uncertain_fraction": 0.006060606060606061
+ },
+ "splithalf__amp0_rot0_shift0,0 rigid": {
+  "model": "Centroid distance",
+  "n_pairs": 764,
+  "expected_fp_fraction": 0.00100789063262131,
+  "uncertain_fraction": 0.014198782961460446
+ },
+ "splithalf__amp0_rot1.5_shift10,-8 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 394,
+  "expected_fp_fraction": 0.05225017001132844,
+  "uncertain_fraction": 0.15053763440860216
+ },
+ "splithalf__amp0_rot1.5_shift10,-8 rigid": {
+  "model": "Centroid distance",
+  "n_pairs": 762,
+  "expected_fp_fraction": 0.0013110063289131807,
+  "uncertain_fraction": 0.012121212121212121
+ },
+ "splithalf__amp10_rot1.5_shift10,-8 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 496,
+  "expected_fp_fraction": 0.026945349605760675,
+  "uncertain_fraction": 0.10024449877750612
+ },
+ "splithalf__amp3_rot1.5_shift10,-8 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 354,
+  "expected_fp_fraction": 0.0700178989045412,
+  "uncertain_fraction": 0.22105263157894736
+ },
+ "splithalf__amp3_rot1.5_shift10,-8 rigid": {
+  "model": "Centroid distance",
+  "n_pairs": 768,
+  "expected_fp_fraction": 0.003589139577829964,
+  "uncertain_fraction": 0.1857707509881423
+ },
+ "splithalf__amp6_rot1.5_shift10,-8 nonrigid": {
+  "model": "Spatial correlation",
+  "n_pairs": 204,
+  "expected_fp_fraction": 0.10691073711862625,
+  "uncertain_fraction": 0.28700906344410876
+ }
+}
