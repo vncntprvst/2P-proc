@@ -468,6 +468,10 @@ def prepare_cnmf_object(df):
     """
     cnmf_obj = df.iloc[-1].cnmf.get_output()
 
+    # With p=0 (no AR model) g is a 0-d array, which select_components cannot index
+    if np.ndim(cnmf_obj.estimates.g) == 0:
+        cnmf_obj.estimates.g = None
+
     # Select components
     cnmf_obj.estimates.select_components(use_object=True)
 
