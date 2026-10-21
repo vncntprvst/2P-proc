@@ -30,6 +30,7 @@ import numpy as np
 import warnings, contextlib
 import psutil
 import json
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 # import dask.array as da
@@ -128,6 +129,55 @@ def extract_pv_metadata(xml_file_path):
     except Exception as e:
         print(f"Error parsing XML {xml_file_path}: {e}")
         return None
+
+def read_stim_sequence(tseries_dir):
+    """
+    Per-cycle stimulus waveforms actually output by PrairieView, from the
+    *_CycleNNNNN_VoltageOutput_001.xml files, plus the number of frames of each cycle.
+
+    Returns a dict with 'data_path' and 'cycles' (list of {cycle, protocol, n_frames, outputs}),
+    where outputs lists the enabled pulse-train waveforms (times in ms, potentials in V).
+    """
+    tseries_dir = Path(tseries_dir)
+    frames_per_cycle = {}
+    main_xml = tseries_dir / f"{tseries_dir.name}.xml"
+    if main_xml.exists():
+        root = ET.parse(main_xml).getroot()
+        for seq in root.iter("Sequence"):
+            frames_per_cycle[int(seq.get("cycle", 0))] = len(seq.findall("Frame"))
+    cycles = []
+    for f in sorted(tseries_dir.glob("*_Cycle*_VoltageOutput_001.xml")):
+        cycle = int(re.search(r"_Cycle(\d+)_", f.name).group(1))
+        root = ET.parse(f).getroot()
+        outputs = []
+        for w in root.findall("Waveform"):
+            if w.findtext("Enabled") != "true":
+                continue
+            for c in w.findall("WaveformComponent_PulseTrain"):
+                outputs.append({
+                    "output": w.findtext("Name"),
+                    "pulse_width_ms": float(c.findtext("PulseWidth")),
+                    "pulse_count": int(c.findtext("PulseCount")),
+                    "pulse_spacing_ms": float(c.findtext("PulseSpacing")),
+                    "potential_V": float(c.findtext("PulsePotentialStart")),
+                    "first_pulse_delay_ms": float(c.findtext("FirstPulseDelay")),
+                })
+        cycles.append({"cycle": cycle, "protocol": root.findtext("Name"),
+                       "n_frames": frames_per_cycle.get(cycle), "outputs": outputs})
+    return {"data_path": str(tseries_dir), "cycles": cycles}
+
+
+def write_stim_sequence(data_paths, export_path):
+    """Write stim_sequence.json (one entry per input TSeries, in concatenation order)."""
+    if isinstance(data_paths, (str, Path)):
+        data_paths = [data_paths]
+    runs = [read_stim_sequence(p) for p in data_paths]
+    out = Path(export_path) / "stim_sequence.json"
+    with open(out, "w") as f:
+        json.dump({"runs": runs}, f, indent=1)
+    print(f"Wrote {out} ({sum(len(r['cycles']) for r in runs)} cycles)")
+    return out
+
 
 def update_sidecar_with_xml_metadata(xml_file_path, sidecar_path, append_to_runs=False):
     """
