@@ -69,3 +69,6 @@ validation/example/
 
 # Benchmark run logs
 validation/**/*.log
+
+# SLURM logs of validation jobs
+validation/**/slurm_logs/
