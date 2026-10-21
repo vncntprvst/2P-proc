@@ -66,3 +66,6 @@ dev/
 
 # Example files
 validation/example/
+
+# Benchmark run logs
+validation/**/*.log
