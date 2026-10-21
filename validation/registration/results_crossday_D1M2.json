@@ -1,0 +1,170 @@
+{
+ "_meta": {
+  "d0824": {
+   "n_rois": 1200,
+   "source": "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_D1M2/08242026/run1/suite2p/plane0"
+  },
+  "d0828": {
+   "n_rois": 432,
+   "source": "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_D1M2/08282026/run1/suite2p/plane0"
+  },
+  "d0829": {
+   "n_rois": 860,
+   "source": "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_D1M2/08292026/run1/suite2p/plane0"
+  },
+  "d0831": {
+   "n_rois": 510,
+   "source": "/home/wanglab/data/2P/Analysis_2P/Scnn1aAi14_D1M2/08312026/run1/suite2p/plane0"
+  }
+ },
+ "d0829:d0831": {
+  "caiman": {
+   "time_s": 24.4,
+   "n_matches": 272,
+   "residual_um": 0.8823752115069425
+  },
+  "caiman_meanE": {
+   "time_s": 19.7,
+   "n_matches": 253,
+   "residual_um": 0.8753167491701181
+  },
+  "track2p_affine": {
+   "time_s": 66.4,
+   "n_matches": 307,
+   "residual_um": 0.9248250710043331
+  },
+  "track2p_nonrigid": {
+   "time_s": 78.0,
+   "n_matches": 139,
+   "residual_um": 0.9825829423338657
+  },
+  "roicat": {
+   "time_s": 73.2,
+   "n_matches": 305,
+   "residual_um": 0.9072840700889235
+  }
+ },
+ "d0824:d0829": {
+  "caiman": {
+   "time_s": 32.3,
+   "n_matches": 274,
+   "residual_um": 1.8656877126593843
+  },
+  "caiman_meanE": {
+   "time_s": 32.2,
+   "n_matches": 258,
+   "residual_um": 2.46221919805609
+  },
+  "track2p_affine": {
+   "time_s": 104.7,
+   "n_matches": 343,
+   "residual_um": 1.8750496754004
+  },
+  "track2p_nonrigid": {
+   "time_s": 121.3,
+   "n_matches": 202,
+   "residual_um": 21.354846965824056
+  },
+  "roicat": {
+   "time_s": 70.5,
+   "n_matches": 351,
+   "residual_um": 1.8830272885213606
+  }
+ },
+ "d0824:d0831": {
+  "caiman": {
+   "time_s": 24.5,
+   "n_matches": 212,
+   "residual_um": 2.413571666797625
+  },
+  "caiman_meanE": {
+   "time_s": 24.4,
+   "n_matches": 215,
+   "residual_um": 1.7734343872492588
+  },
+  "track2p_affine": {
+   "time_s": 73.7,
+   "n_matches": 289,
+   "residual_um": 1.7651985230893767
+  },
+  "track2p_nonrigid": {
+   "time_s": 84.8,
+   "n_matches": 155,
+   "residual_um": 20.42974336838239
+  },
+  "roicat": {
+   "time_s": 67.4,
+   "n_matches": 291,
+   "residual_um": 1.8522979930164254
+  }
+ },
+ "d0829:d0828": {
+  "caiman": {
+   "time_s": 17.6,
+   "n_matches": 36,
+   "residual_um": 3.5166689975479817
+  },
+  "caiman_meanE": {
+   "time_s": 17.5,
+   "n_matches": 34,
+   "residual_um": 3.659599200710832
+  },
+  "track2p_affine": {
+   "time_s": 56.1,
+   "n_matches": 80,
+   "residual_um": 4.986409126770018
+  },
+  "track2p_nonrigid": {
+   "time_s": 68.8,
+   "n_matches": 79,
+   "residual_um": 18.894992095335944
+  },
+  "roicat": {
+   "error": "mixing parameters never separate, so the cutoff distance cannot be inferred. Pass `d_cutoff` explicitly (pick it from `plot_similarity_relationships`, and keep in mind that `fit_sequentialHungarian` separately rejects pairs above its own `thresh_cost`), or refit the mixing with `find_optimal_parameters_for_pruning(objective='histogram_overlap')`, whose loss penalizes exactly this degenerate case.\n"
+  }
+ },
+ "d0829:d0831:flipped": {
+  "caiman": {
+   "time_s": 19.5,
+   "n_matches": 35
+  },
+  "caiman_meanE": {
+   "time_s": 19.2,
+   "n_matches": 34
+  },
+  "track2p_affine": {
+   "time_s": 61.5,
+   "n_matches": 84
+  },
+  "track2p_nonrigid": {
+   "time_s": 74.4,
+   "n_matches": 91
+  },
+  "roicat": {
+   "time_s": 64.2,
+   "n_matches": 307
+  }
+ },
+ "cycle d0824:d0829:d0831": {
+  "caiman": {
+   "consistency": 0.8098591549295775,
+   "n_chains": 142
+  },
+  "caiman_meanE": {
+   "consistency": 0.9140625,
+   "n_chains": 128
+  },
+  "track2p_affine": {
+   "consistency": 0.9555555555555556,
+   "n_chains": 180
+  },
+  "track2p_nonrigid": {
+   "consistency": 0.10526315789473684,
+   "n_chains": 38
+  },
+  "roicat": {
+   "consistency": 0.9611111111111111,
+   "n_chains": 180
+  }
+ }
+}

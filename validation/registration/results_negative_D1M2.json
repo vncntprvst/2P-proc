@@ -1,0 +1,37 @@
+{
+ "caiman": {
+  "n_false_matches": 43,
+  "n_rois": [
+   860,
+   498
+  ]
+ },
+ "caiman_meanE": {
+  "n_false_matches": 49,
+  "n_rois": [
+   860,
+   498
+  ]
+ },
+ "track2p_affine": {
+  "n_false_matches": 87,
+  "n_rois": [
+   860,
+   498
+  ]
+ },
+ "track2p_nonrigid": {
+  "n_false_matches": 82,
+  "n_rois": [
+   860,
+   498
+  ]
+ },
+ "roicat": {
+  "n_false_matches": 56,
+  "n_rois": [
+   860,
+   498
+  ]
+ }
+}
