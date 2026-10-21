@@ -4,11 +4,13 @@
 #SBATCH -n 16
 #SBATCH --mem=64GB
 #SBATCH --partition=ou_bcs_normal
-#SBATCH -o ./slurm_logs/cellreg_benchmark-%j.out
+#SBATCH -o ./slurm_logs/cellreg_benchmark-%A_%a.out
+#SBATCH --array=0-11
 
 # CellReg (zivlab/CellReg v1.6.0) on the 2P-proc registration benchmark cases.
 # Submit from this folder (validation/registration/cellreg):
 #   sbatch cellreg_benchmark.sh <data_dir> [microns_per_pixel]
+# One array task per case folder in data_dir/inputs (set --array to 0..n_cases-1).
 # data_dir holds inputs/ (from export_cellreg_inputs.py) and CellReg/ (upstream clone);
 # outputs go to data_dir/outputs.
 
@@ -19,12 +21,12 @@ module load matlab/matlab-2024a
 SCRIPT_DIR=${SLURM_SUBMIT_DIR:-$PWD}
 DATA=$(realpath "$1")
 UM=${2:-1.4542}
-export XDG_RUNTIME_DIR=$DATA/runtime-$USER
+export XDG_RUNTIME_DIR=$DATA/runtime-$USER-${SLURM_ARRAY_TASK_ID:-0}
 mkdir -p "$XDG_RUNTIME_DIR"
 
 matlab -nodesktop -nodisplay -r "addpath('$SCRIPT_DIR'); \
 try, \
-    run_all_cases('$DATA/inputs', '$DATA/outputs', '$DATA/CellReg', $UM); \
+    run_all_cases('$DATA/inputs', '$DATA/outputs', '$DATA/CellReg', $UM, ${SLURM_ARRAY_TASK_ID:-[]}); \
     exit(0); \
 catch ME, \
     disp(getReport(ME,'extended')); \
