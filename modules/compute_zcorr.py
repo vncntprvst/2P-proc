@@ -1366,11 +1366,18 @@ def select_patch_depths(r, zpos, half_window=5, z_sigma=1.0, depth_mode="argmax"
     """
     Nframe, Npatch, Nz = r.shape
     q = np.zeros_like(r)
+    if depth_mode == "soft" and z_sigma:
+        # soft: smooth the full profile first, so the window edges carry no reflection artifact
+        r2_full = gaussian_filter1d(r**2, z_sigma, axis=2, mode="reflect")
     for t in range(Nframe):
         lo, hi = max(int(zpos[t]) - half_window, 0), min(int(zpos[t]) + half_window + 1, Nz)
-        s = r[t, :, lo:hi] ** 2
-        if z_sigma:
-            s = gaussian_filter1d(s, z_sigma, axis=1, mode="reflect")
+        if depth_mode == "soft" and z_sigma:
+            s = r2_full[t, :, lo:hi]
+        else:
+            # argmax: smooth within the window, as patch_regress does
+            s = r[t, :, lo:hi] ** 2
+            if z_sigma:
+                s = gaussian_filter1d(s, z_sigma, axis=1, mode="reflect")
         if depth_mode == "argmax":
             q[t, np.arange(Npatch), lo + np.argmax(s, 1)] = 1
         elif depth_mode == "soft":
@@ -1423,10 +1430,127 @@ def f_anat_non_rigid_fast(F_func, Zstack, mcorr_params, zpos, f_anat_params=None
     lims = patch_grid(Ny, Nx, patch_size, mcorr_params["strides"])
     Zplanes = np.ascontiguousarray(np.moveaxis(Zstack, 2, 0), dtype=np.float32)
     r = patch_depth_profiles(F_func, Zplanes, lims)
-    q = select_patch_depths(
-        r, zpos, p["half_window"], p["z_sigma"], p["depth_mode"], p["beta"]
-    )
+    # "auto" is decided per recording at the ROI step (run_roi_zcorr); the movie stays argmax
+    movie_mode = "argmax" if p["depth_mode"] == "auto" else p["depth_mode"]
+    half_window = 5 if p["depth_mode"] == "auto" else p["half_window"]
+    q = select_patch_depths(r, zpos, half_window, p["z_sigma"], movie_mode, p["beta"])
     return compose_f_anat_weighted(q, Zplanes, lims), r, lims
+
+
+def save_patch_depth_profiles(path, r, lims, zpos, zstack_path):
+    """Save patch correlation profiles (float16) so any depth rule can be applied later per ROI."""
+    np.savez_compressed(
+        path,
+        r=r.astype(np.float16),
+        lims=np.asarray(lims, np.int32),
+        zpos=np.asarray(zpos, np.int32),
+        zstack_path=str(zstack_path),
+    )
+
+
+def load_zplanes(zstack_path):
+    """Shifted z-stack as (Nz, Ny, Nx) float32, clipped and flipped as in subtract_z_motion_patches."""
+    with TiffFile(zstack_path) as tif:
+        Z = np.stack([page.asarray() for page in tif.pages]).astype(np.float32)
+    return np.ascontiguousarray(np.flip(np.clip(Z, 0, 2**16 - 1), axis=1))
+
+
+def roi_patch_weights(lims, Zplanes, rois):
+    """
+    Per (ROI, patch) pair, the uniform ROI-pixel mean of the z-stack contribution of that patch:
+    w[k, z] = sum_{ROI pixels in patch} Zstack[z, y, x] / (count(y, x) * npix(ROI)).
+    Then F_cell_anat(roi, t) = sum over the ROI's pairs of w[k, z_patch(t)].
+    """
+    Nz, Ny, Nx = Zplanes.shape
+    count = np.zeros((Ny, Nx), np.float32)
+    for y0, y1, x0, x1 in lims:
+        count[y0:y1, x0:x1] += 1
+    roi_idx, patch_idx, w = [], [], []
+    for i, (yy, xx) in enumerate(rois):
+        if len(yy) == 0:
+            continue
+        for k, (y0, y1, x0, x1) in enumerate(lims):
+            m = (yy >= y0) & (yy < y1) & (xx >= x0) & (xx < x1)
+            if m.any():
+                roi_idx.append(i)
+                patch_idx.append(k)
+                w.append((Zplanes[:, yy[m], xx[m]] / count[yy[m], xx[m]]).sum(1) / len(yy))
+    return np.array(roi_idx), np.array(patch_idx), np.array(w, np.float32)
+
+
+def roi_f_anat_traces(r, zpos, weights, n_roi, depth_mode="argmax", beta=200.0, half_window=5,
+                      z_sigma=1.0, chunk=250):
+    """
+    F_cell_anat (n_roi, Nframe), unsmoothed, for one depth rule, from saved patch profiles.
+    Equals the uniform ROI mean of the corresponding F_anat movie.
+    """
+    roi_idx, patch_idx, w = weights
+    Nframe = r.shape[0]
+    out = np.zeros((n_roi, Nframe), np.float64)
+    for s in range(0, Nframe, chunk):
+        e = min(s + chunk, Nframe)
+        q = select_patch_depths(
+            r[s:e].astype(np.float32), zpos[s:e], half_window, z_sigma, depth_mode, beta
+        )
+        contrib = np.einsum("tkz,kz->kt", q[:, patch_idx], w)
+        np.add.at(out[:, s:e], roi_idx, contrib)
+    return out
+
+
+def zevent_heldout_score(F, F_anat, zpos, block=400, w=2):
+    """
+    Per-ROI held-out R^2 of fluorescence steps at z-events (frames where zpos changes)
+    predicted by the steps of F_anat (slope through 0, fitted on alternate time blocks).
+    """
+    ev = np.flatnonzero(np.abs(np.diff(zpos)) >= 1) + 1
+    ev = ev[(ev >= w) & (ev + w <= len(zpos))]
+
+    def steps(x):
+        x = x / x.mean(1, keepdims=True)
+        return np.stack([x[:, e : e + w].mean(1) - x[:, e - w : e].mean(1) for e in ev], 1)
+
+    ys, xs = steps(F), steps(F_anat)
+    fold = (ev // block) % 2
+    sse = np.zeros(len(F))
+    sst = np.zeros(len(F))
+    for f in (0, 1):
+        tr, te = fold != f, fold == f
+        b = (xs[:, tr] * ys[:, tr]).sum(1) / ((xs[:, tr] ** 2).sum(1) + 1e-12)
+        sse += ((ys[:, te] - b[:, None] * xs[:, te]) ** 2).sum(1)
+        sst += (ys[:, te] ** 2).sum(1)
+    return 1 - sse / np.maximum(sst, 1e-12), len(ev)
+
+
+def choose_depth_mode_auto(F, candidates, zpos, alpha=0.01):
+    """
+    Pick the F_anat depth rule that best predicts held-out z-event steps of the ROI traces.
+
+    candidates: {name: F_cell_anat}, must include "argmax". Scores are compared on the 25%
+    of ROIs best explained by argmax (the z-loaded ones); a soft rule replaces argmax only if
+    its median gain is positive and significant (one-sided Wilcoxon, p < alpha).
+    """
+    from scipy.stats import wilcoxon
+
+    ok = np.isfinite(F).all(1) & (F.mean(1) > 0)
+    for v in candidates.values():
+        ok &= np.isfinite(v).all(1) & (v.mean(1) > 0)
+    scores, n_events = {}, 0
+    for name, Fz in candidates.items():
+        scores[name], n_events = zevent_heldout_score(F[ok], Fz[ok], zpos)
+    top = scores["argmax"] >= np.quantile(scores["argmax"], 0.75)
+    report = {"n_events": int(n_events), "n_rois_scored": int(top.sum()),
+              "median_heldout_r2": {k: float(np.median(v[top])) for k, v in scores.items()}}
+    best, best_gain = "argmax", 0.0
+    for name, s in scores.items():
+        if name == "argmax":
+            continue
+        gain = s[top] - scores["argmax"][top]
+        p = float(wilcoxon(gain, alternative="greater").pvalue) if np.any(gain) else 1.0
+        report[f"p_{name}"] = p
+        if p < alpha and np.median(gain) > best_gain:
+            best, best_gain = name, float(np.median(gain))
+    report["selected"] = best
+    return best, report
 
 
 def format_patch_correl_for_mat(zone_df):
@@ -1909,7 +2033,7 @@ def subtract_z_motion_patches(
     export_path = movie_mmap_path.parent.parent
 
     F_anat_non_rigid = None
-    if f_anat_params is not None:
+    if f_anat_params is not None and f_anat_params.get("method", "fast") != "legacy":
         print(f"Computing F_anat with f_anat_non_rigid_fast, parameters: {f_anat_params}")
         start_time = time.time()
         F_anat_non_rigid, r_profiles, lims = f_anat_non_rigid_fast(
@@ -1929,7 +2053,13 @@ def subtract_z_motion_patches(
                 "patch_z_pos": best.ravel(),
             }
         )
-        np.save(export_path / "patch_depth_profiles.npy", r_profiles)
+        save_patch_depth_profiles(
+            export_path / "patch_depth_profiles.npz",
+            r_profiles,
+            lims,
+            z_correlation["zpos"],
+            zstack_filepath,
+        )
         print(f"F_anat (fast) computed in {time.time() - start_time:.1f} s")
 
     # TODO: Update options to reload patch correlations:
@@ -2175,17 +2305,8 @@ def subtract_z_motion_patches(
 
         print(f"Patch correlations saved in {time.time() - start_time:.2f} seconds")
 
-    # clean up
-    del (
-        F_func,
-        movie_16bit,
-        Zstack,
-        F_anat_non_rigid,
-        patch_regress_results,
-        patch_correlations_df,
-        labeled_zones_df,
-        patch_correlations,
-    )
+    # clean up the large arrays (the others go out of scope on return)
+    del F_func, movie_16bit, Zstack, F_anat_non_rigid
     gc.collect()
 
     return F_corrected, z_motion_scaling_factors
@@ -2518,7 +2639,7 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
                         parameters["params_mcorr"]["main"],
                         subtract_method=None,
                         save_tiffs=True,
-                        f_anat_params=z_parameters.get("f_anat", None),
+                        f_anat_params=z_parameters.get("f_anat", {}),
                     )
                     # Save the scaling factors if they have been computed.
                     if z_motion_scaling_factors is not None:
