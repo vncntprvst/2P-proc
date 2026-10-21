@@ -10,7 +10,8 @@ Keypoint names default to the Tube_2P_face DLC model (lefthand / whisker_left).
 
 Usage
 -----
-    python validation/behavior_wipes.py <dlc.csv> --out wipes.npz [--fr 60] [--n-trial 100]
+    python validation/behavior_wipes.py <dlc.csv> --out wipes.npz [--fr 60] [--n-trial 100] \
+        [--radius 50] [--paw lefthand] [--pad whisker_left]
 """
 
 import argparse
@@ -71,10 +72,13 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--fr", type=float, default=60.0)
     ap.add_argument("--n-trial", type=int, default=100)
-    ap.add_argument("--radius", type=float, default=50.0)
+    ap.add_argument("--radius", type=float, default=50.0,
+                    help="px; MATLAB uses 50 (profile camera, polygons unavailable). D1M2 side camera: 150")
+    ap.add_argument("--paw", default="lefthand")
+    ap.add_argument("--pad", default="whisker_left", help="'whisker' for the 2024 side-camera model")
     args = ap.parse_args()
 
-    r = classify(load_dlc(args.dlc_csv), args.fr, args.n_trial, radius=args.radius)
+    r = classify(load_dlc(args.dlc_csv), args.fr, args.n_trial, radius=args.radius, paw=args.paw, pad=args.pad)
     np.savez_compressed(args.out, **r)
     fig, ax = plt.subplots(1, 2, figsize=(11, 4))
     t = np.arange(r["wipe"].shape[1]) / args.fr
