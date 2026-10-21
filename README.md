@@ -218,9 +218,17 @@ sbatch scripts/2P_proc.sh configs/my_config.json
 
 ### 3. Multi-session registration
 
+Match cells across separately processed sessions of the same field of view (Suite2p or CNMF exports):
+
 ```bash
-python Caiman/multisession_registration.py --json configs/my_config.json
+python -m pipeline.register_sessions --exports <export_day1> <export_day2> ... --out <dir> --method roicat
 ```
+
+`roicat` (default) and `track2p` run in an environment with that package (`--python`, or `$ROICAT_PYTHON` /
+`$TRACK2P_PYTHON`); ROICaT needs Python >= 3.11. `caiman` runs in the pipeline environment. Outputs:
+`cell_registration.npz/.mat` (cells x sessions ROI indices in extraction order; 1-based in the .mat),
+`cell_registration_qc.json` and `cell_registration.png`. Method comparison and validation: `validation/registration/`.
+Runs recorded the same day are better processed jointly (concatenated) than registered.
 
 ## Pipeline Components
 

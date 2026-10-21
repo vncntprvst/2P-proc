@@ -57,7 +57,7 @@ python -m pipeline.pipeline_mcorr path/to/config.json
 python -m pipeline.pipeline_cnmf path/to/config.json
 
 # Phase 3: Multi-session registration
-python Caiman/multisession_registration.py --json path/to/config.json
+python -m pipeline.register_sessions --exports <export1> <export2> ... --out <dir>
 
 # SLURM batch submission
 cp scripts/2P_proc_template.sh scripts/2P_proc.sh
@@ -86,7 +86,7 @@ Raw TIFF/HDF5 → Motion Correction (NoRMCorre) → ROI Extraction (CNMF or Suit
 | `modules/bruker_concat_tif.py` | Concatenates multi-file Bruker TIFF sessions before processing |
 | `pipeline/utils/config_loader.py` | JSON config parsing with `${VAR}` substitution and `__include` directives |
 | `pipeline/utils/pipeline_utils.py` | Shared utilities: memory management, file I/O, logging |
-| `Caiman/multisession_registration.py` | Cross-session cell alignment using CaImAn |
+| `modules/cell_registration.py` | Cross-session cell registration (ROICaT default, Track2p, CaImAn); CLI `pipeline/register_sessions.py` |
 | `ui/ui_app.py` | Streamlit UI for building configs and submitting jobs (~45 KB) |
 
 ### Configuration System
