@@ -23,12 +23,14 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import json
 import time
 import os
 import numpy as np
 import h5py
 from tifffile import TiffWriter, TiffFile, imread
 import pandas as pd
+from scipy.io import savemat
 from scipy.stats import mode
 from sklearn.linear_model import HuberRegressor
 import shutil
@@ -247,7 +249,29 @@ def run_roi_zcorr(export_path, parameters):
                 pass
             break
 
-    if not zcorr_file.exists() or not f_anat_files:
+    # ROI-level options (params_mcorr.z_motion_correction.roi_correction):
+    # - f_anat_smoothing: temporal moving-average window applied to F_cell_anat (1 = none).
+    #   The MATLAB reference uses 3; the real-data benchmark shows 1 removes more z with
+    #   less signal loss (validation/report/realdata).
+    # - depth_mode: "argmax" (the F_anat movie), "soft" (soft depth weights) or "auto"
+    #   (held-out z-event model selection between argmax and soft). soft/auto need
+    #   patch_depth_profiles.npz, written by the default F_anat path.
+    roi_params = {"f_anat_smoothing": 1, "depth_mode": "argmax", "beta": 200.0,
+                  "half_window": 8, "z_sigma": 1.0, "auto_betas": [400, 200, 100]}
+    roi_params.update(
+        (parameters or {}).get("params_mcorr", {}).get("z_motion_correction", {})
+        .get("roi_correction", {})
+    )
+    profiles_file = export_path / "patch_depth_profiles.npz"
+    depth_mode = roi_params["depth_mode"]
+    if depth_mode != "argmax" and not profiles_file.exists():
+        log_and_print(
+            f"depth_mode={depth_mode} needs {profiles_file.name}; using the argmax F_anat movie.",
+            level="warning",
+        )
+        depth_mode = "argmax"
+
+    if not zcorr_file.exists() or (not f_anat_files and not profiles_file.exists()):
         log_and_print(
             "Required files for ROI z-motion correction missing. Skipping.",
             level="warning",
@@ -269,10 +293,6 @@ def run_roi_zcorr(export_path, parameters):
         from scipy.ndimage import uniform_filter1d
 
         zpos = np.load(zcorr_file)["zpos"]
-        f_anat_movie = imread(str(f_anat_files[0])).astype(np.float32)  # (T, Y, X)
-        # 3-point moving average along time/z (MATLAB movmean(F_anat,3,3)): the
-        # anatomical fluctuation is smoothed before projecting onto ROIs.
-        f_anat_movie = uniform_filter1d(f_anat_movie, size=3, axis=0, mode="nearest")
 
         # Per-ROI raw fluorescence F and the ROI pixel lists (uniform-weighted,
         # matching the MATLAB reference — mean over ROI pixels, not CNMF/suite2p
@@ -284,8 +304,10 @@ def run_roi_zcorr(export_path, parameters):
             F = cnm.estimates.C + cnm.estimates.YrA  # raw per-ROI fluorescence
             A = cnm.estimates.A.tocsc()
             d1, d2 = cnm.dims
+            # CaImAn spatial components are in Fortran order
             roi_pixels = [
-                np.unravel_index(A[:, i].nonzero()[0], (d1, d2)) for i in range(A.shape[1])
+                np.unravel_index(A[:, i].nonzero()[0], (d1, d2), order="F")
+                for i in range(A.shape[1])
             ]
         else:  # Suite2p
             F = np.load(str(s2p_files[0]))
@@ -295,11 +317,53 @@ def run_roi_zcorr(export_path, parameters):
         F = np.asarray(F, dtype=np.float32)
         n_neuron, n_frame = F.shape
 
-        # F_cell_anat: mean of the (smoothed) F_anat movie over each ROI's pixels.
-        F_cell_anat = np.zeros((n_neuron, n_frame), np.float32)
-        for i, (yy, xx) in enumerate(roi_pixels):
-            if len(yy):
-                F_cell_anat[i] = f_anat_movie[:, yy, xx].mean(axis=1)
+        # F_cell_anat: uniform mean over each ROI's pixels of F_anat (unsmoothed)
+        selection = {"selected": "argmax"}
+        if depth_mode == "argmax" and f_anat_files:
+            f_anat_movie = imread(str(f_anat_files[0])).astype(np.float32)  # (T, Y, X)
+            F_cell_anat = np.zeros((n_neuron, n_frame), np.float64)
+            for i, (yy, xx) in enumerate(roi_pixels):
+                if len(yy):
+                    F_cell_anat[i] = f_anat_movie[:, yy, xx].mean(axis=1)
+            del f_anat_movie
+        else:
+            prof = np.load(profiles_file)
+            r, lims = prof["r"], prof["lims"]
+            weights = cz.roi_patch_weights(lims, cz.load_zplanes(str(prof["zstack_path"])), roi_pixels)
+
+            def traces(mode, beta=roi_params["beta"]):
+                half = 5 if mode == "argmax" else roi_params["half_window"]
+                return cz.roi_f_anat_traces(r, zpos, weights, n_neuron, mode, beta, half,
+                                            roi_params["z_sigma"])
+
+            if depth_mode == "soft":
+                F_cell_anat = traces("soft")
+                selection = {"selected": f"soft{roi_params['beta']:g}"}
+            else:
+                cands = {"argmax": traces("argmax")}
+                if depth_mode == "auto":
+                    for beta in roi_params["auto_betas"]:
+                        cands[f"soft{beta:g}"] = traces("soft", beta)
+                    best, selection = cz.choose_depth_mode_auto(F, cands, zpos)
+                    log_and_print(f"depth_mode=auto selected {best}: {selection}")
+                else:
+                    best = "argmax"
+                F_cell_anat = cands[best]
+
+        # Save the unsmoothed per-ROI F_anat traces (all ROIs, extraction order) for MATLAB
+        savemat(
+            export_path / "F_cell_anat_rois.mat",
+            {"F_cell_anat_rois": F_cell_anat.astype(np.float32),
+             "depth_mode": selection["selected"], "extractor": extractor},
+        )
+        with open(export_path / "roi_zcorr_selection.json", "w") as fh:
+            json.dump({**roi_params, **selection}, fh, indent=2)
+
+        if roi_params["f_anat_smoothing"] > 1:
+            F_cell_anat = uniform_filter1d(
+                F_cell_anat, size=int(roi_params["f_anat_smoothing"]), axis=1, mode="nearest"
+            )
+        F_cell_anat = F_cell_anat.astype(np.float32)
 
         # Work in ΔF/F (dff = F/F0 - 1). No trial baseline here, so F0 is the
         # per-ROI mean (for trial-structured data, use the trial baseline).
@@ -338,6 +402,7 @@ def run_roi_zcorr(export_path, parameters):
             dffz=dffz_scaled.astype(np.float32),
             roi_z_scaling=slope.astype(np.float32),
             roi_z_R2=R2.astype(np.float32),
+            depth_mode=selection["selected"],
             # legacy key kept for compatibility (the corrected trace)
             F_roi_zcorrected=dff_corrected.astype(np.float32),
         )
@@ -612,6 +677,12 @@ def run_mcorr(data_path, export_path, parameters, regex_pattern, recompute=True,
                 scale_range=scale_range,
             )
             ##################
+            # Record the stimulus waveforms Bruker actually output, per cycle (for checking
+            # trial labels in the analysis)
+            try:
+                ct.write_stim_sequence(data_path, export_path)
+            except Exception as e:
+                log_and_print(f"Could not write stim_sequence.json: {e}", level="warning")
             # formatted_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - time0))
             # print(f"Concatenation completed in {formatted_time}.")
 
