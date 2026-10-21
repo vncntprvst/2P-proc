@@ -50,6 +50,7 @@ from pipeline.utils.pipeline_utils import log_and_print
 
 from scipy.ndimage import (
     gaussian_filter,
+    gaussian_filter1d,
     map_coordinates,
     shift,
     affine_transform,
@@ -923,7 +924,7 @@ def save_mmap_movie(movie, movie_path):
     return movie_path
 
 
-def patch_regress(frame_data, shift_patches=False):
+def patch_regress(frame_data, shift_patches=False, return_z_patch=True):
     """
     Calculate the linear least-squares regression between the F_func movie and the z-stack
     for each patch at several depths around zpos.
@@ -932,6 +933,9 @@ def patch_regress(frame_data, shift_patches=False):
     - frame_data: tuple containing the frame number, the frame data, the z-stack,
                     the dimensions of the movie, the patch size,
                     the step size, the current zpos, and the valid indices.
+    - return_z_patch: if False, the best-matching z-stack patch is not returned
+                    (it can be rebuilt from the z-stack and patch_z_pos, see
+                    compose_f_anat_non_rigid). Keeps memory flat on long recordings.
 
     Outputs:
     - results: list of dictionaries containing the r_squared, slope,
@@ -1042,7 +1046,10 @@ def patch_regress(frame_data, shift_patches=False):
             # Get the max R^2 value's index
             max_r_square_idx = np.argmax(r_squares)
             # Append the result corresponding to the max R^2 value to patch_regress_results
-            patch_regress_results.append(patch_results[max_r_square_idx])
+            best = patch_results[max_r_square_idx]
+            if not return_z_patch:
+                del best["Z_patch"]
+            patch_regress_results.append(best)
 
     # frame_end_time = time.time()
     # print(f"Frame {frameNum} processed in {frame_end_time - fram_start_time:.2f} seconds")
@@ -1247,6 +1254,179 @@ def make_composite_f_anat(patch_correlations, labeled_zones):
     zone_df = pd.DataFrame(zone_data)
 
     return F_anat_non_rigid, zone_df
+
+
+def compose_f_anat_non_rigid(patch_correlations_df, Zstack, Nframe, dtype=np.uint16):
+    """
+    Memory-light equivalent of make_composite_f_anat over all frames.
+
+    Each pixel of the composite frame is the mean, over the patches covering it,
+    of the z-stack value at that pixel and at the patch's best depth
+    (patch_z_pos). This is what the zone averaging in make_composite_f_anat
+    computes, without storing a z-stack crop per patch and per frame.
+
+    Inputs:
+    - patch_correlations_df: DataFrame from patch_regress (Z_patch not needed).
+    - Zstack: (Ny, Nx, Nz) z-stack, already flipped to the movie orientation.
+    - Nframe: number of frames.
+
+    Outputs:
+    - F_anat_non_rigid: (Nframe, Ny, Nx) array of the given dtype.
+    """
+    Ny, Nx, _ = Zstack.shape
+    Zplanes = np.ascontiguousarray(np.moveaxis(Zstack, 2, 0), dtype=np.float32)
+
+    first = patch_correlations_df[patch_correlations_df["frame_num"] == 0].sort_values(
+        "patch_number"
+    )
+    lims = [(*y, *x) for y, x in zip(first["patch_y_lims"], first["patch_x_lims"])]
+    count = np.zeros((Ny, Nx), np.float32)
+    for y0, y1, x0, x1 in lims:
+        count[y0:y1, x0:x1] += 1
+    count[count == 0] = 1
+
+    zpos = (
+        patch_correlations_df.sort_values(["frame_num", "patch_number"])["patch_z_pos"]
+        .to_numpy()
+        .reshape(Nframe, len(lims))
+    )
+
+    F_anat_non_rigid = np.zeros((Nframe, Ny, Nx), dtype=dtype)
+    acc = np.zeros((Ny, Nx), np.float32)
+    for t in tqdm(range(Nframe), desc="Generating composite F_anat"):
+        acc[:] = 0
+        for (y0, y1, x0, x1), z in zip(lims, zpos[t]):
+            acc[y0:y1, x0:x1] += Zplanes[z, y0:y1, x0:x1]
+        F_anat_non_rigid[t] = np.clip(acc / count, 0, 2**16 - 1)
+
+    return F_anat_non_rigid
+
+
+def patch_grid(Ny, Nx, patch_size, step_size):
+    """Patch limits (y0, y1, x0, x1) in patch_regress order, including its border rules."""
+    lims = []
+    patch_size_x = patch_size_y = None
+    for i in range(0, Nx, step_size[1]):
+        for j in range(0, Ny, step_size[0]):
+            if (
+                i + patch_size[1] > Nx
+                and patch_size_x < patch_size[1]
+                and patch_size_y < patch_size[0]
+            ):
+                continue
+            if j + patch_size[0] > Ny and patch_size_y < patch_size[0]:
+                continue
+            patch_size_x = patch_size[1] if i + patch_size[1] <= Nx else Nx - i
+            patch_size_y = patch_size[0] if j + patch_size[0] <= Ny else Ny - j
+            lims.append((j, j + patch_size_y, i, i + patch_size_x))
+    return lims
+
+
+def patch_depth_profiles(F_func, Zplanes, lims, chunk=1000):
+    """
+    Pearson correlation of every functional patch with every z-stack plane.
+
+    Same quantity as linregress' r in patch_regress, computed for all frames and all
+    planes with one matrix product per patch.
+
+    Inputs:
+    - F_func: (Nframe, Ny, Nx) motion-corrected movie (clipped to uint16 range).
+    - Zplanes: (Nz, Ny, Nx) shifted z-stack, flipped to the movie orientation.
+    - lims: patch limits from patch_grid.
+
+    Outputs:
+    - r: (Nframe, Npatch, Nz) float32 array.
+    """
+    Nframe = F_func.shape[0]
+    Nz = Zplanes.shape[0]
+    r = np.zeros((Nframe, len(lims), Nz), np.float32)
+    for k, (y0, y1, x0, x1) in enumerate(tqdm(lims, desc="Patch depth profiles")):
+        zp = Zplanes[:, y0:y1, x0:x1].reshape(Nz, -1).astype(np.float64)
+        zp -= zp.mean(1, keepdims=True)
+        zp /= np.linalg.norm(zp, axis=1, keepdims=True) + 1e-12
+        for s in range(0, Nframe, chunk):
+            fp = F_func[s : s + chunk, y0:y1, x0:x1].reshape(-1, zp.shape[1]).astype(np.float64)
+            fp -= fp.mean(1, keepdims=True)
+            fp /= np.linalg.norm(fp, axis=1, keepdims=True) + 1e-12
+            r[s : s + chunk, k] = fp @ zp.T
+    return r
+
+
+def select_patch_depths(r, zpos, half_window=5, z_sigma=1.0, depth_mode="argmax", beta=200.0):
+    """
+    Per-frame, per-patch depth weights from the patch correlation profiles.
+
+    - depth_mode "argmax": the plane maximising the Gaussian-smoothed (along z) R^2 within
+      zpos +/- half_window (the patch_regress rule, with half_window=5, z_sigma=1).
+    - depth_mode "soft": softmax(beta * smoothed R^2) over the same window, i.e. a sub-plane
+      mixture of planes reflecting depth uncertainty / axial blur.
+
+    Outputs:
+    - q: (Nframe, Npatch, Nz) float32 weights summing to 1 over z.
+    """
+    Nframe, Npatch, Nz = r.shape
+    q = np.zeros_like(r)
+    for t in range(Nframe):
+        lo, hi = max(int(zpos[t]) - half_window, 0), min(int(zpos[t]) + half_window + 1, Nz)
+        s = r[t, :, lo:hi] ** 2
+        if z_sigma:
+            s = gaussian_filter1d(s, z_sigma, axis=1, mode="reflect")
+        if depth_mode == "argmax":
+            q[t, np.arange(Npatch), lo + np.argmax(s, 1)] = 1
+        elif depth_mode == "soft":
+            e = np.exp(beta * (s - s.max(1, keepdims=True)))
+            q[t, :, lo:hi] = e / e.sum(1, keepdims=True)
+        else:
+            raise ValueError(f"Unknown depth_mode: {depth_mode}")
+    return q
+
+
+def compose_f_anat_weighted(q, Zplanes, lims, chunk=500, dtype=np.uint16):
+    """
+    F_anat from per-patch depth weights: each pixel is the mean over its covering patches of
+    sum_z q[t, p, z] * Zstack[z, y, x]. With one-hot q this equals compose_f_anat_non_rigid.
+    """
+    Nframe = q.shape[0]
+    Nz, Ny, Nx = Zplanes.shape
+    count = np.zeros((Ny, Nx), np.float32)
+    for y0, y1, x0, x1 in lims:
+        count[y0:y1, x0:x1] += 1
+    count[count == 0] = 1
+    F_anat = np.zeros((Nframe, Ny, Nx), dtype=dtype)
+    for s in tqdm(range(0, Nframe, chunk), desc="Generating composite F_anat"):
+        e = min(s + chunk, Nframe)
+        acc = np.zeros((e - s, Ny, Nx), np.float32)
+        for k, (y0, y1, x0, x1) in enumerate(lims):
+            zp = Zplanes[:, y0:y1, x0:x1].reshape(Nz, -1)
+            acc[:, y0:y1, x0:x1] += (q[s:e, k] @ zp).reshape(e - s, y1 - y0, x1 - x0)
+        F_anat[s:e] = np.clip(acc / count, 0, 2**16 - 1)
+    return F_anat
+
+
+def f_anat_non_rigid_fast(F_func, Zstack, mcorr_params, zpos, f_anat_params=None):
+    """
+    Vectorised F_anat non-rigid (patch profiles -> depth weights -> composite).
+
+    With the default f_anat_params (argmax, half_window 5, z_sigma 1) it reproduces the
+    patch_regress / make_composite_f_anat result. Set {"depth_mode": "soft", "beta": 200,
+    "half_window": 8} for the soft-depth variant (see validation/real_zcorr_benchmark.py).
+
+    Inputs:
+    - F_func: (Nframe, Ny, Nx) movie; Zstack: (Ny, Nx, Nz), flipped to the movie orientation.
+    Outputs:
+    - F_anat_non_rigid (uint16), r profiles (Nframe, Npatch, Nz), patch lims.
+    """
+    p = {"depth_mode": "argmax", "half_window": 5, "z_sigma": 1.0, "beta": 200.0}
+    p.update(f_anat_params or {})
+    Nframe, Ny, Nx = F_func.shape
+    patch_size = [s + o for s, o in zip(mcorr_params["strides"], mcorr_params["overlaps"])]
+    lims = patch_grid(Ny, Nx, patch_size, mcorr_params["strides"])
+    Zplanes = np.ascontiguousarray(np.moveaxis(Zstack, 2, 0), dtype=np.float32)
+    r = patch_depth_profiles(F_func, Zplanes, lims)
+    q = select_patch_depths(
+        r, zpos, p["half_window"], p["z_sigma"], p["depth_mode"], p["beta"]
+    )
+    return compose_f_anat_weighted(q, Zplanes, lims), r, lims
 
 
 def format_patch_correl_for_mat(zone_df):
@@ -1681,10 +1861,13 @@ def subtract_z_motion_patches(
     save_tiffs=False,
     save_correl=False,
     save_format="parquet",
+    f_anat_params=None,
 ):
     """
     Find the correlation between patches in the F_func movie and the anat z-stack.
     Create a composite anatomical image, using patch correlations to identify the best depth for each zone.
+    If f_anat_params is given (config z_motion_correction.f_anat), F_anat is built with the
+    vectorised f_anat_non_rigid_fast (argmax or soft depth weights) instead of patch_regress.
     Fit a linear regression between the non-rigid F_anat and the F_func movie.
     Subtract the scaled F_anat from the F_func movie to correct for z-motion.
     """
@@ -1725,13 +1908,38 @@ def subtract_z_motion_patches(
 
     export_path = movie_mmap_path.parent.parent
 
+    F_anat_non_rigid = None
+    if f_anat_params is not None:
+        print(f"Computing F_anat with f_anat_non_rigid_fast, parameters: {f_anat_params}")
+        start_time = time.time()
+        F_anat_non_rigid, r_profiles, lims = f_anat_non_rigid_fast(
+            F_func, Zstack, mcorr_params, z_correlation["zpos"], f_anat_params
+        )
+        # Per-patch best depth table (same columns as patch_regress) for zones and plots
+        best = select_patch_depths(r_profiles, z_correlation["zpos"]).argmax(2)
+        frame_num, patch_number = np.meshgrid(np.arange(Nframe), np.arange(len(lims)), indexing="ij")
+        patch_correlations_df = pd.DataFrame(
+            {
+                "r_squared": np.take_along_axis(r_profiles, best[..., None], 2)[..., 0].ravel() ** 2,
+                "frame_num": frame_num.ravel(),
+                "patch_number": patch_number.ravel(),
+                "patch_x_lims": [[x0, x1] for _ in range(Nframe) for (_, _, x0, x1) in lims],
+                "patch_y_lims": [[y0, y1] for _ in range(Nframe) for (y0, y1, _, _) in lims],
+                "patch_z_idx": (best - np.asarray(z_correlation["zpos"])[:, None]).ravel(),
+                "patch_z_pos": best.ravel(),
+            }
+        )
+        np.save(export_path / "patch_depth_profiles.npy", r_profiles)
+        print(f"F_anat (fast) computed in {time.time() - start_time:.1f} s")
+
     # TODO: Update options to reload patch correlations:
-    if (export_path / "patch_correlations.parquet").exists():
+    if F_anat_non_rigid is not None:
+        pass
+    elif (export_path / "patch_correlations.parquet").exists():
         print(f"Loading patch correlations from {export_path / 'patch_correlations.parquet'}")
         patch_correlations_df = pd.read_parquet(export_path / "patch_correlations.parquet")
-        patch_correlations_df["Z_patch"] = patch_correlations_df["Z_patch"].apply(
-            lambda x: np.frombuffer(x, dtype=np.uint16)
-        )
+        if "Z_patch" in patch_correlations_df:
+            patch_correlations_df = patch_correlations_df.drop(columns="Z_patch")
     else:
         # Define patch size based on Caiman's parameters. Width of patch = strides+overlaps.
         step_size = mcorr_params["strides"]
@@ -1783,9 +1991,9 @@ def subtract_z_motion_patches(
                 )
                 print(f"Number of valid z indices per frame: {len(valid_indices)}")
 
-        # Call patch_regress in parallel
+        # Call patch_regress in parallel (best depth per patch only, no z-stack crops)
         patch_regress_results = Parallel(n_jobs=-1)(
-            delayed(patch_regress)(frame_data)
+            delayed(patch_regress)(frame_data, return_z_patch=False)
             for frame_data in tqdm(
                 frame_data_list,
                 desc="Find the correlation between patches in the F_func movie and the anat z-stack over frames",
@@ -1824,37 +2032,21 @@ def subtract_z_motion_patches(
         f"Zone pattern shape: {zone_pattern.shape}, data type: {zone_pattern.dtype}, min: {zone_pattern.min()}, max: {zone_pattern.max()}"
     )
 
-    # Create non-rigid F_anat, using ProcessPoolExecutor to parallelize
-    groups = list(patch_correlations_df.groupby("frame_num"))
-    with ProcessPoolExecutor() as executor:
-        # Submit frames to make_composite_f_anat
-        futures = {
-            executor.submit(make_composite_f_anat, group, labeled_zones): frame_num
-            for frame_num, group in groups
-        }
+    # Create non-rigid F_anat: per pixel, mean over covering patches of the z-stack at
+    # each patch's best depth. Built straight from the z-stack, in uint16, so memory
+    # stays ~one movie (make_composite_f_anat kept a crop per patch and per frame).
+    if F_anat_non_rigid is None:
+        F_anat_non_rigid = compose_f_anat_non_rigid(patch_correlations_df, Zstack, Nframe)
 
-        # Collect results as they complete
-        results = []
-        frame_arrays = []
-        frame_nums = []
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Generating composite F_anat"
-        ):
-            frame_num = futures[future]  # Retrieve frame number from the dictionary
-            image_data, zone_data = future.result()
-            results.append(zone_data)
-            frame_arrays.append(image_data)
-            frame_nums.append(frame_num)
-
-    # Concatenate all DataFrame results
-    zone_df = pd.concat(results)
-
-    # F_anat_non_rigid = np.concatenate(frame_arrays, axis=0)
-    # Just in case the frames are not in order, sort frames and arrays according to the frame number
-    sorted_indices = np.argsort(frame_nums)
-    F_anat_non_rigid = np.concatenate([frame_arrays[idx] for idx in sorted_indices], axis=0)
-    # Clip to uint16 range
-    F_anat_non_rigid = np.clip(F_anat_non_rigid, 0, 2**16 - 1).astype(np.float32)
+    # Zone table (used by the summary plots) for the first frame only
+    first_frame = patch_correlations_df[patch_correlations_df["frame_num"] == 0].copy()
+    first_frame["Z_patch"] = [
+        Zstack[y[0] : y[1], x[0] : x[1], z].ravel()
+        for y, x, z in zip(
+            first_frame["patch_y_lims"], first_frame["patch_x_lims"], first_frame["patch_z_pos"]
+        )
+    ]
+    _, zone_df = make_composite_f_anat(first_frame, labeled_zones)
 
     # Plot the first frame of mcorr movie, the first frame of the z-stack, and the first frame of the composite F_anat side by side
     fig, ax = plt.subplots(1, 3, figsize=(15, 5))
@@ -1973,13 +2165,8 @@ def subtract_z_motion_patches(
         elif save_format == "parquet":
             # Save to a Parquet file
             patch_correlations_filepath = export_path / "patch_correlations.parquet"
-            # Saving / loading the Z_patch column is tricky, as its quite large.
-            # One option is to convert it to binary before saving
-            patch_correlations_df["Z_patch"] = patch_correlations_df["Z_patch"].apply(
-                lambda x: x.tobytes()
-            )
+            # Z_patch is no longer stored: it is rebuilt from the z-stack and patch_z_pos.
             patch_correlations_df.to_parquet(patch_correlations_filepath, index=False)
-            # Another option would be to save it separately.
 
         elif save_format == "csv":
             # Save to a csv file
@@ -2331,6 +2518,7 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
                         parameters["params_mcorr"]["main"],
                         subtract_method=None,
                         save_tiffs=True,
+                        f_anat_params=z_parameters.get("f_anat", None),
                     )
                     # Save the scaling factors if they have been computed.
                     if z_motion_scaling_factors is not None:
