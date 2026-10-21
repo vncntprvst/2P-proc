@@ -1,0 +1,131 @@
+{
+    "experimenter": "Manuel Levy",
+    "subject": {
+        "name": "Scnn1aAi14_B2M0",
+        "genotype": "Scnn1a-TG3-crexAi14",
+        "sex": "M",
+        "DOB": "21-Oct-2023",
+        "virus": "AAV.PHP.eB.syn.riboL1.GCAMP8m",
+        "reporter": "GCaMP8m",
+        "injection_date": "05-Mar-2024",
+        "area": "BC_R",
+        "CCI_ION_date": "24-Apr-2024"
+    },
+    "imaging": {
+        "date": "04222024",
+        "experiment_type": "GC8m_16x_zoom1_765pi",
+        "run": [
+            "run1",
+            "run2"
+        ],
+        "objective": 16,
+        "numerical_zoom": 1,
+        "wavelength": 930,
+        "power": 580,
+        "depth": 150,
+        "fr": 20,
+        "Npixel_x": 765,
+        "Npixel_y": 765,
+        "microns_per_pixel": 1.4542483660130718
+    },
+    "paths": {
+        "concatenation_groups": [
+            1,
+            1
+        ],
+        "data_paths": [
+            "/orcd/scratch/bcs/002/Manuel/Data/Scnn1aAi14_B2M0/04222024/TSeries-04222024-1047-001",
+            "/orcd/scratch/bcs/002/Manuel/Data/Scnn1aAi14_B2M0/04222024/TSeries-04222024-1047-002"
+        ],
+        "export_paths": [
+            "/orcd/scratch/bcs/002/Manuel/Analysis_2P/Scnn1aAi14_B2M0/04222024/run1run2"
+        ],
+        "zstack_paths": [
+            "/orcd/scratch/bcs/002/Manuel/Data/Scnn1aAi14_B2M0/04222024/ZSeries-04222024-1047-001",
+            "/orcd/scratch/bcs/002/Manuel/Data/Scnn1aAi14_B2M0/04222024/ZSeries-04222024-1047-001"
+        ]
+    },
+    "params_mcorr": {
+        "method": "caiman",
+        "main": {
+            "strides": [
+                36,
+                36
+            ],
+            "overlaps": [
+                24,
+                24
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_mcorr_movie": "tiff",
+        "z_motion_correction": {
+            "zstack_shift": {
+                "file_name": "zstack_shifted.tif",
+                "Ch": 2,
+                "alpha": 21,
+                "beta": 11,
+                "step": 1,
+                "micron_per_pixel": 1.46,
+                "Nx": 765,
+                "Ny": 765,
+                "Nz": 41
+            },
+            "subtract_z_motion": true,
+            "parameter_definitions": {
+                "file_name": "File name of the zstack once shifted",
+                "Ch": "Channel number to use",
+                "alpha": "Angle of the objective, in degrees",
+                "beta": "Angle of the stage on which the subject sits, in degrees",
+                "step": "Step size of the zstack in micron",
+                "micron_per_pixel": "Micron per pixel",
+                "Nx": "Frame size in x (width), in pixels",
+                "Ny": "Frame size in y (height), in pixels",
+                "Nz": "Number of frames in z"
+            },
+            "description": "These parameters are used to re-align z-stack frames, to compensate for the shift induced by the angle between the objective and the sample, as the objective moves vertically."
+        }
+    },
+    "params_extraction": {
+        "method": "suite2p",
+        "main": {
+            "fr": 20,
+            "p": 0,
+            "nb": 1,
+            "merge_thr": 0.8,
+            "rf": 20,
+            "stride": 10,
+            "K": 8,
+            "gSig": [
+                5,
+                5
+            ],
+            "ssub": 1,
+            "tsub": 1,
+            "method_init": "greedy_roi",
+            "min_SNR": 3.0,
+            "SNR_lowest": 2.5,
+            "rval_thr": 0.85,
+            "rval_lowest": 0.2,
+            "use_cnn": true,
+            "min_cnn_thr": 0.95,
+            "cnn_lowest": 0.2,
+            "decay_time": 0.4
+        },
+        "refit": true
+    },
+    "params_extra": {
+        "cleanup": true
+    },
+    "logging": {
+        "log_path": "/orcd/scratch/bcs/002/Manuel/Analysis_2P/Scnn1aAi14_B1M0",
+        "log_level": "INFO"
+    }
+}
