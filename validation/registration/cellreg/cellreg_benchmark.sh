@@ -24,7 +24,7 @@ mkdir -p "$XDG_RUNTIME_DIR"
 
 matlab -nodesktop -nodisplay -r "addpath('$SCRIPT_DIR'); \
 try, \
-    run_all_cases('$DATA/inputs', '$DATA/outputs', '$DATA/CellReg/CellReg', $UM); \
+    run_all_cases('$DATA/inputs', '$DATA/outputs', '$DATA/CellReg', $UM); \
     exit(0); \
 catch ME, \
     disp(getReport(ME,'extended')); \
