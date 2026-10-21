@@ -204,17 +204,35 @@ the injection test is the check that real responses survive.</p>
   With the defaults (argmax, ±5) it reproduces the production F_anat exactly. Without the block nothing changes.</li>
 </ul>
 
-<h2>8 · Recommendations</h2>
+<h2>8 · Recommendations and what is implemented</h2>
+<p>Pipeline changes are on the 2P-proc <code>benchmark</code> branch. MATLAB changes are on a local branch
+<code>zcorr_recommendations</code> of Analysis_2P_Manu (off <code>dev_manu</code>, not pushed).</p>
 <ol>
-  <li>Keep non-rigid F_anat subtraction as the method; drop rigid zpos correction from the options users reach for.</li>
-  <li>In the per-ROI step (MATLAB and <code>run_roi_zcorr</code>), make the 3-frame movmean of F_anat optional and
-  default it off. It is never worse on the held-out metric and keeps more signal.</li>
-  <li>Offer soft depth for recordings with strong stimulus-locked motion (laser, wipes). Before making it the
-  default, test it on a few more strong-artifact runs; on weak artifacts it tends to overcorrect slightly
-  (−0.03).</li>
-  <li>Build trial vectors from the Bruker VoltageOutput files rather than from the template sequence.</li>
-  <li>Reconsider the R² &gt; 0.25 rejection criterion.</li>
+  <li><b>Keep non-rigid F_anat subtraction; avoid rigid zpos.</b> MATLAB now warns when
+  <code>subtract_z = 'rigid'</code>.</li>
+  <li><b>No movmean on F_anat.</b> It is never worse on the held-out metric and keeps more signal. Default off in
+  <code>run_roi_zcorr</code> (<code>roi_correction.f_anat_smoothing = 1</code>) and in MATLAB
+  (<code>params.zcorr.f_anat_movmean = 1</code>). MATLAB now caches the unsmoothed <code>F_cell_anat_raw.mat</code>;
+  a legacy smoothed <code>F_cell_anat.mat</code> is used with a warning.</li>
+  <li><b>Soft depth, with an auto mode.</b> <code>roi_correction.depth_mode = "auto"</code> builds the per-ROI F_anat
+  traces for argmax and soft depth (β = 400, 200, 100) from <code>patch_depth_profiles.npz</code>, and keeps
+  the rule that best predicts held-out fluorescence steps at z-events (cross-validated over time blocks, on the
+  z-loaded ROIs; soft must beat argmax with p &lt; 0.01). It needs no trial structure. On all six sessions it
+  selects soft depth, with p &lt; 1e-5 in every one: as a predictive model of z-artifacts, soft depth is better
+  even where the trial metrics could not tell the methods apart. The small negative trial z-dependence of soft
+  depth on weak sessions (−0.03) is measured against argmax-based z-steps, so it does not by itself show
+  overcorrection. MATLAB uses the pipeline's <code>F_cell_anat_rois.mat</code> (Suite2p, iscell rows) when
+  present. Default stays argmax.</li>
+  <li><b>Trial labels from Bruker.</b> The pipeline writes <code>stim_sequence.json</code> (per-cycle
+  VoltageOutput waveforms and frame counts) at concatenation. MATLAB <code>check_stim_sequence.m</code> warns on
+  mismatches and relabels when <code>params.general.use_bruker_stim_sequence</code> is true. Tested in Octave:
+  it reports trials 11, 31, 51, 71, 91 on D1M2 run1.</li>
+  <li><b>R² rejection</b> is configurable (<code>params.analysis_post_stim.max_R2_z</code>, default 0.25
+  unchanged).</li>
 </ol>
+<p>Also changed: the vectorised F_anat path is now the default (identical output, verified end-to-end on run2) and
+saves the patch depth profiles; <code>run_roi_zcorr</code> read CNMF ROI pixels in C order instead of CaImAn's
+Fortran order, now fixed.</p>
 
 <h2>Open items</h2>
 <ul>
