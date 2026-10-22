@@ -169,8 +169,10 @@ CellReg aligns sessions from the footprint projections only, never from the FOV 
 accepted pairs, is close to the measured error where it works, and it flags its own failures: on the cross-day
 pairs where non-rigid mode breaks down it expects 33–43% false positives.</p>
 {cal_table}
-<p>The three-session CellReg run needs more memory than the 64 GB requested (dense footprints of 1200 + 860 + 510
-ROIs); it will be added when resubmitted.</p>
+<p>Run jointly on the three sessions (180 GB; dense footprints of 1200 + 860 + 510 ROIs), rigid mode again
+rejects the alignment, and non-rigid mode tracks 113 cells in all three sessions and 602 in at least two. Those
+matches are mostly wrong: matched cells sit 7.4–8.2 µm apart after an affine fit (1–2 µm for the methods that
+work, against a soma diameter of ~10 µm).</p>
 
 <h2>6 · In the pipeline</h2>
 <p><code>python -m pipeline.register_sessions --exports &lt;day1&gt; &lt;day2&gt; ... --out &lt;dir&gt; --method roicat</code>
