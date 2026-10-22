@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.12.0 -f Dockerfile context
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.12.0 -f Dockerfile context || exit 1
 #  --no-cache
 
 # Push to Docker registry
