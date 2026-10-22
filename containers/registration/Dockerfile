@@ -3,9 +3,10 @@
 # (Python 3.10, CaImAn 1.12.2). The caiman method stays in the 2p_proc image.
 FROM python:3.11-slim
 
-# OpenCV and libtiff runtime libraries; Tk (ROICaT imports Matplotlib's TkAgg backend)
+# OpenCV and libtiff runtime libraries; Tk (ROICaT imports Matplotlib's TkAgg backend);
+# compiler and libtiff headers to build pylibtiff (optimouse dependency, no wheel for this Python)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgl1 libglib2.0-0 libtiff6 tk && \
+        libgl1 libglib2.0-0 libtiff6 libtiff-dev tk build-essential && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
