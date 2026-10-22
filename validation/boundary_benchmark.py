@@ -121,6 +121,8 @@ def main():
     ap.add_argument("--zpos", action="append", default=[], help="name=path to an npz with zpos")
     ap.add_argument("--runs", type=int, nargs="+", default=None, help="frames per run")
     ap.add_argument("--exclude", type=int, default=200, help="frames excluded after boundaries")
+    ap.add_argument("--depth-mode", default="argmax", help="argmax, or soft<beta> (e.g. soft200)")
+    ap.add_argument("--zstack", default=None, help="shifted z-stack, if not at the path saved in the profiles")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
@@ -148,15 +150,20 @@ def main():
 
     prof = np.load(exp / "patch_depth_profiles.npz")
     rois = [(s["ypix"].astype(int), s["xpix"].astype(int)) for s in stat]
-    w = cz.roi_patch_weights(prof["lims"], cz.load_zplanes(str(prof["zstack_path"])), rois)
-    Fa = {k: cz.roi_f_anat_traces(prof["r"], z, w, len(rois), "argmax", 200, 5, 1.0) for k, z in zp.items()}
+    zstack = args.zstack or str(prof["zstack_path"])
+    w = cz.roi_patch_weights(prof["lims"], cz.load_zplanes(zstack), rois)
+    if args.depth_mode == "argmax":
+        mode, beta, half = "argmax", 200.0, 5
+    else:
+        mode, beta, half = "soft", float(args.depth_mode[4:] or 200), 8
+    Fa = {k: cz.roi_f_anat_traces(prof["r"], z, w, len(rois), mode, beta, half, 1.0) for k, z in zp.items()}
 
     ok = iscell & (F.mean(1) > 0)
     for v in Fa.values():
         ok &= v.mean(1) > 0
     F = F[ok]
     Fa = {k: v[ok] for k, v in Fa.items()}
-    R = {"export": str(exp), "runs": counts, "n_rois": int(ok.sum())}
+    R = {"export": str(exp), "runs": counts, "n_rois": int(ok.sum()), "depth_mode": args.depth_mode}
 
     # z-position per run and at boundaries
     R["zpos"] = {}
