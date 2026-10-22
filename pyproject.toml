@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "optimouse"
-version = "0.1.5"
+version = "0.1.6"
 description = "2-photon calcium imaging data processing pipeline with CaImAn / Suite2P"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -71,7 +71,7 @@ packages = ["pipeline", "pipeline.configs", "pipeline.utils", "modules", "module
 
 [tool.setuptools.package-data]
 pipeline = ["configs/*.json"]
-modules = ["utils/*.py"]
+modules = ["utils/*.py", "registration_backends/*.py"]
 
 [tool.black]
 line-length = 100
