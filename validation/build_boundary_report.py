@@ -120,9 +120,9 @@ def build():
   trace, a fluorescence step between runs drives the per-ROI slope. Per-run baselines leave {rr}× less
   z-dependence inside the runs, in every recording and with both depth rules. This is now the pipeline
   default.</span></div>
-  <div class="key"><b>Most steps between runs are not depth</b><span>Fluorescence changed by about 25% at two
-  boundaries where depth predicts 1–6% (laser setting +8%; a 21% drop in raw brightness of unknown cause). Only
-  the 9 µm refocus produced a step that depth explains (r = 0.81).</span></div>
+  <div class="key"><b>Most steps between runs are not depth</b><span>Fluorescence changed by 18–25% at three
+  boundaries where depth predicts 1–6% (laser setting +4% and +8%; a 21% drop in raw brightness of unknown
+  cause). Only the 9 µm refocus produced a step that depth explains (r = 0.81).</span></div>
   <div class="key"><b>The Suite2p-style failure was a bug</b><span>Our port handed the movie to parallel workers
   as a strided memmap view; for C-order CaImAn memmaps the workers read wrong pixels and the estimate piled up at
   the first and last planes. Fixed. Since then it tracks the Pearson estimate, including across every
@@ -180,8 +180,9 @@ identical on B2M0. The pipeline's own Pearson path was never affected.</p>
 <figcaption>Held-out fraction of within-run ΔF/F variance explained by F_anat built from each z-position estimate,
 as a gain over the pipeline estimate (25% most z-loaded ROIs, paired over ROIs).</figcaption></figure>
 {zpos_table()}
-<p>With argmax depth, dropping the median filter or using the Suite2p-style estimate helps on two recordings and
-hurts on one; with soft depth none of the differences exceeds 0.1 points of %. Soft depth searches ±8 planes
+<p>With argmax depth, the Suite2p-style estimate explains 0.1–0.5 points of % more on three recordings, less on
+one (B2M0) and the same on one; dropping the median filter from the Pearson estimate helps on two (p &lt; 0.01), slightly on a third (2P11,
+p = 0.02) and makes no difference on two. With soft depth none of the differences exceeds 0.1 points of %. Soft depth searches ±8 planes
 around the global z-position for each patch, so the global estimate only has to be close. No estimator fails at a
 run boundary.</p>
 
@@ -201,7 +202,8 @@ run boundary.</p>
 suite2p=&lt;export&gt;/zpos_suite2p/z_correlation_suite2p.npz [--depth-mode soft200] --out
 validation/results/boundary/&lt;name&gt;.json<br>python validation/make_boundary_figures.py; python
 validation/build_boundary_report.py<br>Configs: validation/configs/ (local) and validation/configs/engaging/
-(cluster); cluster job for the z-position: validation/cluster/zpos_suite2p.sh</p>
+(cluster). The Suite2p-style estimate needs suite2p.registration and CaImAn together; the 2p_proc image has no
+suite2p.registration, so it was run in the validation pixi environment.</p>
 """
     return f"""<title>Run boundaries in concatenated recordings</title>
 <meta name="claude:viewport-fit-sides" content="cover">
