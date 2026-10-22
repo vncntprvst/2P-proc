@@ -1,9 +1,14 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.11.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.12.0 -f Dockerfile context --no-cache
 
 # Version history:
+# v0.12.0: optimouse 0.1.8 (pinned). ROI z-correction of concatenated runs uses per-run ΔF/F
+#          baselines (frames per run from stim_sequence.json; option roi_correction.per_run);
+#          Suite2p-style z-position fixed for C-order memmaps; registration CLI loads without
+#          CaImAn (CNMF footprints from results_caiman.mat). ROICaT registration runs in the
+#          wanglabneuro/2p_registration image (containers/registration).
 # v0.11.0: optimouse 0.1.6 (pinned). Vectorised F_anat non-rigid by default (same output, saves
 #          patch_depth_profiles.npz; fixes out-of-memory on long recordings), soft/auto depth modes
 #          and F_anat smoothing option (default off) in pipeline.roi_zcorr, ROI z-correction on CNMF

@@ -17,7 +17,7 @@ RUN uv pip install --system --no-cache --index-url https://download.pytorch.org/
         torch==2.14.1 torchvision==0.29.1
 
 # optimouse (pinned: bump together with the image tag in build_docker_singularity.sh) and ROICaT
-RUN uv pip install --system --no-cache optimouse==0.1.7 "roicat[all]==1.7.12"
+RUN uv pip install --system --no-cache optimouse==0.1.8 "roicat[all]==1.7.12"
 
 ENV MPLBACKEND=Agg \
     LANG=C.UTF-8 \

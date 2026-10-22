@@ -3,10 +3,11 @@
 # and copy it to the cluster image folder (SSH_TRANSFER_NODE / HPCC_IMAGE_REPO in .env, as for 2p_proc).
 
 # Version history:
+# v0.1.1: optimouse 0.1.8.
 # v0.1.0: optimouse 0.1.7 + ROICaT 1.7.12 (CPU torch 2.14.1), Python 3.11.
 
 IMAGE=wanglabneuro/2p_registration
-TAG=0.1.0
+TAG=0.1.1
 
 docker build -t $IMAGE:latest -t $IMAGE:$TAG -f Dockerfile . || exit 1
 docker push --all-tags $IMAGE
