@@ -20,5 +20,5 @@ IMAGE=${IMAGE_REPO:-$HOME/singularity_images}/2p_proc_latest.sif
 MMAP=$(ls "$EXPORT"/*/*.mmap | head -1)
 echo "export $EXPORT; movie $MMAP; z-stack $ZSTACK; image $IMAGE; code $REPO"
 module load apptainer/1.4.2 2>/dev/null || true
-apptainer exec --cleanenv -B /orcd,/home "$IMAGE" bash -c \
+apptainer run --cleanenv -B /orcd,/home "$IMAGE" bash -c \
     "cd $REPO && MPLBACKEND=Agg python validation/zpos_suite2p.py $MMAP $ZSTACK $EXPORT/zpos_suite2p"
