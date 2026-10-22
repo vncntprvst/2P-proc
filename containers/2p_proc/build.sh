@@ -1,9 +1,15 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.10.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.11.0 -f Dockerfile context --no-cache
 
 # Version history:
+# v0.11.0: optimouse 0.1.6 (pinned). Vectorised F_anat non-rigid by default (same output, saves
+#          patch_depth_profiles.npz; fixes out-of-memory on long recordings), soft/auto depth modes
+#          and F_anat smoothing option (default off) in pipeline.roi_zcorr, ROI z-correction on CNMF
+#          outputs (pixel order fix), CNMF export fix for p=0, stim_sequence.json written at
+#          concatenation, cross-session registration (pipeline.register_sessions; the caiman method
+#          runs in this image, roicat/track2p need their own environments).
 # v0.10.0: Adding Suite2P ops overrides.
 # v0.9.0: Initial container using optimouse package.
 

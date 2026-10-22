@@ -11,8 +11,8 @@ RUN mkdir -p /code && \
 COPY . /code/
 WORKDIR /code
 
-# Install optimouse package from PyPI
-RUN uv pip install optimouse
+# Install optimouse package from PyPI (pinned: bump together with the image tag in build.sh)
+RUN uv pip install optimouse==0.1.6
 
 # Install additional requirements
 RUN uv pip install -r requirements.txt && \
