@@ -1,0 +1,86 @@
+{
+    "subject": {
+        "name": "C57_O1M2"
+    },
+    "imaging": {
+        "date": "10192023",
+        "experiment_type": "16x_zoom1_765px",
+        "run": [
+            "run3",
+            "run4",
+            "run5"
+        ],
+        "objective": 16,
+        "numerical_zoom": 1,
+        "wavelength": 930,
+        "power": 379,
+        "depth": 150.0,
+        "fr": 20,
+        "Npixel_x": 765,
+        "Npixel_y": 765,
+        "microns_per_pixel": 1.46498255826191
+    },
+    "paths": {
+        "concatenation_groups": [
+            1,
+            1,
+            1
+        ],
+        "data_paths": [
+            "/orcd/scratch/bcs/002/Vincent/2P_data/C57_O1M2/10192023/TSeries-10192023-1326-003",
+            "/orcd/scratch/bcs/002/Vincent/2P_data/C57_O1M2/10192023/TSeries-10192023-1326-004",
+            "/orcd/scratch/bcs/002/Vincent/2P_data/C57_O1M2/10192023/TSeries-10192023-1326-005"
+        ],
+        "export_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Analysis_2P/boundary/C57_O1M2/10192023/run3run4run5"
+        ],
+        "zstack_paths": [
+            "/orcd/scratch/bcs/002/Vincent/2P_data/C57_O1M2/10192023/ZSeries-10192023-1326-001"
+        ]
+    },
+    "params_mcorr": {
+        "method": "caiman",
+        "main": {
+            "strides": [
+                36,
+                36
+            ],
+            "overlaps": [
+                24,
+                24
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_mcorr_movie": "tiff",
+        "z_motion_correction": {
+            "zstack_shift": {
+                "Ch": 2,
+                "alpha": 21,
+                "beta": 11,
+                "step": 1,
+                "Nz": 41
+            },
+            "non_rigid": true
+        }
+    },
+    "params_extraction": {
+        "method": "suite2p",
+        "main": {
+            "decay_time": 0.3
+        }
+    },
+    "params_extra": {
+        "cleanup": false
+    },
+    "logging": {
+        "log_path": "/orcd/scratch/bcs/002/Vincent/Analysis_2P/boundary/C57_O1M2",
+        "log_level": "INFO"
+    }
+}

@@ -1,0 +1,83 @@
+{
+    "subject": {
+        "name": "Scnn1aAi14_D1M2"
+    },
+    "imaging": {
+        "date": "08212026",
+        "experiment_type": "16x_zoom1_765px",
+        "run": [
+            "run1",
+            "run2"
+        ],
+        "objective": 16,
+        "numerical_zoom": 1,
+        "wavelength": 930,
+        "power": 481,
+        "depth": 160.0,
+        "fr": 20,
+        "Npixel_x": 765,
+        "Npixel_y": 765,
+        "microns_per_pixel": 1.46498255826191
+    },
+    "paths": {
+        "concatenation_groups": [
+            1,
+            1
+        ],
+        "data_paths": [
+            "/orcd/scratch/bcs/002/Vincent/2P_data/Scnn1aAi14_D1M2/08212026/TSeries-08212026-1401-001",
+            "/orcd/scratch/bcs/002/Vincent/2P_data/Scnn1aAi14_D1M2/08212026/TSeries-08212026-1401-002"
+        ],
+        "export_paths": [
+            "/orcd/scratch/bcs/002/Vincent/Analysis_2P/boundary/Scnn1aAi14_D1M2/08212026/run1run2"
+        ],
+        "zstack_paths": [
+            "/orcd/scratch/bcs/002/Vincent/2P_data/Scnn1aAi14_D1M2/08212026/ZSeries-08212026-1401-001"
+        ]
+    },
+    "params_mcorr": {
+        "method": "caiman",
+        "main": {
+            "strides": [
+                36,
+                36
+            ],
+            "overlaps": [
+                24,
+                24
+            ],
+            "max_shifts": [
+                12,
+                12
+            ],
+            "max_deviation_rigid": 6,
+            "border_nan": "copy",
+            "pw_rigid": true,
+            "gSig_filt": null
+        },
+        "save_mcorr_movie": "tiff",
+        "z_motion_correction": {
+            "zstack_shift": {
+                "Ch": 2,
+                "alpha": 21,
+                "beta": 11,
+                "step": 1,
+                "Nz": 41
+            },
+            "non_rigid": true
+        }
+    },
+    "params_extraction": {
+        "method": "suite2p",
+        "main": {
+            "decay_time": 0.3
+        }
+    },
+    "params_extra": {
+        "cleanup": false
+    },
+    "logging": {
+        "log_path": "/orcd/scratch/bcs/002/Vincent/Analysis_2P/boundary/Scnn1aAi14_D1M2",
+        "log_level": "INFO"
+    }
+}
