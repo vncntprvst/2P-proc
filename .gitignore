@@ -12,6 +12,7 @@ pipeline/configs/*
 # Scripts
 scripts/*
 !scripts/2P_proc_template.sh
+!scripts/register_sessions.sh
 !scripts/cluster_processing_template.sh
 !scripts/template.env
 !scripts/submit_pipeline.sh
