@@ -86,6 +86,12 @@ opt-in (off by default). Validated:
 | synthetic r (4 seeds) | 0.920 | 0.935 | 0.973 |
 | real mcorr'd: ≥2-plane jumps | 290 | **44** | slams to plane 40 |
 
+**Correction (2026-10-22):** the "slams to plane 40" failure came from our port, not from phase correlation:
+`compute_zcorrel_suite2p` (and the `phasecorr` path) passed the whole movie to joblib workers, which read wrong
+pixels from C-order memmaps. Fixed (one contiguous frame per task). On five concatenated real recordings the
+Suite2p-style estimate then tracks the Pearson one, with no failure at run boundaries; with soft depth the two
+give the same ROI correction. See `validation/report/boundary/boundary_report.html`.
+
 **Recommendation:** keep Pearson (now the default) with temporal smoothing — same drift as
 legacy, 6.6× fewer spurious jumps. Do **not** adopt phasecorr/edge-crop for production
 despite their synthetic accuracy; revisit phasecorr only for raw/lightly-registered data.
