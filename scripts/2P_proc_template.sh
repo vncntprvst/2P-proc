@@ -178,6 +178,19 @@ else
     fi
 fi
 
+# ~/.cache can be a link to another file system (e.g. scratch, to stay under the home inode
+# limit). Containers mount $HOME but not the link target, so packages that write a cache
+# (pynwb, imported by CaImAn) fail. Mount the target in every container call.
+CACHE_TARGET=$(readlink -f "${XDG_CACHE_HOME:-$HOME/.cache}" 2>/dev/null)
+if [ -n "$CACHE_TARGET" ] && [ -d "$CACHE_TARGET" ] && [[ "$CACHE_TARGET" != "$HOME"/* ]]; then
+    echo "Mounting cache directory $CACHE_TARGET in containers"
+    if command -v apptainer >/dev/null 2>&1; then
+        export APPTAINER_BIND="${APPTAINER_BIND:+$APPTAINER_BIND,}$CACHE_TARGET"
+    else
+        export SINGULARITY_BIND="${SINGULARITY_BIND:+$SINGULARITY_BIND,}$CACHE_TARGET"
+    fi
+fi
+
 # Set global variables
 CONFIG_FILE=$1
 echo "Config file provided: $CONFIG_FILE"
