@@ -28,6 +28,7 @@ fi
 #       suite2p        Use Suite2P for motion correction and extraction
 #       aind           Use aind-ophys-extraction after motion correction
 #   --mcorr-movie     Specify the path to the motion corrected movie file, if not the export directory.
+#   --keep-s2p-data-bin    Keep Suite2p temporary data.bin files after extraction.
 
 # The script will read the configuration file specified in CONFIG_FILE.
 # The following options can be set there:
@@ -57,6 +58,7 @@ fi
 
 # Initialize pipeline success flag
 PIPELINE_SUCCESS=1
+CLEANUP_S2P_DATABIN=${CLEANUP_S2P_DATABIN:-true}
 
 # Parse optional arguments after the path file
 POSITIONAL=()
@@ -73,6 +75,10 @@ while [[ $# -gt 0 ]]; do
         --mcorr-movie)
             MCORR_OUTPUT="$2"
             shift 2
+            ;;
+        --keep-s2p-data-bin)
+            CLEANUP_S2P_DATABIN=false
+            shift
             ;;
         --*)
             echo "Unknown option $1"; exit 1;;
@@ -844,7 +850,9 @@ if [ "$EXTRACTOR_METHOD" = "aind" ]; then
 fi
 
 #### ROI Z-MOTION CORRECTION STEP
-if [ "$EXTRACTOR_METHOD" = "suite2p" ] && is_roi_zcorr_requested; then
+# Per-ROI z-correction (pipeline.roi_zcorr) on Suite2p or CNMF outputs. Options in the config:
+# params_mcorr.z_motion_correction.roi_correction (f_anat_smoothing, depth_mode argmax|soft|auto).
+if { [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "cnmf" ]; } && is_roi_zcorr_requested; then
     echo ""
     echo "================================"
     echo "Running ROI z-motion correction."
@@ -878,7 +886,7 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] && is_roi_zcorr_requested; then
         PIPELINE_SUCCESS=0
         echo "ROI z-motion correction failed with exit status $ROI_Z_EXIT_STATUS"
     fi
-elif [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
+elif [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "cnmf" ]; then
     echo "Skipping ROI z-motion correction (not requested in config: requires params_mcorr.z_motion_correction and non-empty paths.zstack_paths)."
 fi
 
@@ -943,11 +951,15 @@ if [ "${PIPELINE_SUCCESS:-0}" -eq 1 ]; then
 
             # Cleanup Suite2p temporary binary generated from TIFF/H5 input.
             # Keep outputs (F.npy/stat.npy/iscell.npy/spks.npy), remove only data.bin.
-            while IFS= read -r s2p_bin; do
-                [ -z "$s2p_bin" ] && continue
-                echo "Cleaning up Suite2p temporary binary: $s2p_bin"
-                rm -f "$s2p_bin"
-            done < <(find "$EXPORT_PATH" -type f -path "*/suite2p/plane*/data.bin" 2>/dev/null)
+            if [ "$CLEANUP_S2P_DATABIN" = true ]; then
+                while IFS= read -r s2p_bin; do
+                    [ -z "$s2p_bin" ] && continue
+                    echo "Cleaning up Suite2p temporary binary: $s2p_bin"
+                    rm -f "$s2p_bin"
+                done < <(find "$EXPORT_PATH" -type f -path "*/suite2p/plane*/data.bin" 2>/dev/null)
+            else
+                echo "Keeping Suite2p temporary data.bin files."
+            fi
         done
     fi
     exit 0
