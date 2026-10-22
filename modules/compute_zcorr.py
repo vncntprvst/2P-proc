@@ -488,8 +488,12 @@ def compute_zcorrel(
             refAndMasks.append((maskMul, maskOffset, cfRef))
         yshift = np.zeros((n_z, nFrames), np.float32)
         xshift = np.zeros((n_z, nFrames), np.float32)
+        # One contiguous frame per task: joblib hands strided memmap views (C-order caiman
+        # memmaps) to workers with the wrong pixels
         results = Parallel(n_jobs=-1)(
-            delayed(compute_zcorr_for_frame)(nfr, T_series, refAndMasks, ops)
+            delayed(compute_zcorr_for_frame)(
+                0, np.ascontiguousarray(T_series[nfr : nfr + 1]), refAndMasks, ops
+            )
             for nfr in tqdm(range(nFrames), desc="z-correlations (phasecorr)")
         )
         for i, (ys, xs, zc) in enumerate(results):
@@ -831,9 +835,12 @@ def compute_zcorrel_suite2p(
     #         )
     # print (f"{nFrames} frames processed in {time.time() - t0:.2f} sec.")
 
-    # Use joblib.Parallel
+    # Use joblib.Parallel, one contiguous frame per task: joblib hands strided memmap views
+    # (C-order caiman memmaps) to workers with the wrong pixels
     results = Parallel(n_jobs=-1)(
-        delayed(compute_zcorr_for_frame)(nfr, T_series, refAndMasks, ops)
+        delayed(compute_zcorr_for_frame)(
+            0, np.ascontiguousarray(T_series[nfr : nfr + 1]), refAndMasks, ops
+        )
         for nfr in tqdm(range(nFrames), desc="Processing frames")
     )
 
