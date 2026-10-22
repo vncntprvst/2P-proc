@@ -1497,13 +1497,16 @@ def roi_f_anat_traces(r, zpos, weights, n_roi, depth_mode="argmax", beta=200.0, 
     return out
 
 
-def zevent_heldout_score(F, F_anat, zpos, block=400, w=2):
+def zevent_heldout_score(F, F_anat, zpos, block=400, w=2, boundaries=()):
     """
     Per-ROI held-out R^2 of fluorescence steps at z-events (frames where zpos changes)
     predicted by the steps of F_anat (slope through 0, fitted on alternate time blocks).
+    Events whose window spans a run boundary (first frame of a concatenated run) are skipped.
     """
     ev = np.flatnonzero(np.abs(np.diff(zpos)) >= 1) + 1
     ev = ev[(ev >= w) & (ev + w <= len(zpos))]
+    for b in boundaries:
+        ev = ev[(ev + w <= b) | (ev - w >= b)]
 
     def steps(x):
         x = x / x.mean(1, keepdims=True)
@@ -1521,7 +1524,7 @@ def zevent_heldout_score(F, F_anat, zpos, block=400, w=2):
     return 1 - sse / np.maximum(sst, 1e-12), len(ev)
 
 
-def choose_depth_mode_auto(F, candidates, zpos, alpha=0.01):
+def choose_depth_mode_auto(F, candidates, zpos, alpha=0.01, boundaries=()):
     """
     Pick the F_anat depth rule that best predicts held-out z-event steps of the ROI traces.
 
@@ -1536,7 +1539,7 @@ def choose_depth_mode_auto(F, candidates, zpos, alpha=0.01):
         ok &= np.isfinite(v).all(1) & (v.mean(1) > 0)
     scores, n_events = {}, 0
     for name, Fz in candidates.items():
-        scores[name], n_events = zevent_heldout_score(F[ok], Fz[ok], zpos)
+        scores[name], n_events = zevent_heldout_score(F[ok], Fz[ok], zpos, boundaries=boundaries)
     top = scores["argmax"] >= np.quantile(scores["argmax"], 0.75)
     report = {"n_events": int(n_events), "n_rois_scored": int(top.sum()),
               "median_heldout_r2": {k: float(np.median(v[top])) for k, v in scores.items()}}

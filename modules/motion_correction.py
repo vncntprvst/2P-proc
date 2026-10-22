@@ -256,8 +256,13 @@ def run_roi_zcorr(export_path, parameters):
     # - depth_mode: "argmax" (the F_anat movie), "soft" (soft depth weights) or "auto"
     #   (held-out z-event model selection between argmax and soft). soft/auto need
     #   patch_depth_profiles.npz, written by the default F_anat path.
+    # - per_run: for concatenated runs (frames per run from stim_sequence.json), ΔF/F
+    #   baselines are computed per run, so fluorescence steps between runs that depth does
+    #   not explain do not bias the (shared) z slope.
+    # - boundary_exclude_frames: frames after each run start left out of the slope fit.
     roi_params = {"f_anat_smoothing": 1, "depth_mode": "argmax", "beta": 200.0,
-                  "half_window": 8, "z_sigma": 1.0, "auto_betas": [400, 200, 100]}
+                  "half_window": 8, "z_sigma": 1.0, "auto_betas": [400, 200, 100],
+                  "per_run": True, "boundary_exclude_frames": 0}
     roi_params.update(
         (parameters or {}).get("params_mcorr", {}).get("z_motion_correction", {})
         .get("roi_correction", {})
@@ -317,6 +322,20 @@ def run_roi_zcorr(export_path, parameters):
         F = np.asarray(F, dtype=np.float32)
         n_neuron, n_frame = F.shape
 
+        # Run boundaries of concatenated recordings (one segment otherwise)
+        counts = ct.run_frame_counts(export_path) if roi_params["per_run"] else None
+        if counts is not None and sum(counts) != n_frame:
+            log_and_print(
+                f"stim_sequence.json frames {counts} do not add up to {n_frame}; "
+                "fitting as one run.",
+                level="warning",
+            )
+            counts = None
+        starts = np.cumsum([0] + (counts or [n_frame]))
+        segments = list(zip(starts[:-1], starts[1:]))
+        if len(segments) > 1:
+            log_and_print(f"ROI z-correction per run: {len(segments)} runs of {counts} frames.")
+
         # F_cell_anat: uniform mean over each ROI's pixels of F_anat (unsmoothed)
         selection = {"selected": "argmax"}
         if depth_mode == "argmax" and f_anat_files:
@@ -344,7 +363,8 @@ def run_roi_zcorr(export_path, parameters):
                 if depth_mode == "auto":
                     for beta in roi_params["auto_betas"]:
                         cands[f"soft{beta:g}"] = traces("soft", beta)
-                    best, selection = cz.choose_depth_mode_auto(F, cands, zpos)
+                    best, selection = cz.choose_depth_mode_auto(F, cands, zpos,
+                                                                boundaries=starts[1:-1])
                     log_and_print(f"depth_mode=auto selected {best}: {selection}")
                 else:
                     best = "argmax"
@@ -357,30 +377,40 @@ def run_roi_zcorr(export_path, parameters):
              "depth_mode": selection["selected"], "extractor": extractor},
         )
         with open(export_path / "roi_zcorr_selection.json", "w") as fh:
-            json.dump({**roi_params, **selection}, fh, indent=2)
+            json.dump({**roi_params, **selection, "run_frames": counts or [n_frame]}, fh, indent=2)
 
         if roi_params["f_anat_smoothing"] > 1:
-            F_cell_anat = uniform_filter1d(
-                F_cell_anat, size=int(roi_params["f_anat_smoothing"]), axis=1, mode="nearest"
-            )
+            for s, e in segments:
+                F_cell_anat[:, s:e] = uniform_filter1d(
+                    F_cell_anat[:, s:e], size=int(roi_params["f_anat_smoothing"]), axis=1,
+                    mode="nearest",
+                )
         F_cell_anat = F_cell_anat.astype(np.float32)
 
         # Work in ΔF/F (dff = F/F0 - 1). No trial baseline here, so F0 is the
-        # per-ROI mean (for trial-structured data, use the trial baseline).
+        # per-ROI mean of each run (for trial-structured data, use the trial baseline).
         def _dff(x):
-            x0 = x.mean(axis=1, keepdims=True)
-            x0[x0 == 0] = 1.0
-            return x / x0 - 1.0
+            out = np.empty(x.shape, np.float32)
+            for s, e in segments:
+                x0 = x[:, s:e].mean(axis=1, keepdims=True)
+                x0[x0 == 0] = 1.0
+                out[:, s:e] = x[:, s:e] / x0 - 1.0
+            return out
 
         dff = _dff(F)
         dffz = _dff(F_cell_anat)
 
-        # Regress dff on dffz (per-ROI OLS slope) and rescale (MATLAB lines 362-366).
-        mean_dff = dff.mean(axis=1, keepdims=True)
-        mean_dffz = dffz.mean(axis=1, keepdims=True)
-        num = np.sum((dff - mean_dff) * (dffz - mean_dffz), axis=1)
-        den = np.sum((dffz - mean_dffz) ** 2, axis=1)
+        # Regress dff on dffz (per-ROI OLS slope, shared by all runs) and rescale
+        # (MATLAB lines 362-366). Each run's ΔF/F has zero mean, so no per-run intercept.
+        fit = np.ones(n_frame, bool)
+        for s, _ in segments[1:]:
+            fit[s : s + int(roi_params["boundary_exclude_frames"])] = False
+        y = dff[:, fit] - dff[:, fit].mean(axis=1, keepdims=True)
+        x = dffz[:, fit] - dffz[:, fit].mean(axis=1, keepdims=True)
+        num = np.sum(y * x, axis=1)
+        den = np.sum(x**2, axis=1)
         slope = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
+        del y, x
         dffz_scaled = dffz * slope[:, None]
 
         # R^2 of the z-model and the corrected trace (no NaN interpolation).

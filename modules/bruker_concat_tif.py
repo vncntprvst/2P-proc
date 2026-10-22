@@ -135,8 +135,9 @@ def read_stim_sequence(tseries_dir):
     Per-cycle stimulus waveforms actually output by PrairieView, from the
     *_CycleNNNNN_VoltageOutput_001.xml files, plus the number of frames of each cycle.
 
-    Returns a dict with 'data_path' and 'cycles' (list of {cycle, protocol, n_frames, outputs}),
-    where outputs lists the enabled pulse-train waveforms (times in ms, potentials in V).
+    Returns a dict with 'data_path', 'n_frames' (all cycles) and 'cycles' (list of
+    {cycle, protocol, n_frames, outputs}), where outputs lists the enabled pulse-train
+    waveforms (times in ms, potentials in V).
     """
     tseries_dir = Path(tseries_dir)
     frames_per_cycle = {}
@@ -164,7 +165,8 @@ def read_stim_sequence(tseries_dir):
                 })
         cycles.append({"cycle": cycle, "protocol": root.findtext("Name"),
                        "n_frames": frames_per_cycle.get(cycle), "outputs": outputs})
-    return {"data_path": str(tseries_dir), "cycles": cycles}
+    return {"data_path": str(tseries_dir), "n_frames": sum(frames_per_cycle.values()) or None,
+            "cycles": cycles}
 
 
 def write_stim_sequence(data_paths, export_path):
@@ -177,6 +179,25 @@ def write_stim_sequence(data_paths, export_path):
         json.dump({"runs": runs}, f, indent=1)
     print(f"Wrote {out} ({sum(len(r['cycles']) for r in runs)} cycles)")
     return out
+
+
+def run_frame_counts(export_path):
+    """Frames per concatenated run from stim_sequence.json, or None if unavailable."""
+    f = Path(export_path) / "stim_sequence.json"
+    if not f.exists():
+        return None
+    with open(f) as fh:
+        runs = json.load(fh)["runs"]
+    counts = []
+    for r in runs:
+        n = r.get("n_frames")
+        if n is None:
+            cyc = [c.get("n_frames") for c in r["cycles"]]
+            n = sum(cyc) if cyc and None not in cyc else None
+        if not n:
+            return None
+        counts.append(int(n))
+    return counts
 
 
 def update_sidecar_with_xml_metadata(xml_file_path, sidecar_path, append_to_runs=False):
