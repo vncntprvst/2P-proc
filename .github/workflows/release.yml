@@ -1,0 +1,50 @@
+# Publish optimouse to PyPI when a version tag is pushed:
+#
+#   git tag v0.1.6 && git push origin v0.1.6
+#
+# Uses PyPI trusted publishing (configured on pypi.org for this repository and this
+# file name), so no token is stored. The build runs from the tagged commit, and is
+# refused if the tag does not match the version in pyproject.toml.
+# The 2p_proc container installs the pinned PyPI version (containers/2p_proc/Dockerfile):
+# bump that pin and the image tag after a release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0  # this action publishes full versions only, no v10 tag
+
+      - name: Check the tag matches the package version
+        run: |
+          version=$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # lets PyPI confirm the upload comes from this repository
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

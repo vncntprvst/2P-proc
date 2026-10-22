@@ -289,13 +289,26 @@ Docker/Singularity containers are available for cluster computing:
 Build and use containers:
 ```bash
 # Build container
-cd containers/2P_proc
+cd containers/2p_proc
 ./build.sh # For Docker only
 ./build_docker_singularity.sh # For Singularity too
 
 # Run with Singularity
 singularity exec containers/2p_proc_latest.sif python -m pipeline.pipeline_mcorr configs/my_config.json
 ```
+
+### Releasing
+
+Pushing a version tag publishes optimouse to PyPI (`.github/workflows/release.yml`, PyPI trusted publishing):
+
+```bash
+# after bumping version in pyproject.toml and committing
+git tag v0.1.6 && git push origin v0.1.6
+```
+
+The tag must match the version in `pyproject.toml`. The `2p_proc` container installs the version pinned in
+`containers/2p_proc/Dockerfile`; bump that pin and the image tag in `build.sh` / `build_docker_singularity.sh`,
+then rebuild.
 
 ## Documentation
 
