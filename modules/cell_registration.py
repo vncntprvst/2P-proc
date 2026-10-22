@@ -54,24 +54,30 @@ def load_session(export_dir, iscell_file="iscell.npy"):
         return {"masks": masks, "dims": (int(ops["Ly"]), int(ops["Lx"])),
                 "image": ops["meanImg"].astype(np.float32), "roi_index": np.flatnonzero(keep),
                 "source": str(plane), "extractor": "suite2p"}
-    if cnmf.exists():
-        from caiman.source_extraction.cnmf.cnmf import load_CNMF
+    mat = export_dir / "results_caiman.mat"
+    if cnmf.exists() or mat.exists():
+        try:
+            from caiman.source_extraction.cnmf.cnmf import load_CNMF
 
-        est = load_CNMF(str(cnmf), n_processes=1).estimates
-        A = est.A.tocsc()
-        d1, d2 = est.dims
+            est = load_CNMF(str(cnmf), n_processes=1).estimates
+            A = est.A.tocsc()
+            d1, d2 = est.dims
+        except (ImportError, OSError):
+            # without CaImAn (e.g. the registration image): footprints from the MATLAB export
+            m = loadmat(str(mat), variable_names=["spatial_components", "mean_map_motion_corrected"])
+            A = sparse.csc_matrix(m["spatial_components"])
+            d1, d2 = np.asarray(m["mean_map_motion_corrected"]).shape
         masks = []
         for i in range(A.shape[1]):
             idx = A[:, i].nonzero()[0]
             yy, xx = np.unravel_index(idx, (d1, d2), order="F")  # CaImAn footprints are F-ordered
             masks.append((yy, xx, A[idx, i].toarray().ravel().astype(np.float32)))
-        mat = export_dir / "results_caiman.mat"
         if mat.exists():
             image = loadmat(str(mat), variable_names=["mean_map_motion_corrected"])["mean_map_motion_corrected"]
         else:
             image = np.load(export_dir / "mean_intensity_template.npy")
         return {"masks": masks, "dims": (int(d1), int(d2)), "image": np.asarray(image, np.float32),
-                "roi_index": np.arange(len(masks)), "source": str(cnmf), "extractor": "cnmf"}
+                "roi_index": np.arange(len(masks)), "source": str(export_dir), "extractor": "cnmf"}
     raise FileNotFoundError(f"No Suite2p or CNMF outputs in {export_dir}")
 
 

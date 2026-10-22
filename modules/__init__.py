@@ -14,8 +14,15 @@ from __future__ import annotations
 __version__ = "1.1.0"
 __author__ = "Manuel Levy, Vincent Prevosto"
 
-# Import core modules
-from . import bruker_concat_tif
-from . import compute_zcorr
-from . import motion_correction
-from . import extraction  
+# Core modules are imported on first use (``modules.compute_zcorr`` or
+# ``from modules import compute_zcorr``), so lightweight modules such as
+# cell_registration can be used without the CaImAn / Mesmerize stack.
+_LAZY = ("bruker_concat_tif", "compute_zcorr", "motion_correction", "extraction")
+
+
+def __getattr__(name):
+    if name in _LAZY:
+        import importlib
+
+        return importlib.import_module(f".{name}", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

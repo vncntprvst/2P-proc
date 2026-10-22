@@ -9,7 +9,7 @@ Usage
                                                                 # params_registration
 
 params_registration (config): {"method": "roicat", "out_dir": "...", "python": null,
-"iscell_file": "iscell.npy"}. um_per_pixel defaults to imaging.microns_per_pixel. The roicat
+"iscell_file": "iscell.npy", "cpu": false}. um_per_pixel defaults to imaging.microns_per_pixel. The roicat
 and track2p methods run in an interpreter that has the package: --python, $ROICAT_PYTHON /
 $TRACK2P_PYTHON, or the current one.
 """
@@ -37,6 +37,7 @@ def main(argv=None):
     ap.add_argument("--um-per-pixel", type=float, default=None)
     ap.add_argument("--python", default=None)
     ap.add_argument("--iscell-file", default=None)
+    ap.add_argument("--cpu", action="store_true", help="roicat: run on CPU even if a GPU is visible")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config) if args.config else {}
@@ -49,7 +50,7 @@ def main(argv=None):
     out = args.out or reg.get("out_dir") or os.path.join(os.path.commonpath(exports), f"cell_registration_{method}")
     assignments, qc = run_registration(
         exports, out, method=method, um_per_pixel=float(um), python=args.python or reg.get("python"),
-        iscell_file=args.iscell_file or reg.get("iscell_file", "iscell.npy"))
+        iscell_file=args.iscell_file or reg.get("iscell_file", "iscell.npy"), cpu=args.cpu or reg.get("cpu", False))
     print(json.dumps({k: qc[k] for k in ("n_rois", "n_cells_tracked_in_k_sessions", "pairs")}, indent=2))
     print(f"Saved {len(assignments)} tracked cells to {out}")
 
