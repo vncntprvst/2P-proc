@@ -50,7 +50,7 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
 fi
 IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
 REG_VERSION=${REG_VERSION:-0.1.1}
-P2P_VERSION=${P2P_VERSION:-0.12.0}
+P2P_VERSION=${P2P_VERSION:-0.13.0}
 
 # Run archive: when LAB_SPACE is set (in .env), a copy of the log (and config) goes to
 # $LAB_SPACE/A2P/runs/$USER, as for 2P_proc.sh

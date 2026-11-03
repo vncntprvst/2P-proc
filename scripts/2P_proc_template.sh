@@ -146,7 +146,7 @@ IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
 
 # Image versions. Each version has its own image file in IMAGE_REPO (older versions are kept),
 # e.g. 2p_proc_0.12.0.sif. Set P2P_VERSION / S2P_VERSION in .env to run with another version.
-P2P_VERSION=${P2P_VERSION:-0.12.0}
+P2P_VERSION=${P2P_VERSION:-0.13.0}
 S2P_VERSION=${S2P_VERSION:-0.14.0}
 P2P_SIF="$IMAGE_REPO/2p_proc_${P2P_VERSION}.sif"
 S2P_SIF="$IMAGE_REPO/suite2p_${S2P_VERSION}.sif"

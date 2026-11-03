@@ -8,21 +8,21 @@ The data volumes must be mounted in the container.
 #### Example usage
 * With Docker:
 ```bash
-docker run --rm -d -v /data:/data wanglabneuro/2p_proc:0.12.0 conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
-docker run --rm -d -v /data:/data wanglabneuro/2p_proc:0.12.0 conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
+docker run --rm -d -v /data:/data wanglabneuro/2p_proc:0.13.0 conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
+docker run --rm -d -v /data:/data wanglabneuro/2p_proc:0.13.0 conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
 ```
 
 * With Singularity:
 ```bash
-singularity run --cleanenv -B /data:/data 2p_proc_0.12.0.sif conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
-singularity run --cleanenv -B /data:/data 2p_proc_0.12.0.sif conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
+singularity run --cleanenv -B /data:/data 2p_proc_0.13.0.sif conda run -n mescore python -u -m pipeline.pipeline_mcorr config.json
+singularity run --cleanenv -B /data:/data 2p_proc_0.13.0.sif conda run -n mescore python -u -m pipeline.pipeline_cnmf config.json
 ```
 
 Per-ROI z-motion correction and cross-session registration (CaImAn method; ROICaT/Track2p need
 their own Python >= 3.11 environment, see the main README):
 ```bash
-singularity run --cleanenv -B /data:/data 2p_proc_0.12.0.sif python -u -m pipeline.roi_zcorr config.json
-singularity run --cleanenv -B /data:/data 2p_proc_0.12.0.sif python -u -m pipeline.register_sessions \
+singularity run --cleanenv -B /data:/data 2p_proc_0.13.0.sif python -u -m pipeline.roi_zcorr config.json
+singularity run --cleanenv -B /data:/data 2p_proc_0.13.0.sif python -u -m pipeline.register_sessions \
     --exports <export1> <export2> --out <dir> --method caiman
 ```
 
