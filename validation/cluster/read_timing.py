@@ -35,6 +35,9 @@ start = args.skip
 for k in args.threads:
     batch = files[start : start + args.n]
     start += args.n
+    if not batch:
+        print(f"  {k:3d} threads: no files left")
+        continue
     t = time.time()
     with ThreadPoolExecutor(k) as pool:
         frames = list(pool.map(read, batch))
