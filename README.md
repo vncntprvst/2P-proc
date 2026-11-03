@@ -294,8 +294,13 @@ cd containers/2p_proc
 ./build_docker_singularity.sh # For Singularity too
 
 # Run with Singularity
-singularity exec containers/2p_proc_latest.sif python -m pipeline.pipeline_mcorr configs/my_config.json
+singularity exec 2p_proc_0.12.0.sif python -m pipeline.pipeline_mcorr configs/my_config.json
 ```
+
+Images are versioned: `2p_proc_<version>.sif`, `suite2p_<version>.sif` and `2p_registration_<version>.sif`.
+Older versions stay in the image folder, and `<name>_latest.sif` is a link to the newest one. The cluster
+scripts use the versions pinned in them (`P2P_VERSION`, `S2P_VERSION`, `REG_VERSION`); set these in
+`scripts/.env` to run an older version.
 
 ### Releasing
 
@@ -308,7 +313,10 @@ git tag v0.1.6 && git push origin v0.1.6
 
 The tag must match the version in `pyproject.toml`. The `2p_proc` container installs the version pinned in
 `containers/2p_proc/Dockerfile`; bump that pin and the image tag in `build.sh` / `build_docker_singularity.sh`,
-then rebuild.
+then rebuild. Then set the new image version as the default in `scripts/2P_proc_template.sh` and
+`scripts/register_sessions.sh` (`P2P_VERSION`, `REG_VERSION`). Before releasing, check that the outputs read by
+the Matlab analysis are unchanged (`validation/compat_check.py` on the same run processed with the previous and
+the new version).
 
 ## Documentation
 

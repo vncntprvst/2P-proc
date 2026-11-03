@@ -16,11 +16,12 @@ sbatch scripts/register_sessions.sh --exports <export_day1> <export_day2> ... --
 ```
 Directly:
 ```bash
-singularity run --cleanenv -B /orcd:/orcd 2p_registration_latest.sif python -m pipeline.register_sessions \
+singularity run --cleanenv -B /orcd:/orcd 2p_registration_0.1.1.sif python -m pipeline.register_sessions \
     --exports <export_day1> <export_day2> --out <dir> --cpu
 ```
 
 #### Building
 `./build_docker_singularity.sh` builds the image, pushes it to Docker Hub, builds the SIF and copies it to
 the cluster (`SSH_TRANSFER_NODE` and `HPCC_IMAGE_REPO` from a `.env` file, as for `2p_proc`).
-The image installs optimouse from PyPI at the pinned version: release it first.
+The image installs optimouse from PyPI at the pinned version: release it first. The SIF is named
+`2p_registration_<version>.sif`; older versions are kept and `2p_registration_latest.sif` links to the newest.

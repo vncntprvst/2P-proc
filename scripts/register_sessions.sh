@@ -24,8 +24,8 @@
 #   --um-per-pixel X     default: imaging.microns_per_pixel from the config, else 1.45
 #   --iscell-file F      Suite2p iscell file (default iscell.npy, e.g. a curated copy)
 #
-# Images (from IMAGE_REPO in .env next to this script): 2p_registration_latest.sif for roicat,
-# 2p_proc_latest.sif for caiman.
+# Images (from IMAGE_REPO in .env next to this script): 2p_registration_<REG_VERSION>.sif for roicat,
+# 2p_proc_<P2P_VERSION>.sif for caiman. Set REG_VERSION / P2P_VERSION in .env to use another version.
 # Outputs: cell_registration.npz / .mat (cells x sessions ROI indices, extraction order; 1-based
 # in the .mat, 0 = absent), cell_registration_qc.json (matches, affine residual and FOV
 # similarity per session pair) and cell_registration.png.
@@ -49,6 +49,8 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
     echo "Loaded environment from $SCRIPT_DIR/.env"
 fi
 IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
+REG_VERSION=${REG_VERSION:-0.1.1}
+P2P_VERSION=${P2P_VERSION:-0.12.0}
 
 # Parse arguments: keep them for the Python call, and collect paths to bind
 ARGS=("$@")
@@ -77,8 +79,8 @@ if [ ${#ARGS[@]} -eq 0 ]; then
 fi
 
 case "$METHOD" in
-    roicat) IMAGE="$IMAGE_REPO/2p_registration_latest.sif"; EXTRA=(--cpu) ;;
-    caiman) IMAGE="$IMAGE_REPO/2p_proc_latest.sif"; EXTRA=() ;;
+    roicat) IMAGE="$IMAGE_REPO/2p_registration_${REG_VERSION}.sif"; EXTRA=(--cpu) ;;
+    caiman) IMAGE="$IMAGE_REPO/2p_proc_${P2P_VERSION}.sif"; EXTRA=() ;;
     *) echo "Unsupported method in a container: $METHOD (use roicat or caiman)"; exit 1 ;;
 esac
 if [ ! -f "$IMAGE" ]; then

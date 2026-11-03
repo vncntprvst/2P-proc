@@ -143,6 +143,16 @@ echo "Detected OS: $OS_VERSION"
 
 # Set default values if not in .env
 IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
+
+# Image versions. Each version has its own image file in IMAGE_REPO (older versions are kept),
+# e.g. 2p_proc_0.12.0.sif. Set P2P_VERSION / S2P_VERSION in .env to run with another version.
+P2P_VERSION=${P2P_VERSION:-0.12.0}
+S2P_VERSION=${S2P_VERSION:-0.14.0}
+P2P_SIF="$IMAGE_REPO/2p_proc_${P2P_VERSION}.sif"
+S2P_SIF="$IMAGE_REPO/suite2p_${S2P_VERSION}.sif"
+P2P_DOCKER="wanglabneuro/2p_proc:${P2P_VERSION}"
+S2P_DOCKER="wanglabneuro/suite2p:v${S2P_VERSION}"
+echo "Images: 2p_proc $P2P_VERSION, suite2p $S2P_VERSION (in $IMAGE_REPO)"
 LAB_SPACE=${LAB_SPACE:-}
 USERNAME=${USER}
 
@@ -155,17 +165,21 @@ if [ "$OS_VERSION" = "rocky8" ]; then
         exit 1
     fi
     USE_SINGULARITY=1
+    if [ ! -f "$P2P_SIF" ]; then
+        echo "Image not found: $P2P_SIF. Available:"; ls "$IMAGE_REPO"/2p_proc_*.sif 2>/dev/null
+        exit 1
+    fi
 else
 
     # Prefer Singularity if available locally and images are present
     if command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1; then
         # Check if main processing image exists (suite2p image is optional)
-        if [ -f "$IMAGE_REPO/2p_proc_latest.sif" ]; then
+        if [ -f "$P2P_SIF" ]; then
             echo "Singularity/Apptainer detected and 2p_proc image found."
             USE_SINGULARITY=1
             # Warn if suite2p image is missing but don't fail
-            if [ ! -f "$IMAGE_REPO/suite2p_latest.sif" ]; then
-                echo "Warning: suite2p_latest.sif not found. Suite2P extraction will use Docker if needed."
+            if [ ! -f "$S2P_SIF" ]; then
+                echo "Warning: $S2P_SIF not found. Suite2P extraction will use Docker if needed."
             fi
         else
             echo "Singularity/Apptainer available but 2p_proc image not found in $IMAGE_REPO"
@@ -214,7 +228,7 @@ if [ $# -eq 1 ]; then
     # Update remote paths (if needed)
     if [ $USE_SINGULARITY -eq 1 ]; then
         CONFIG_FILE=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -227,7 +241,7 @@ print(update_remote_paths(path_file, old_paths, new_paths))
 "$OM_SCRATCH_TMP,$OM_USER_DIR_ALIAS,$OM2_SCRATCH_TMP,$OM2_USER_DIR_ALIAS")
     else
         CONFIG_FILE=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -243,7 +257,7 @@ print(update_remote_paths(path_file, old_paths, new_paths))
     # Read common roots
     if [ $USE_SINGULARITY -eq 1 ]; then
         COMMON_ROOT_DATA_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -251,7 +265,7 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "data_paths")
         COMMON_ROOT_EXPORT_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -259,7 +273,7 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "export_paths")
         COMMON_ROOT_ZSTACK_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -267,7 +281,7 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "zstack_paths")
         LOG_DIR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -275,10 +289,10 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "logging")
         EXTRACTOR=$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
         IFS=' ' read -ra SOURCE_DATA_PATHS <<< "$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -286,7 +300,7 @@ from paths_params_io import read_data_paths
 print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
 " "$CONFIG_FILE" "data_paths" "bash")"
         IFS=' ' read -ra EXPORT_DATA_PATHS <<< "$($CONTAINER_CMD run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -295,7 +309,7 @@ print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
 " "$CONFIG_FILE" "export_paths" "bash")"
     else
         COMMON_ROOT_DATA_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -303,7 +317,7 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "data_paths")
         COMMON_ROOT_EXPORT_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -311,7 +325,7 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "export_paths")
         COMMON_ROOT_ZSTACK_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -319,7 +333,7 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "zstack_paths")
         LOG_DIR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -327,10 +341,10 @@ from paths_params_io import get_common_dir
 print(get_common_dir(sys.argv[1], sys.argv[2]))
 " "$CONFIG_FILE" "logging")
         EXTRACTOR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
         IFS=' ' read -ra SOURCE_DATA_PATHS <<< "$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -338,7 +352,7 @@ from paths_params_io import read_data_paths
 print(read_data_paths(sys.argv[1], sys.argv[2], sys.argv[3]))
 " "$CONFIG_FILE" "data_paths" "bash")"
         IFS=' ' read -ra EXPORT_DATA_PATHS <<< "$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -c "
 import sys
 sys.path.append('/code')
@@ -379,11 +393,11 @@ fi
 # Get the motion correction and extraction methods from the configuration file
 echo "Retrieving motion correction and extraction methods from the configuration file..."
 if [ $USE_SINGULARITY -eq 1 ]; then
-    MCORR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR $IMAGE_REPO/2p_proc_latest.sif python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
-    EXTRACTOR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR $IMAGE_REPO/2p_proc_latest.sif python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
+    MCORR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR "$P2P_SIF" python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
+    EXTRACTOR_METHOD=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR "$P2P_SIF" python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
 else
-    MCORR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR wanglabneuro/2p_proc:latest python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
-    EXTRACTOR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR wanglabneuro/2p_proc:latest python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
+    MCORR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR "$P2P_DOCKER" python /code/paths_params_io.py "$CONFIG_FILE" --get-mcorr-method)
+    EXTRACTOR_METHOD=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR "$P2P_DOCKER" python /code/paths_params_io.py "$CONFIG_FILE" --get-extraction-method)
 fi
 echo "Motion correction method: $MCORR_METHOD"
 echo "Extraction method: $EXTRACTOR_METHOD"
@@ -427,10 +441,10 @@ cleanup_mpl_cache() {
 is_roi_zcorr_requested() {
     local requested
     if [ $USE_SINGULARITY -eq 1 ]; then
-        requested=$(singularity run -B "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" $IMAGE_REPO/2p_proc_latest.sif \
+        requested=$(singularity run -B "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" "$P2P_SIF" \
             python -c "from pipeline.utils.config_loader import load_config; c=load_config('$CONFIG_FILE'); z=c.get('params_mcorr',{}).get('z_motion_correction',None); zp=c.get('paths',{}).get('zstack_paths',[]); print('1' if (z is not None and isinstance(zp,list) and any(str(p).strip() for p in zp)) else '0')")
     else
-        requested=$(docker run --rm -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" wanglabneuro/2p_proc:latest \
+        requested=$(docker run --rm -v "$CONFIG_FILE_DIR:$CONFIG_FILE_DIR" "$P2P_DOCKER" \
             python -c "from pipeline.utils.config_loader import load_config; c=load_config('$CONFIG_FILE'); z=c.get('params_mcorr',{}).get('z_motion_correction',None); zp=c.get('paths',{}).get('zstack_paths',[]); print('1' if (z is not None and isinstance(zp,list) and any(str(p).strip() for p in zp)) else '0')")
     fi
     [ "$requested" = "1" ]
@@ -510,7 +524,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
             singularity run \
                 -B $MOUNT_POINTS \
                 --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                $IMAGE_REPO/2p_proc_latest.sif \
+                "$P2P_SIF" \
                 $PYTHON_MC_CMD
             SINGULARITY_EXIT_STATUS=$?
         else
@@ -521,7 +535,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
                 -B $MOUNT_POINTS \
                 -B $CODE_DIR:/code \
                 --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                $IMAGE_REPO/2p_proc_latest.sif \
+                "$P2P_SIF" \
                 $PYTHON_MC_CMD
             SINGULARITY_EXIT_STATUS=$?
         fi
@@ -554,7 +568,7 @@ if [ "$MCORR_METHOD" != "none" ]; then
             -v $CODE_DIR:/code \
             -e MPLBACKEND=Agg \
             -e MPLCONFIGDIR=$MPLCONFIGDIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             $PYTHON_MC_CMD
         
         # Capture the exit status of the docker command
@@ -596,11 +610,11 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         echo "Getting ops parameters from configuration file..."
         if [ $USE_SINGULARITY -eq 1 ]; then
             OPS=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -B $EXPORT_PATH:$EXPORT_PATH \
-                $IMAGE_REPO/2p_proc_latest.sif \
+                "$P2P_SIF" \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-suite2p-ops --export-path "$EXPORT_PATH")
         else
             OPS=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $EXPORT_PATH:$EXPORT_PATH \
-                wanglabneuro/2p_proc:latest \
+                "$P2P_DOCKER" \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-suite2p-ops --export-path "$EXPORT_PATH")
         fi
 
@@ -641,11 +655,11 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         # Create the ops dictionary
         if [ $USE_SINGULARITY -eq 1 ]; then
             output_format_STR=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                $IMAGE_REPO/2p_proc_latest.sif \
+                "$P2P_SIF" \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         else
             output_format_STR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                wanglabneuro/2p_proc:latest \
+                "$P2P_DOCKER" \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         fi
 
@@ -693,12 +707,12 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "aind" ]; then
         if [ $USE_SINGULARITY -eq 1 ]; then
             # Use "exec" (not "run") to preserve JSON quoting in --ops_overrides_json.
             singularity exec -B $EXPORT_PATH:$EXPORT_PATH \
-                $IMAGE_REPO/suite2p_latest.sif \
+                "$S2P_SIF" \
                 "${OPS_PYTHON_ARGS[@]}"
             OPS_EXIT_STATUS=$?
         else
             docker run --rm -v $EXPORT_PATH:$EXPORT_PATH \
-                $IMAGE_REPO/suite2p_latest.sif \
+                "$S2P_SIF" \
                 "${OPS_PYTHON_ARGS[@]}"
             OPS_EXIT_STATUS=$?
         fi
@@ -767,13 +781,13 @@ if [ "$EXTRACTOR_METHOD" = "cnmf" ]; then
         if [ $USE_STABLE -eq 1 ]; then
             singularity run -B $MOUNT_POINTS \
                             --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                            $IMAGE_REPO/2p_proc_latest.sif $CNMF_CMD
+                            "$P2P_SIF" $CNMF_CMD
         else
             echo "Using code directory: $PIPELINE_CODE_DIR for CNMF extraction."
             singularity run -B $MOUNT_POINTS \
                             -B $PIPELINE_CODE_DIR:/code \
                             --env CAIMAN_TEMP=$CAIMAN_TEMP,MPLBACKEND=$MPLBACKEND,MPLCONFIGDIR=$MPLCONFIGDIR \
-                            $IMAGE_REPO/2p_proc_latest.sif $CNMF_CMD
+                            "$P2P_SIF" $CNMF_CMD
         fi
         CNMF_EXIT_STATUS=$?
         rm -rf $CAIMAN_TEMP
@@ -782,7 +796,7 @@ if [ "$EXTRACTOR_METHOD" = "cnmf" ]; then
         if [ -n "$MCORR_OUTPUT" ]; then
             CNMF_CMD+=" --mcorr-movie $MCORR_OUTPUT"
         fi
-        docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID -v $COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR -v $COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $LOG_DIR:$LOG_DIR -v $CODE_DIR:/code -e MPLBACKEND=Agg -e MPLCONFIGDIR=$MPLCONFIGDIR wanglabneuro/2p_proc:latest $CNMF_CMD
+        docker run --rm --user $HOST_USER_ID:$HOST_GROUP_ID -v $COMMON_ROOT_DATA_DIR:$COMMON_ROOT_DATA_DIR -v $COMMON_ROOT_EXPORT_DIR:$COMMON_ROOT_EXPORT_DIR -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR -v $LOG_DIR:$LOG_DIR -v $CODE_DIR:/code -e MPLBACKEND=Agg -e MPLCONFIGDIR=$MPLCONFIGDIR "$P2P_DOCKER" $CNMF_CMD
         CNMF_EXIT_STATUS=$?
     fi
     cleanup_mpl_cache
@@ -802,14 +816,14 @@ if [ "$EXTRACTOR_METHOD" = "suite2p" ]; then
             singularity run -B $EXPORT_PATH:$EXPORT_PATH \
                 --env MPLCONFIGDIR=$MPLCONFIGDIR \
                 --env MPLBACKEND=$MPLBACKEND \
-                $IMAGE_REPO/suite2p_latest.sif \
+                "$S2P_SIF" \
                 python /app/scripts/run_suite2p_api.py --ops "$EXPORT_PATH/ops.npy"
             SUITE2P_EXIT_STATUS=$?
         else
             docker run --rm -v $EXPORT_PATH:$EXPORT_PATH \
                 -e MPLCONFIGDIR=$MPLCONFIGDIR \
                 -e MPLBACKEND=Agg \
-                wanglabneuro/suite2p:latest \
+                "$S2P_DOCKER" \
                 python /app/scripts/run_suite2p_api.py --ops "$EXPORT_PATH/ops.npy"
             SUITE2P_EXIT_STATUS=$?
         fi
@@ -877,7 +891,7 @@ if { [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "cnmf" ]; } 
             MOUNT_POINTS="$CONFIG_FILE_DIR,$COMMON_ROOT_DATA_DIR,$COMMON_ROOT_EXPORT_DIR,$LOG_DIR,$CODE_DIR"
         fi
         singularity run -B "$MOUNT_POINTS" \
-            $IMAGE_REPO/2p_proc_latest.sif \
+            "$P2P_SIF" \
             python -u -m pipeline.roi_zcorr $CONFIG_FILE
         ROI_Z_EXIT_STATUS=$?
     else
@@ -889,7 +903,7 @@ if { [ "$EXTRACTOR_METHOD" = "suite2p" ] || [ "$EXTRACTOR_METHOD" = "cnmf" ]; } 
             -v $CODE_DIR:/code \
             -e MPLBACKEND=Agg \
             -e MPLCONFIGDIR=$MPLCONFIGDIR \
-            wanglabneuro/2p_proc:latest \
+            "$P2P_DOCKER" \
             python -u -m pipeline.roi_zcorr $CONFIG_FILE
         ROI_Z_EXIT_STATUS=$?
     fi
@@ -941,11 +955,11 @@ if [ "${PIPELINE_SUCCESS:-0}" -eq 1 ]; then
     if [ "$CLEANUP_AFTER" = "true" ]; then
         if [ $USE_SINGULARITY -eq 1 ]; then
             output_format_STR=$(singularity run -B $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                $IMAGE_REPO/2p_proc_latest.sif \
+                "$P2P_SIF" \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         else
             output_format_STR=$(docker run --rm -v $CONFIG_FILE_DIR:$CONFIG_FILE_DIR \
-                wanglabneuro/2p_proc:latest \
+                "$P2P_DOCKER" \
                 python /code/paths_params_io.py "$CONFIG_FILE" --get-output-format)
         fi
         for EXPORT_PATH in "${EXPORT_DATA_PATHS[@]}"; do
