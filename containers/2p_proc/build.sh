@@ -1,9 +1,13 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.12.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.13.0 -f Dockerfile context --no-cache
 
 # Version history:
+# v0.13.0: optimouse 0.1.9 (pinned). z-position median filter off by default, so zpos, ops.zpos
+#          and the F_anat movie are the same as in 0.10.1 (optimouse 0.1.5); option
+#          zpos_temporal_median. Pipeline scripts: versioned image names, run archive of configs
+#          and logs at exit, register_sessions.sh takes export folders without --exports.
 # v0.12.0: optimouse 0.1.8 (pinned). ROI z-correction of concatenated runs uses per-run ΔF/F
 #          baselines (frames per run from stim_sequence.json; option roi_correction.per_run);
 #          Suite2p-style z-position fixed for C-order memmaps; registration CLI loads without

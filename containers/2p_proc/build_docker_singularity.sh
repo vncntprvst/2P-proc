@@ -7,7 +7,7 @@
 IMAGE=wanglabneuro/2p_proc
 # Bump together with the optimouse pin in Dockerfile, build.sh, and P2P_VERSION in
 # scripts/2P_proc_template.sh and scripts/register_sessions.sh
-TAG=0.12.0
+TAG=0.13.0
 SIF_NAME=2p_proc_${TAG}.sif
 LINK_NAME=2p_proc_latest.sif
 
