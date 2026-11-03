@@ -1,9 +1,11 @@
 #!/bin/bash
 
 # Build Docker image
-docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.13.0 -f Dockerfile context --no-cache
+docker build -t wanglabneuro/2p_proc:latest -t wanglabneuro/2p_proc:0.13.1 -f Dockerfile context --no-cache
 
 # Version history:
+# v0.13.1: optimouse 0.1.10 (pinned). Raw single-page TIFFs are read 32 at a time during
+#          concatenation (same output; much faster on network storage such as /orcd/pool).
 # v0.13.0: optimouse 0.1.9 (pinned). z-position median filter off by default, so zpos, ops.zpos
 #          and the F_anat movie are the same as in 0.10.1 (optimouse 0.1.5); option
 #          zpos_temporal_median. Pipeline scripts: versioned image names, run archive of configs
