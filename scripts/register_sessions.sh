@@ -52,11 +52,9 @@ IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
 REG_VERSION=${REG_VERSION:-0.1.1}
 P2P_VERSION=${P2P_VERSION:-0.12.0}
 
-# Run archive: a copy of the log (and config) goes to $LAB_SPACE/A2P/runs/$USER, as for 2P_proc.sh
+# Run archive: when LAB_SPACE is set (in .env), a copy of the log (and config) goes to
+# $LAB_SPACE/A2P/runs/$USER, as for 2P_proc.sh
 LAB_SPACE=${LAB_SPACE:-}
-if [ -z "$LAB_SPACE" ] && [ -d /orcd/data/fan_wang/001/A2P/runs ]; then
-    LAB_SPACE=/orcd/data/fan_wang/001
-fi
 archive_run() {
     local status=$? dest log
     [ -n "$LAB_SPACE" ] && [ -n "${SLURM_JOB_ID:-}" ] || return

@@ -153,13 +153,10 @@ S2P_SIF="$IMAGE_REPO/suite2p_${S2P_VERSION}.sif"
 P2P_DOCKER="wanglabneuro/2p_proc:${P2P_VERSION}"
 S2P_DOCKER="wanglabneuro/suite2p:v${S2P_VERSION}"
 echo "Images: 2p_proc $P2P_VERSION, suite2p $S2P_VERSION (in $IMAGE_REPO)"
+# Run archive: when LAB_SPACE is set (in .env), a copy of each run's config and log goes to
+# $LAB_SPACE/A2P/runs/$USER, so the pipeline developers can help with runs started from home
+# directories.
 LAB_SPACE=${LAB_SPACE:-}
-# Run archive: a copy of each run's config and log goes to $LAB_SPACE/A2P/runs/$USER, so the
-# pipeline developers can help with runs started from home directories. LAB_SPACE defaults to the
-# Wang lab space on Engaging when its archive folder exists.
-if [ -z "$LAB_SPACE" ] && [ -d /orcd/data/fan_wang/001/A2P/runs ]; then
-    LAB_SPACE=/orcd/data/fan_wang/001
-fi
 USERNAME=${USER}
 
 if [ "$OS_VERSION" = "rocky8" ]; then
