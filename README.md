@@ -294,7 +294,7 @@ cd containers/2p_proc
 ./build_docker_singularity.sh # For Singularity too
 
 # Run with Singularity
-singularity exec 2p_proc_0.13.0.sif python -m pipeline.pipeline_mcorr configs/my_config.json
+singularity exec 2p_proc_0.13.1.sif python -m pipeline.pipeline_mcorr configs/my_config.json
 ```
 
 Images are versioned: `2p_proc_<version>.sif`, `suite2p_<version>.sif` and `2p_registration_<version>.sif`.
