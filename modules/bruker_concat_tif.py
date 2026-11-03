@@ -23,6 +23,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import os, glob, argparse, time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 # from tifftools import tiff_concat
 from tifffile import imread, imwrite, TiffWriter, TiffFile
 from libtiff import TIFF, libtiff_ctypes
@@ -293,8 +295,16 @@ def is_multi_page_tiff(file_path):
         return len(tif.pages) > 1
 
                     
-def concat_tiff_files(file_list, output_file, compression=None):
-    """ Concatenate a list of tiff files into a multi-page TIFF""" 
+def read_single_tiff(file_path):
+    """ Read a single-page TIFF, flipped vertically (Original Bruker frames are flipped upside down)"""
+    tif = TIFF.open(file_path, 'r')
+    img = tif.read_image()
+    tif.close()
+    return np.flipud(img)
+
+
+def concat_tiff_files(file_list, output_file, compression=None, n_threads=32):
+    """ Concatenate a list of tiff files into a multi-page TIFF"""
     # with suppress_c_stderr():
     libtiff_ctypes.suppress_warnings()
 
@@ -316,15 +326,18 @@ def concat_tiff_files(file_list, output_file, compression=None):
                 
     # Open the output file as biggiff
     out_tif = TIFF.open(output_file, mode='w8')
-    # Write all the images to the output file
+    # Write all the images to the output file, in order. Files are read n_threads at a time: on
+    # network storage most of the read time is spent opening each file (~70 ms per file on
+    # /orcd/pool, 20-30x less with 32 threads).
     # tiff_concat(file_list, output_file, overwrite=True)
-    for i in range(len(file_list)):
-        tif = TIFF.open(file_list[i], 'r')
-        img = tif.read_image()
-        # Flip the image vertically (Original Bruker frames are flipped upside down)
-        img = np.flipud(img)
-        tif.close()
-        out_tif.write_image(img, compression=compression)
+    with ThreadPoolExecutor(n_threads) as pool:
+        pending = deque()
+        for file_path in file_list:
+            pending.append(pool.submit(read_single_tiff, file_path))
+            if len(pending) >= 4 * n_threads:
+                out_tif.write_image(pending.popleft().result(), compression=compression)
+        while pending:
+            out_tif.write_image(pending.popleft().result(), compression=compression)
     out_tif.close()
     
     # # Load all the images first with then save as a multi-page tiff
