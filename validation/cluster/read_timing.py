@@ -18,11 +18,15 @@ parser.add_argument("--threads", type=int, nargs="+", default=[1, 8, 32])
 parser.add_argument("--n", type=int, default=200)
 parser.add_argument("--skip", type=int, default=2000)
 parser.add_argument("--regex", default="*_Ch2_*.ome.tif")
+parser.add_argument("--raw", action="store_true", help="read bytes instead of decoding TIFFs")
 args = parser.parse_args()
 libtiff_ctypes.suppress_warnings()
 
 
 def read(f):
+    if args.raw:
+        with open(f, "rb") as fh:
+            return np.frombuffer(fh.read(), dtype=np.uint8)
     tif = TIFF.open(f, "r")
     img = np.flipud(tif.read_image())
     tif.close()
