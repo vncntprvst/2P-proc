@@ -76,6 +76,8 @@
             },
             "__comment": "Set 'non_rigid' to true to compute f-anat non-rigid. If false, will only compute a rigid z-position.",
             "non_rigid": false,
+            "__comment_zpos": "zpos_temporal_median: temporal median filter of the z-position, in frames (0 = none, the default: same zpos as earlier pipeline versions).",
+            "zpos_temporal_median": 0,
             "__comment_f_anat": "F_anat movie construction. Default: per-patch argmax depth within zpos +/- 5 (vectorised; same output as the legacy patch_regress path, plus patch_depth_profiles.npz). depth_mode: 'argmax' | 'soft' | 'auto' (auto builds the argmax movie and decides at the ROI step). method: 'legacy' to use patch_regress.",
             "f_anat": {"depth_mode": "argmax"},
             "__comment_roi_correction": "Per-ROI z-correction (pipeline.roi_zcorr). f_anat_smoothing: moving-average window on F_cell_anat (1 = none, recommended; MATLAB used 3). depth_mode: 'argmax' | 'soft' (beta, half_window) | 'auto' (held-out z-event model selection between argmax and the soft betas in auto_betas). See validation/report/realdata.",

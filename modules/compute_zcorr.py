@@ -423,28 +423,27 @@ def compute_zcorrel(
     export_path=None,
     method="pearson",
     edge_crop=0.0,
-    temporal_smooth=5,
+    temporal_smooth=0,
     z_corr_params=None,
 ):
     """Optimized z-position estimator (drop-in replacement for the legacy version).
 
-    The default (`method="pearson"`, `edge_crop=0.0`, `temporal_smooth=5`) is the
-    legacy full-frame Pearson correlation plus **temporal median smoothing** of
-    `zpos` — the one improvement validated as safe on real (NoRMCorre-corrected)
-    data: real z-drift is smooth, so isolated multi-plane misassignments are
-    filtered out.
+    The default (`method="pearson"`, `edge_crop=0.0`, `temporal_smooth=0`) gives the
+    same zpos as the legacy full-frame Pearson correlation, so z_correlation.npz,
+    ops.zpos and the F_anat movie read by the Matlab analysis are unchanged.
 
-    Two other options were tested and are OFF by default because they degrade on
-    mcorr'd production movies (validated in `validation/`), despite helping on
-    clean synthetic data:
-      - ``method="phasecorr"`` — Suite2p-style masked phase correlation. More
-        accurate on synthetic (RMSE ~0.65 vs ~1.7 planes) but latches onto the
-        deepest low-contrast plane on mcorr'd movies. Requires Suite2p; falls
-        back to Pearson if unavailable. Use only on raw / lightly-registered data.
+    Options (off by default):
+      - ``temporal_smooth`` (frames, config ``zpos_temporal_median``) — temporal median
+        filter of zpos. Removes isolated multi-plane jumps, but also fast real z-motion;
+        it slightly reduced the z-artifact explained by argmax F_anat on 2 of 5 real
+        recordings (validation/report/boundary).
+      - ``method="phasecorr"`` — Suite2p-style masked phase correlation. Tracks the
+        Pearson estimate on real mcorr'd movies (validation/report/boundary) and is
+        1.4-1.7x slower. Requires Suite2p; falls back to Pearson if unavailable.
       - ``edge_crop`` (fraction per side) — meant to drop the NoRMCorre border,
         but collapses the Pearson estimate to plane 0 on real data. Leave at 0.
 
-    See `compute_zcorrel_legacy` for the exact pre-smoothing behaviour.
+    See `compute_zcorrel_legacy` for the legacy implementation.
     """
     # ── Load z-stack + movie (shared) ────────────────────────────────────────
     with TiffFile(zstack_file) as f:
@@ -2621,6 +2620,7 @@ def z_motion(mcorr_movie_path, parameters, recompute=True, scale_range=False):
                 zstack_path / z_shifted_file,
                 mcorr_movie_path,
                 export_path=mesmerize_path,
+                temporal_smooth=z_parameters.get("zpos_temporal_median", 0),
             )
         else:
             z_correlation = np.load(mesmerize_path / "z_correlation.npz")
