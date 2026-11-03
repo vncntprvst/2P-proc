@@ -154,6 +154,12 @@ P2P_DOCKER="wanglabneuro/2p_proc:${P2P_VERSION}"
 S2P_DOCKER="wanglabneuro/suite2p:v${S2P_VERSION}"
 echo "Images: 2p_proc $P2P_VERSION, suite2p $S2P_VERSION (in $IMAGE_REPO)"
 LAB_SPACE=${LAB_SPACE:-}
+# Run archive: a copy of each run's config and log goes to $LAB_SPACE/A2P/runs/$USER, so the
+# pipeline developers can help with runs started from home directories. LAB_SPACE defaults to the
+# Wang lab space on Engaging when its archive folder exists.
+if [ -z "$LAB_SPACE" ] && [ -d /orcd/data/fan_wang/001/A2P/runs ]; then
+    LAB_SPACE=/orcd/data/fan_wang/001
+fi
 USERNAME=${USER}
 
 if [ "$OS_VERSION" = "rocky8" ]; then
@@ -208,6 +214,34 @@ fi
 # Set global variables
 CONFIG_FILE=$1
 echo "Config file provided: $CONFIG_FILE"
+
+# Archive the config and the log when the script exits, whether the run succeeded or not
+archive_run() {
+    local status=$?
+    if [ -z "$LAB_SPACE" ] || [ ! -f "$CONFIG_FILE" ]; then
+        return
+    fi
+    local dest="$LAB_SPACE/A2P/runs/$USERNAME"
+    if ! mkdir -p "$dest" 2>/dev/null; then
+        echo "Cannot write to the run archive $dest"
+        return
+    fi
+    local cfg_base log_name
+    cfg_base="$(basename "$CONFIG_FILE")"
+    log_name="${cfg_base%.[jJ][sS][oO][nN]}.log"
+    if [ -z "${SLURM_LOG_FILE:-}" ] && [ -n "${SLURM_JOB_ID:-}" ]; then
+        SLURM_LOG_FILE=$(scontrol show job "$SLURM_JOB_ID" 2>/dev/null | sed -n 's/^ *StdOut=//p')
+        [ -f "$SLURM_LOG_FILE" ] || SLURM_LOG_FILE="./slurm_logs/2P_proc-${SLURM_JOB_ID}.ans"
+    fi
+    echo "Archiving config and log in $dest (exit status $status)"
+    cp "$CONFIG_FILE" "$dest/$cfg_base"
+    if [ -n "${SLURM_LOG_FILE:-}" ] && [ -f "$SLURM_LOG_FILE" ]; then
+        cp "$SLURM_LOG_FILE" "$dest/$log_name"
+    else
+        echo "Warning: SLURM log file not found: ${SLURM_LOG_FILE:-<unset>}"
+    fi
+}
+trap archive_run EXIT
 
 # Get directory of config file
 CONFIG_FILE_DIR=$(realpath $(dirname "$CONFIG_FILE"))
@@ -925,25 +959,6 @@ echo "Wrapping up"
 echo "================================"
 if [ "${PIPELINE_SUCCESS:-0}" -eq 1 ]; then
     echo "Pipeline completed successfully."
-    if [ -n "$LAB_SPACE" ]; then
-        mkdir -p "$LAB_SPACE/A2P/runs/$USERNAME"
-
-        cfg_base="$(basename "$CONFIG_FILE")"
-        # remove case-insensitive .json (if present) and set .log
-        base_no_json="${cfg_base%.[jJ][sS][oO][nN]}"
-        log_name="${base_no_json}.log"
-
-        if [ -z "$SLURM_LOG_FILE" ] && [ -n "$SLURM_JOB_ID" ]; then
-            SLURM_LOG_FILE="./slurm_logs/2P_proc-${SLURM_JOB_ID}.ans"
-        fi
-
-        if [ -n "$SLURM_LOG_FILE" ] && [ -f "$SLURM_LOG_FILE" ]; then
-            cp "$SLURM_LOG_FILE" "$LAB_SPACE/A2P/runs/$USERNAME/$log_name"
-        else
-            echo "Warning: SLURM log file not found: ${SLURM_LOG_FILE:-<unset>}"
-        fi
-        cp "$CONFIG_FILE" "$LAB_SPACE/A2P/runs/$USERNAME/$cfg_base"
-    fi
     if [ "${RUN_NWB_CONVERSION:-0}" -eq 1 ]; then
         bash "$(dirname "$0")/nwb_conversion.sh" "$CONFIG_FILE"
     fi

@@ -52,29 +52,59 @@ IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
 REG_VERSION=${REG_VERSION:-0.1.1}
 P2P_VERSION=${P2P_VERSION:-0.12.0}
 
-# Parse arguments: keep them for the Python call, and collect paths to bind
-ARGS=("$@")
+# Run archive: a copy of the log (and config) goes to $LAB_SPACE/A2P/runs/$USER, as for 2P_proc.sh
+LAB_SPACE=${LAB_SPACE:-}
+if [ -z "$LAB_SPACE" ] && [ -d /orcd/data/fan_wang/001/A2P/runs ]; then
+    LAB_SPACE=/orcd/data/fan_wang/001
+fi
+archive_run() {
+    local status=$? dest log
+    [ -n "$LAB_SPACE" ] && [ -n "${SLURM_JOB_ID:-}" ] || return
+    dest="$LAB_SPACE/A2P/runs/$USER"
+    mkdir -p "$dest" 2>/dev/null || { echo "Cannot write to the run archive $dest"; return; }
+    log=$(scontrol show job "$SLURM_JOB_ID" 2>/dev/null | sed -n 's/^ *StdOut=//p')
+    [ -f "$log" ] || log="./slurm_logs/register_sessions-${SLURM_JOB_ID}.ans"
+    echo "Archiving log in $dest (exit status $status)"
+    [ -f "$log" ] && cp "$log" "$dest/register_sessions-${SLURM_JOB_ID}.log"
+    [ -n "$CONFIG" ] && [ -f "$CONFIG" ] && cp "$CONFIG" "$dest/"
+}
+trap archive_run EXIT
+
+usage() {
+    echo "Usage: sbatch register_sessions.sh --exports <export1> <export2> ... [--out DIR] [--method roicat|caiman]"
+    echo "   or: sbatch register_sessions.sh --config <config.json> [options]"
+}
+
+# Export folders given without --exports are taken as --exports
+if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
+    set -- --exports "$@"
+fi
+
+# Parse arguments: pass them to the Python call with resolved paths, and collect paths to bind
+ARGS=()
 METHOD=roicat
 CONFIG=""
 PATHS=()
 mode=""
 for a in "$@"; do
     case "$a" in
-        --exports) mode=exports; continue ;;
-        --out) mode=out; continue ;;
-        --config) mode=config; continue ;;
-        --method) mode=method; continue ;;
-        --*) mode=""; continue ;;
+        --exports|--out|--config|--method|--um-per-pixel|--python|--iscell-file)
+            mode=${a#--}; ARGS+=("$a"); continue ;;
+        --cpu) mode=""; ARGS+=("$a"); continue ;;
+        --*) echo "Unknown option: $a"; usage; exit 1 ;;
     esac
     case "$mode" in
-        exports) PATHS+=("$(realpath "$a")") ;;
-        out) PATHS+=("$(realpath -m "$a")"); mode="" ;;
-        config) CONFIG="$(realpath "$a")"; PATHS+=("$(dirname "$CONFIG")"); mode="" ;;
-        method) METHOD="$a"; mode="" ;;
+        exports) p="$(realpath "$a")"; PATHS+=("$p"); ARGS+=("$p") ;;
+        out) p="$(realpath -m "$a")"; PATHS+=("$p"); ARGS+=("$p"); mode="" ;;
+        config) CONFIG="$(realpath "$a")"; PATHS+=("$(dirname "$CONFIG")"); ARGS+=("$CONFIG"); mode="" ;;
+        method) METHOD="$a"; ARGS+=("$a"); mode="" ;;
+        um-per-pixel|python|iscell-file) ARGS+=("$a"); mode="" ;;
+        *) echo "Unexpected argument: $a"; usage; exit 1 ;;
     esac
 done
-if [ ${#ARGS[@]} -eq 0 ]; then
-    echo "Usage: sbatch register_sessions.sh --exports <export1> <export2> ... [--out DIR] [--method roicat|caiman]"
+if [ ${#PATHS[@]} -eq 0 ]; then
+    echo "No export folders or config given."
+    usage
     exit 1
 fi
 
