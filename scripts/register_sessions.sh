@@ -49,7 +49,7 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
     echo "Loaded environment from $SCRIPT_DIR/.env"
 fi
 IMAGE_REPO=${IMAGE_REPO:-$HOME/singularity_images}
-REG_VERSION=${REG_VERSION:-0.1.1}
+REG_VERSION=${REG_VERSION:-0.1.2}
 P2P_VERSION=${P2P_VERSION:-0.13.1}
 
 # Run archive: when LAB_SPACE is set (in .env), a copy of the log (and config) goes to

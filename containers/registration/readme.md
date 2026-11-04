@@ -18,7 +18,7 @@ sbatch scripts/register_sessions.sh --exports <export_day1> <export_day2> ... --
 ```
 Directly:
 ```bash
-singularity run --cleanenv -B /data:/data 2p_registration_0.1.1.sif python -m pipeline.register_sessions \
+singularity run --cleanenv -B /data:/data 2p_registration_0.1.2.sif python -m pipeline.register_sessions \
     --exports <export_day1> <export_day2> --out <dir> --cpu
 ```
 
