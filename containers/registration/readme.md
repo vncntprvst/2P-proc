@@ -2,7 +2,9 @@
 
 Matches cells across separately processed sessions of the same field of view with ROICaT
 (`pipeline.register_sessions`, method `roicat`). Inputs are pipeline export folders with Suite2p
-(`suite2p/plane0`) or CNMF (`results_caiman.mat`) outputs. CaImAn is not installed; the `caiman`
+(`suite2p/plane0`) or CNMF (`results_caiman.mat`) outputs, or ROI files (`.mat` with `roi_footprints`,
+`FOV` and `roi_index`, from version 0.1.2). The Matlab function `call_roicat.m` (Analysis_2P) writes
+these files from Matlab ROIs and runs this image with Docker. CaImAn is not installed; the `caiman`
 method runs in the `2p_proc` image instead. Track2p pins numpy 2.0.2 and ROICaT numpy 2.4.6, so they
 cannot share an image; use `--python` with a Track2p environment if needed.
 
