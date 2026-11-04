@@ -12,11 +12,13 @@ reference, cross-day controls):
 - "caiman": CaImAn register_multisession (optical flow + Jaccard + Hungarian), in-process.
 
 Inputs per session: a pipeline export dir with Suite2p (suite2p/plane0) or CNMF
-(cnmf_result.hdf5) outputs. Suite2p ROIs are the iscell ones; their original indices are kept.
+(cnmf_result.hdf5) outputs, or a ROI file (.mat, see load_roi_file; written by the Matlab function
+call_roicat.m). Suite2p ROIs are the iscell ones; their original indices are kept.
 
 Outputs (out_dir): cell_registration.npz / .mat and cell_registration_qc.json, cell_registration.png
 - assignments: (n_cells, n_sessions) ROI index per session (extraction order, i.e. suite2p
-  stat index or CNMF component), -1 if absent (.mat: 1-based, 0 if absent)
+  stat index or CNMF component), -1 if absent (.mat: 1-based, 0 if absent). For a ROI file, the
+  .mat gives its roi_index numbers.
 - n_sessions_tracked: per cell
 """
 
@@ -39,9 +41,47 @@ BACKENDS = Path(__file__).parent / "registration_backends"
 # --------------------------------------------------------------------------- sessions
 
 
+def masks_from_footprints(A, dims):
+    """(yy, xx, weights) per column of a (d1*d2, n_roi) sparse matrix in F (column-major) order."""
+    masks = []
+    for i in range(A.shape[1]):
+        idx = A[:, i].nonzero()[0]
+        yy, xx = np.unravel_index(idx, dims, order="F")
+        masks.append((yy, xx, A[idx, i].toarray().ravel().astype(np.float32)))
+    return masks
+
+
+def load_roi_file(path):
+    """ROIs of one session from a .mat file with:
+    - roi_footprints: sparse (Ly*Lx, n_roi) pixel weights, pixels in Matlab (column-major) order
+    - FOV: (Ly, Lx) mean image
+    - roi_index (optional): number reported for each ROI in cell_registration.mat (1-based,
+      default 1..n_roi), e.g. the ROI's row in the Matlab analysis results
+    """
+    m = loadmat(str(path))
+    if "roi_footprints" not in m:
+        raise ValueError(f"{path} is not a ROI file (no roi_footprints); for pipeline outputs, "
+                         f"give the export folder")
+    A = sparse.csc_matrix(m["roi_footprints"], dtype=np.float64)
+    image = np.asarray(m["FOV"], np.float32)
+    if A.shape[0] != image.size:
+        raise ValueError(f"{path}: roi_footprints has {A.shape[0]} rows, FOV has {image.size} "
+                         f"pixels")
+    roi_index = np.arange(A.shape[1])
+    if "roi_index" in m:
+        roi_index = np.asarray(m["roi_index"]).ravel().astype(int) - 1
+        if len(roi_index) != A.shape[1]:
+            raise ValueError(f"{path}: {len(roi_index)} roi_index values for {A.shape[1]} ROIs")
+    return {"masks": masks_from_footprints(A, image.shape), "dims": image.shape, "image": image,
+            "roi_index": roi_index, "source": str(path), "extractor": "roi_file"}
+
+
 def load_session(export_dir, iscell_file="iscell.npy"):
-    """ROI footprints and FOV image of one export (Suite2p iscell ROIs, or CNMF components)."""
+    """ROI footprints and FOV image of one export (Suite2p iscell ROIs, or CNMF components), or of
+    a ROI file (.mat)."""
     export_dir = Path(export_dir)
+    if export_dir.suffix == ".mat" and export_dir.is_file():
+        return load_roi_file(export_dir)
     cnmf = export_dir / "cnmf_result.hdf5"
     plane = next((d for d in [export_dir / "suite2p" / "plane0", export_dir / "plane0", export_dir]
                   if (d / "stat.npy").exists()), None)
@@ -67,11 +107,7 @@ def load_session(export_dir, iscell_file="iscell.npy"):
             m = loadmat(str(mat), variable_names=["spatial_components", "mean_map_motion_corrected"])
             A = sparse.csc_matrix(m["spatial_components"])
             d1, d2 = np.asarray(m["mean_map_motion_corrected"]).shape
-        masks = []
-        for i in range(A.shape[1]):
-            idx = A[:, i].nonzero()[0]
-            yy, xx = np.unravel_index(idx, (d1, d2), order="F")  # CaImAn footprints are F-ordered
-            masks.append((yy, xx, A[idx, i].toarray().ravel().astype(np.float32)))
+        masks = masks_from_footprints(A, (d1, d2))  # CaImAn footprints are F-ordered
         if mat.exists():
             image = loadmat(str(mat), variable_names=["mean_map_motion_corrected"])["mean_map_motion_corrected"]
         else:

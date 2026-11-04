@@ -228,6 +228,9 @@ python -m pipeline.register_sessions --exports <export_day1> <export_day2> ... -
 `$TRACK2P_PYTHON`); ROICaT needs Python >= 3.11. `caiman` runs in the pipeline environment. Outputs:
 `cell_registration.npz/.mat` (cells x sessions ROI indices in extraction order; 1-based in the .mat),
 `cell_registration_qc.json` and `cell_registration.png`. Method comparison and validation: `validation/registration/`.
+A session can also be a ROI file (`.mat` with `roi_footprints`, `FOV` and `roi_index`; see
+`modules.cell_registration.load_roi_file`). The Matlab function `call_roicat.m` (Analysis_2P) uses this to match
+ROIs selected in Matlab, with the registration image run by Docker.
 Runs recorded the same day are better processed jointly (concatenated) than registered.
 
 ## Pipeline Components

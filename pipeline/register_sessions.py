@@ -9,8 +9,10 @@ Usage
                                                                 # params_registration
 
 params_registration (config): {"method": "roicat", "out_dir": "...", "python": null,
-"iscell_file": "iscell.npy", "cpu": false}. um_per_pixel defaults to imaging.microns_per_pixel. The roicat
-and track2p methods run in an interpreter that has the package: --python, $ROICAT_PYTHON /
+"iscell_file": "iscell.npy", "cpu": false}. um_per_pixel defaults to imaging.microns_per_pixel. An
+export can also be a ROI file (.mat with roi_footprints, FOV and roi_index; see
+modules.cell_registration.load_roi_file), as written by the Matlab function call_roicat.m. The
+roicat and track2p methods run in an interpreter that has the package: --python, $ROICAT_PYTHON /
 $TRACK2P_PYTHON, or the current one.
 """
 
