@@ -16,15 +16,18 @@ RUN pip install --no-cache-dir uv
 RUN uv pip install --system --no-cache --index-url https://download.pytorch.org/whl/cpu \
         torch==2.14.1 torchvision==0.29.1
 
-# optimouse (pinned: bump together with the image tag in build_docker_singularity.sh) and ROICaT
-RUN uv pip install --system --no-cache optimouse==0.1.11 "roicat[all]==1.7.12"
+# optimouse (pinned: bump together with the image tag in build_docker_singularity.sh) and ROICaT.
+# OpenCV < 5: OpenCV 5 dropped cv2.optflow.createOptFlow_DeepFlow, ROICaT's default nonrigid
+# alignment. opencv-python (optimouse) and opencv-contrib-python-headless (romatch-roicat) both
+# install cv2; the contrib build is reinstalled last so that its cv2 (with optflow) is the one kept.
+RUN uv pip install --system --no-cache optimouse==0.1.11 "roicat[all]==1.7.12"         "opencv-python<5" "opencv-contrib-python-headless<5" &&     uv pip install --system --no-cache --reinstall "opencv-contrib-python-headless<5"
 
 ENV MPLBACKEND=Agg \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     PYTHONIOENCODING=UTF-8
 
-# Fail the build if the registration entry point cannot load
-RUN python -c "import roicat, modules.cell_registration, pipeline.register_sessions; print('roicat', roicat.__version__)"
+# Fail the build if the registration entry point cannot load or DeepFlow is missing
+RUN python -c "import cv2, roicat, modules.cell_registration, pipeline.register_sessions; cv2.optflow.createOptFlow_DeepFlow(); print('roicat', roicat.__version__, 'opencv', cv2.__version__)"
 
 # Test: docker run --rm wanglabneuro/2p_registration:latest python -m pipeline.register_sessions --help
