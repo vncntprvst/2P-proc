@@ -68,8 +68,10 @@ dev/
 # Example files
 validation/example/
 
-# Benchmark run logs
+# Benchmark run logs and notes
 validation/**/*.log
+tests/benchmarks/
 
 # SLURM logs of validation jobs
 validation/**/slurm_logs/
+
