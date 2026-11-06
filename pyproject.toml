@@ -33,7 +33,7 @@ dependencies = [
     "scikit-image>=0.25.2",
     "tifffile>=2025.5.10",
     "h5py>=3.14.0",
-    "opencv-python>=4.11.0.86",
+    "opencv-python>=4.11.0.86,<5",
     "pylibtiff>=0.7.0",
 ]
 

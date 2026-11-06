@@ -17,10 +17,12 @@ RUN uv pip install --system --no-cache --index-url https://download.pytorch.org/
         torch==2.14.1 torchvision==0.29.1
 
 # optimouse (pinned: bump together with the image tag in build_docker_singularity.sh) and ROICaT.
-# OpenCV < 5: OpenCV 5 dropped cv2.optflow.createOptFlow_DeepFlow, ROICaT's default nonrigid
-# alignment. opencv-python (optimouse) and opencv-contrib-python-headless (romatch-roicat) both
-# install cv2; the contrib build is reinstalled last so that its cv2 (with optflow) is the one kept.
-RUN uv pip install --system --no-cache optimouse==0.1.11 "roicat[all]==1.7.12"         "opencv-python<5" "opencv-contrib-python-headless<5" &&     uv pip install --system --no-cache --reinstall "opencv-contrib-python-headless<5"
+# opencv-python (optimouse) and opencv-contrib-python-headless (romatch-roicat) both install the
+# cv2 folder, and whichever is written last wins. Only the contrib build has
+# cv2.optflow.createOptFlow_DeepFlow, ROICaT's default nonrigid alignment, so it is reinstalled last.
+RUN uv pip install --system --no-cache optimouse==0.1.11 "roicat[all]==1.7.12" \
+        "opencv-python<5" "opencv-contrib-python-headless<5" && \
+    uv pip install --system --no-cache --reinstall "opencv-contrib-python-headless<5"
 
 ENV MPLBACKEND=Agg \
     LANG=C.UTF-8 \

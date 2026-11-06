@@ -5,7 +5,8 @@
 # 2p_registration_latest.sif is a link to the newest one.
 
 # Version history:
-# v0.1.3: OpenCV < 5 (OpenCV 5 has no DeepFlow, ROICaT's default nonrigid alignment: 0.1.2 fails).
+# v0.1.3: OpenCV < 5, contrib build of cv2 forced. In 0.1.2 the plain build of cv2 replaced it, so
+#         DeepFlow, ROICaT's default nonrigid alignment, was missing and registration failed.
 # v0.1.2: optimouse 0.1.11 (a session can also be a ROI file, e.g. written by the Matlab function call_roicat.m).
 # v0.1.1: optimouse 0.1.8.
 # v0.1.0: optimouse 0.1.7 + ROICaT 1.7.12 (CPU torch 2.14.1), Python 3.11.
